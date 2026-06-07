@@ -1,0 +1,85 @@
+@page "/approvals"
+@rendermode InteractiveServer
+@using ServiceBusiness.Application
+@using ServiceBusiness.Domain
+@inject CompanyAdminService CompanyAdminService
+@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+
+<PageTitle>Approvals</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">Business Owner</p>
+        <h1>Account approvals</h1>
+        <p class="lede">Review pending business user and business client access requests.</p>
+    </div>
+    <a class="button" href="company">Company Dashboard</a>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="notice success">@message</div>
+}
+
+@if (requests is null)
+{
+    <p>Loading requests...</p>
+}
+else if (requests.Count == 0)
+{
+    <div class="callout">
+        <strong>No pending requests</strong>
+        <p>New business user and business client registrations will appear here for owner review.</p>
+    </div>
+}
+else
+{
+    <section class="section">
+        <h2>Pending access</h2>
+        <div class="data-list">
+            @foreach (var request in requests)
+            {
+                <article class="row-card">
+                    <div>
+                        <strong>@request.User.DisplayName</strong>
+                        <p>@request.User.Email</p>
+                        <small>@request.Role.DisplayName · requested @request.Membership.RequestedUtc.LocalDateTime.ToString("g")</small>
+                    </div>
+                    <div class="row-actions">
+                        <span class="status-pill">@request.Membership.Status</span>
+                        <button class="button primary" type="button" @onclick="() => DecideAsync(request, MembershipStatus.Active)">Approve</button>
+                        <button class="button danger" type="button" @onclick="() => DecideAsync(request, MembershipStatus.Rejected)">Reject</button>
+                    </div>
+                </article>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    private IReadOnlyList<AccessRequest>? requests;
+    private string? message;
+
+    protected override async Task OnInitializedAsync()
+    {
+        DemoUser.UserId = "admin-1";
+        await LoadAsync();
+    }
+
+    private async Task DecideAsync(AccessRequest request, MembershipStatus decision)
+    {
+        await CompanyAdminService.DecideAccessRequestAsync(
+            request.Company.Id,
+            request.User.Id,
+            request.Membership.Role,
+            decision);
+
+        message = $"{request.User.DisplayName} was {decision.ToString().ToLowerInvariant()} for {request.Company.Name}.";
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        requests = await CompanyAdminService.GetPendingAccessRequestsAsync("clearwater");
+    }
+}

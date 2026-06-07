@@ -1,0 +1,65 @@
+@page "/catalog"
+@rendermode InteractiveServer
+@using ServiceBusiness.Domain
+@inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
+@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+
+<PageTitle>Catalog</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">Company Admin</p>
+        <h1>Services and materials</h1>
+    </div>
+</section>
+
+@if (services is null || materials is null)
+{
+    <p>Loading catalog...</p>
+}
+else
+{
+    <section class="section">
+        <h2>Services</h2>
+        <div class="data-list">
+            @foreach (var service in services)
+            {
+                <article class="row-card">
+                    <div>
+                        <strong>@service.Name</strong>
+                        <p>@service.Description</p>
+                    </div>
+                    <span class="price">@service.DefaultPrice.ToString("C")</span>
+                </article>
+            }
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>Materials</h2>
+        <div class="data-list">
+            @foreach (var material in materials)
+            {
+                <article class="row-card">
+                    <div>
+                        <strong>@material.Name</strong>
+                        <p>@material.UnitOfMeasure · Cost @material.DefaultUnitCost.ToString("C")</p>
+                    </div>
+                    <span class="price">@material.DefaultBillableUnitPrice.ToString("C")</span>
+                </article>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    private IReadOnlyList<ServiceOffering>? services;
+    private IReadOnlyList<Material>? materials;
+
+    protected override async Task OnInitializedAsync()
+    {
+        DemoUser.UserId = "admin-1";
+        services = await CompanyAdminService.GetServicesAsync("clearwater");
+        materials = await CompanyAdminService.GetMaterialsAsync("clearwater");
+    }
+}

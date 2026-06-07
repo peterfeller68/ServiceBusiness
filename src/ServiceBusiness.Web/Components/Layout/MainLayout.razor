@@ -1,0 +1,53 @@
+@inherits LayoutComponentBase
+@using ServiceBusiness.Application
+@inject OnboardingService OnboardingService
+@inject ICurrentUserContext CurrentUser
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            <span>Azure-ready Blazor SaaS MVP</span>
+            <div class="profile-chip">
+                @if (currentUser is null)
+                {
+                    <a href="signin">Sign in</a>
+                }
+                else
+                {
+                    <a href="profile" title="Open account profile">@currentUser.DisplayName</a>
+                    <a href="auth/signout">Logout</a>
+                }
+            </div>
+        </div>
+
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">x</span>
+</div>
+
+@code {
+    private ServiceBusiness.Domain.AppUser? currentUser;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            currentUser = (await OnboardingService.GetAccessOverviewAsync(CurrentUser.UserId)).User;
+        }
+        catch
+        {
+            currentUser = null;
+        }
+    }
+}

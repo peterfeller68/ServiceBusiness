@@ -1,0 +1,132 @@
+@page "/profile"
+@rendermode InteractiveServer
+@using ServiceBusiness.Application
+@using ServiceBusiness.Domain
+@inject UserProfileService ProfileService
+
+<PageTitle>Profile</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">Account Profile</p>
+        <h1>@(form?.DisplayName ?? "Profile")</h1>
+        <p class="lede">Manage contact details used for notifications and account display.</p>
+    </div>
+    <a class="button" href="auth/signout">Logout</a>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="notice success">@message</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="notice error">@errorMessage</div>
+}
+
+@if (form is null)
+{
+    <p>Loading profile...</p>
+}
+else
+{
+    <section class="section split">
+        <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="profile-form">
+            <div class="form-panel">
+                <h2>Profile Details</h2>
+                <label>
+                    Display name
+                    <InputText class="form-control" @bind-Value="form.DisplayName" />
+                </label>
+                <label>
+                    Login email
+                    <input class="form-control" value="@form.Email" disabled />
+                </label>
+                <label>
+                    Notification email
+                    <InputText class="form-control" @bind-Value="form.NotificationEmail" />
+                </label>
+                <label>
+                    Phone
+                    <InputText class="form-control" @bind-Value="form.Phone" />
+                </label>
+                <div class="form-actions">
+                    <button class="button primary" type="submit">Save Profile</button>
+                    <a class="button" href="dashboard">Dashboard</a>
+                </div>
+            </div>
+        </EditForm>
+
+        <aside class="callout profile-summary">
+            @if (!string.IsNullOrWhiteSpace(form.ProfileImageUrl))
+            {
+                <img src="@form.ProfileImageUrl" alt="" />
+            }
+            <strong>@form.DisplayName</strong>
+            <p>@form.Email</p>
+            <small>@form.Status</small>
+        </aside>
+    </section>
+}
+
+@code {
+    private ProfileForm? form;
+    private string? message;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = await ProfileService.GetCurrentProfileAsync();
+        form = ProfileForm.FromUser(user);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (form is null)
+        {
+            return;
+        }
+
+        message = null;
+        errorMessage = null;
+
+        try
+        {
+            var updated = await ProfileService.UpdateCurrentProfileAsync(
+                form.DisplayName,
+                form.NotificationEmail,
+                form.Phone);
+            form = ProfileForm.FromUser(updated);
+            message = "Profile saved.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private sealed class ProfileForm
+    {
+        public string Email { get; init; } = "";
+        public string DisplayName { get; set; } = "";
+        public string? NotificationEmail { get; set; }
+        public string? Phone { get; set; }
+        public string? ProfileImageUrl { get; init; }
+        public UserStatus Status { get; init; }
+
+        public static ProfileForm FromUser(AppUser user) => new()
+        {
+            Email = user.Email,
+            DisplayName = user.DisplayName,
+            NotificationEmail = user.NotificationEmail,
+            Phone = user.Phone,
+            ProfileImageUrl = user.ProfileImageUrl,
+            Status = user.Status
+        };
+    }
+}

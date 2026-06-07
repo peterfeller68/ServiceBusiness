@@ -1,0 +1,74 @@
+@page "/schedule"
+@rendermode InteractiveServer
+@using ServiceBusiness.Domain
+@inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
+@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+
+<PageTitle>Schedule</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">Company Admin</p>
+        <h1>Schedule</h1>
+        <p class="lede">Visits for @selectedDate.ToLongDateString().</p>
+    </div>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="notice">@message</div>
+}
+
+@if (visits is null || clients is null)
+{
+    <p>Loading schedule...</p>
+}
+else
+{
+    <div class="data-list">
+        @foreach (var visit in visits)
+        {
+            var client = clients.First(c => c.Id == visit.CompanyClientId);
+            <article class="row-card">
+                <div>
+                    <strong>@client.DisplayName</strong>
+                    <p>@visit.ServiceWindowStart.ToShortTimeString() - @visit.ServiceWindowEnd.ToShortTimeString() · @client.ServiceAddress</p>
+                    <small>@visit.Notes</small>
+                </div>
+                <div class="row-actions">
+                    <span class="status-pill">@visit.Status</span>
+                    @if (string.IsNullOrWhiteSpace(visit.AssignedUserId))
+                    {
+                        <button class="button" @onclick="() => AssignVisit(visit.Id)">Assign to Morgan</button>
+                    }
+                </div>
+            </article>
+        }
+    </div>
+}
+
+@code {
+    private DateOnly selectedDate = DateOnly.FromDateTime(DateTime.Today);
+    private IReadOnlyList<ServiceVisit>? visits;
+    private IReadOnlyList<CompanyClient>? clients;
+    private string? message;
+
+    protected override async Task OnInitializedAsync()
+    {
+        DemoUser.UserId = "admin-1";
+        await LoadAsync();
+    }
+
+    private async Task AssignVisit(string visitId)
+    {
+        await CompanyAdminService.AssignVisitAsync("clearwater", visitId, "tech-1");
+        message = "Visit assigned to Morgan Tech.";
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        visits = await CompanyAdminService.GetScheduleAsync("clearwater", selectedDate);
+        clients = await CompanyAdminService.GetClientsAsync("clearwater");
+    }
+}

@@ -1,0 +1,45 @@
+@page "/clients"
+@rendermode InteractiveServer
+@using ServiceBusiness.Domain
+@inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
+@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+
+<PageTitle>Clients</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">Company Admin</p>
+        <h1>Clients</h1>
+    </div>
+</section>
+
+@if (clients is null)
+{
+    <p>Loading clients...</p>
+}
+else
+{
+    <div class="data-list">
+        @foreach (var client in clients)
+        {
+            <article class="row-card">
+                <div>
+                    <strong>@client.DisplayName</strong>
+                    <p>@client.PrimaryContactName · @client.ServiceAddress</p>
+                    <small>@client.AccessNotes</small>
+                </div>
+                <span class="status-pill">@(client.IsActive ? "Active" : "Inactive")</span>
+            </article>
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<CompanyClient>? clients;
+
+    protected override async Task OnInitializedAsync()
+    {
+        DemoUser.UserId = "admin-1";
+        clients = await CompanyAdminService.GetClientsAsync("clearwater");
+    }
+}

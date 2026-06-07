@@ -1,0 +1,57 @@
+@page "/signin"
+@rendermode InteractiveServer
+@inject NavigationManager Navigation
+
+<PageTitle>Sign In</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">Sign in</p>
+        <h1>Access your workspace</h1>
+        <p class="lede">Use Google for real accounts, or choose a seeded test user for local development.</p>
+    </div>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="notice error">@errorMessage</div>
+}
+
+<EditForm Model="form" OnValidSubmit="SignInAsync" FormName="signin">
+    <div class="auth-panel">
+        <a class="button primary auth-button" href="auth/google?returnUrl=/dashboard">Sign in with Google</a>
+        <div class="auth-divider">Test users</div>
+        <label>
+            Test user email
+            <InputText class="form-control" @bind-Value="form.Email" placeholder="owner@clearwater.example" />
+        </label>
+        <div class="form-actions">
+            <button class="button" type="submit">Skip Google Auth</button>
+            <a class="button" href="register">Register</a>
+        </div>
+        <p class="form-note">Seeded test users can skip Gmail authentication. Demo accounts include owner@clearwater.example, morgan@clearwater.example, and homeowner@example.com.</p>
+    </div>
+</EditForm>
+
+@code {
+    private readonly SignInForm form = new();
+    private string? errorMessage;
+
+    private async Task SignInAsync()
+    {
+        if (string.IsNullOrWhiteSpace(form.Email))
+        {
+            errorMessage = "Enter a seeded test user email or use Google sign-in.";
+            return;
+        }
+
+        var email = Uri.EscapeDataString(form.Email);
+        Navigation.NavigateTo($"auth/test-signin?email={email}&returnUrl=/dashboard", forceLoad: true);
+        await Task.CompletedTask;
+    }
+
+    private sealed class SignInForm
+    {
+        public string Email { get; set; } = "";
+    }
+}

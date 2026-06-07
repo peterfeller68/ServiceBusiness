@@ -1,0 +1,200 @@
+@page "/register"
+@rendermode InteractiveServer
+@using ServiceBusiness.Application
+@using ServiceBusiness.Domain
+@inject OnboardingService OnboardingService
+@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+
+<PageTitle>Register</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">Registration</p>
+        <h1>Create your account</h1>
+        <p class="lede">Choose your account type, continue with a Gmail address, and complete the details for your role.</p>
+    </div>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="notice error">@errorMessage</div>
+}
+
+@if (result is not null)
+{
+    <div class="notice success">
+        <strong>@result.Message</strong>
+        @if (result.Company is not null)
+        {
+            <p>@result.Company.Name &middot; @result.Membership?.Role &middot; @result.Membership?.Status</p>
+        }
+        @if (result.RequiresApproval)
+        {
+            <a class="button" href="signin">Check Sign-In Status</a>
+        }
+        else
+        {
+            <a class="button primary" href="dashboard">Open Dashboard</a>
+        }
+    </div>
+}
+else
+{
+    <EditForm Model="form" OnValidSubmit="SubmitAsync" FormName="register">
+        <DataAnnotationsValidator />
+        <div class="onboarding-grid">
+            <section class="form-panel">
+                <h2>Account type</h2>
+                <InputRadioGroup @bind-Value="form.AccountType">
+                    <div class="choice-grid">
+                        <label class="choice-card">
+                            <InputRadio Value="RegistrationAccountType.BusinessOwner" />
+                            <span>
+                                <strong>Business owner</strong>
+                                <small>Create a company profile and start setup.</small>
+                            </span>
+                        </label>
+                        <label class="choice-card">
+                            <InputRadio Value="RegistrationAccountType.BusinessUser" />
+                            <span>
+                                <strong>Business user</strong>
+                                <small>Request access to an existing business.</small>
+                            </span>
+                        </label>
+                        <label class="choice-card">
+                            <InputRadio Value="RegistrationAccountType.BusinessClient" />
+                            <span>
+                                <strong>Business client</strong>
+                                <small>Request homeowner portal access.</small>
+                            </span>
+                        </label>
+                    </div>
+                </InputRadioGroup>
+            </section>
+
+            <section class="form-panel">
+                <h2>Gmail account</h2>
+                <label>
+                    Gmail email
+                    <InputText class="form-control" @bind-Value="form.Email" placeholder="name@gmail.com" />
+                </label>
+                <label>
+                    Display name
+                    <InputText class="form-control" @bind-Value="form.DisplayName" />
+                </label>
+                <label>
+                    Phone
+                    <InputText class="form-control" @bind-Value="form.Phone" />
+                </label>
+            </section>
+
+            @if (form.AccountType == RegistrationAccountType.BusinessOwner)
+            {
+                <section class="form-panel wide-panel">
+                    <h2>Business profile</h2>
+                    <div class="form-grid">
+                        <label>
+                            Business name
+                            <InputText class="form-control" @bind-Value="form.BusinessName" />
+                        </label>
+                        <label>
+                            Business email
+                            <InputText class="form-control" @bind-Value="form.BusinessEmail" />
+                        </label>
+                        <label>
+                            Business phone
+                            <InputText class="form-control" @bind-Value="form.BusinessPhone" />
+                        </label>
+                        <label>
+                            Service area
+                            <InputText class="form-control" @bind-Value="form.ServiceArea" />
+                        </label>
+                    </div>
+                    <label>
+                        Initial services
+                        <InputTextArea class="form-control" @bind-Value="form.InitialServicesText" placeholder="Standard Pool Cleaning&#10;Chemical Balance" />
+                    </label>
+                </section>
+            }
+            else
+            {
+                <section class="form-panel wide-panel">
+                    <h2>Business association</h2>
+                    <label>
+                        Business
+                        <InputSelect class="form-control" @bind-Value="form.CompanyId">
+                            <option value="">Choose a business</option>
+                            @foreach (var company in companies)
+                            {
+                                <option value="@company.Id">@company.Name</option>
+                            }
+                        </InputSelect>
+                    </label>
+                    <p class="form-note">Access stays pending until the business owner approves the request.</p>
+                </section>
+            }
+        </div>
+
+        <div class="form-actions">
+            <button class="button primary" type="submit">Continue with Gmail</button>
+            <a class="button" href="">Cancel</a>
+        </div>
+    </EditForm>
+}
+
+@code {
+    private readonly RegisterForm form = new();
+    private IReadOnlyList<Company> companies = [];
+    private RegistrationResult? result;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        companies = await OnboardingService.GetAvailableCompaniesAsync();
+    }
+
+    private async Task SubmitAsync()
+    {
+        errorMessage = null;
+
+        try
+        {
+            result = await OnboardingService.RegisterAsync(new RegistrationSubmission(
+                form.AccountType,
+                form.Email,
+                form.DisplayName,
+                form.Phone,
+                form.CompanyId,
+                form.BusinessName,
+                form.BusinessPhone,
+                form.BusinessEmail,
+                form.ServiceArea,
+                form.InitialServices));
+
+            DemoUser.UserId = result.User.Id;
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private sealed class RegisterForm
+    {
+        public RegistrationAccountType AccountType { get; set; }
+        public string Email { get; set; } = "";
+        public string DisplayName { get; set; } = "";
+        public string Phone { get; set; } = "";
+        public string? CompanyId { get; set; }
+        public string? BusinessName { get; set; }
+        public string? BusinessEmail { get; set; }
+        public string? BusinessPhone { get; set; }
+        public string? ServiceArea { get; set; }
+        public string InitialServicesText { get; set; } = "Standard Pool Cleaning\r\nChemical Balance";
+
+        public IReadOnlyList<string> InitialServices =>
+            InitialServicesText
+                .Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToList();
+    }
+}

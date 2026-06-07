@@ -1,0 +1,66 @@
+@page "/company"
+@rendermode InteractiveServer
+@using ServiceBusiness.Domain
+@inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
+@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+
+<PageTitle>Company Dashboard</PageTitle>
+
+@if (dashboard is null)
+{
+    <p>Loading dashboard...</p>
+}
+else
+{
+    <section class="page-header">
+        <div>
+            <p class="eyebrow">Company Admin</p>
+            <h1>@dashboard.Company.Name</h1>
+            <p class="lede">Today's schedule, assignments, client work, and operating health.</p>
+        </div>
+        <div class="page-actions">
+            <a class="button" href="approvals">Review Approvals</a>
+            <a class="button primary" href="schedule">Open Schedule</a>
+        </div>
+    </section>
+
+    <div class="metric-grid">
+        <div class="metric">
+            <span>Scheduled Today</span>
+            <strong>@dashboard.TodayScheduled</strong>
+        </div>
+        <div class="metric">
+            <span>Completed</span>
+            <strong>@dashboard.TodayCompleted</strong>
+        </div>
+        <div class="metric">
+            <span>Unassigned</span>
+            <strong>@dashboard.UnassignedVisits</strong>
+        </div>
+        <div class="metric">
+            <span>Active Clients</span>
+            <strong>@dashboard.ActiveClients</strong>
+        </div>
+    </div>
+
+    <section class="section split">
+        <div>
+            <h2>Setup</h2>
+            <p>Configure clients, services, materials, and visits from the navigation. This MVP is seeded with demo data for the Clearwater tenant.</p>
+        </div>
+        <div class="callout">
+            <strong>@dashboard.PendingEmployeeRequests pending employee request</strong>
+            <p>Review pending business user and client portal requests before they can access company features.</p>
+        </div>
+    </section>
+}
+
+@code {
+    private CompanyDashboard? dashboard;
+
+    protected override async Task OnInitializedAsync()
+    {
+        DemoUser.UserId = "admin-1";
+        dashboard = await CompanyAdminService.GetDashboardAsync("clearwater", DateOnly.FromDateTime(DateTime.Today));
+    }
+}

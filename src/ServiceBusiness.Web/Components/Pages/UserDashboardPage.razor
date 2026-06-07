@@ -1,0 +1,117 @@
+@page "/dashboard"
+@rendermode InteractiveServer
+@using ServiceBusiness.Application
+@using ServiceBusiness.Domain
+@inject OnboardingService OnboardingService
+@inject ICurrentUserContext CurrentUser
+
+<PageTitle>Dashboard</PageTitle>
+
+@if (overview is null)
+{
+    <p>Loading account...</p>
+}
+else
+{
+    <section class="page-header">
+        <div>
+            <p class="eyebrow">Account Dashboard</p>
+            <h1>@overview.User.DisplayName</h1>
+            <p class="lede">@overview.User.Email</p>
+            @if (overview.AuthenticationSkipped)
+            {
+                <p class="form-note">Test user authentication skipped.</p>
+            }
+        </div>
+        <a class="button" href="signin">Switch account</a>
+    </section>
+
+    <div class="metric-grid">
+        <div class="metric">
+            <span>Companies</span>
+            <strong>@overview.Companies.Count</strong>
+        </div>
+        <div class="metric">
+            <span>Active access</span>
+            <strong>@overview.Companies.Count(c => c.Status == MembershipStatus.Active)</strong>
+        </div>
+        <div class="metric">
+            <span>Pending approval</span>
+            <strong>@overview.Companies.Count(c => c.Status == MembershipStatus.Pending)</strong>
+        </div>
+    </div>
+
+    <section class="section split">
+        <div>
+            <h2>Workspace access</h2>
+            <div class="data-list">
+                @foreach (var access in overview.Companies)
+                {
+                    <article class="row-card">
+                        <div>
+                            <strong>@access.Company.Name</strong>
+                            <p>@GetRoleDescription(access.Role)</p>
+                            @if (access.Status != MembershipStatus.Active)
+                            {
+                                <small>Access is @access.Status.ToString().ToLowerInvariant(); a business owner must approve it before features unlock.</small>
+                            }
+                        </div>
+                        <div class="row-actions">
+                            <span class="status-pill">@access.Status</span>
+                            @if (access.Status == MembershipStatus.Active)
+                            {
+                                @foreach (var link in GetFeatureLinks(access.Role))
+                                {
+                                    <a class="button" href="@link.Href">@link.Label</a>
+                                }
+                            }
+                        </div>
+                    </article>
+                }
+            </div>
+        </div>
+
+        <aside class="callout">
+            <strong>Account settings</strong>
+            <p>Role, approval status, and test-user sign-in behavior are stored with the account model for this onboarding slice.</p>
+        </aside>
+    </section>
+}
+
+@code {
+    private UserAccessOverview? overview;
+
+    protected override async Task OnInitializedAsync()
+    {
+        overview = await OnboardingService.GetAccessOverviewAsync(CurrentUser.UserId);
+    }
+
+    private static string GetRoleDescription(CompanyRole role) => role switch
+    {
+        CompanyRole.CompanyAdmin => "Business owner or office admin",
+        CompanyRole.CompanyUser => "Business user field workspace",
+        CompanyRole.CompanyClientUser => "Business client service portal",
+        _ => role.ToString()
+    };
+
+    private static IReadOnlyList<FeatureLink> GetFeatureLinks(CompanyRole role) => role switch
+    {
+        CompanyRole.CompanyAdmin =>
+        [
+            new("Company Dashboard", "company"),
+            new("Clients", "clients"),
+            new("Schedule", "schedule")
+        ],
+        CompanyRole.CompanyUser =>
+        [
+            new("Field Today", "field")
+        ],
+        CompanyRole.CompanyClientUser =>
+        [
+            new("Client Portal", "client-portal")
+        ],
+        _ => []
+    };
+
+    private sealed record FeatureLink(string Label, string Href);
+}

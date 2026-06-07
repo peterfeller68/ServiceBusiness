@@ -1,0 +1,49 @@
+@page "/client-portal"
+@rendermode InteractiveServer
+@using ServiceBusiness.Domain
+@inject ServiceBusiness.Application.ClientPortalService ClientPortalService
+@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+
+<PageTitle>Client Portal</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">Company Client User</p>
+        <h1>Service history</h1>
+    </div>
+</section>
+
+@if (history is null)
+{
+    <p>Loading service history...</p>
+}
+else if (history.Count == 0)
+{
+    <div class="notice">No completed services are visible yet.</div>
+}
+else
+{
+    <div class="data-list">
+        @foreach (var item in history)
+        {
+            <article class="row-card">
+                <div>
+                    <strong>@item.Visit.CompletedUtc?.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</strong>
+                    <p>@item.Client.DisplayName · Completed by @item.AssignedUser?.DisplayName</p>
+                    <small>@item.Completion?.CustomerNotes</small>
+                </div>
+                <span class="status-pill">@item.Visit.Status</span>
+            </article>
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<ServiceHistoryItem>? history;
+
+    protected override async Task OnInitializedAsync()
+    {
+        DemoUser.UserId = "client-user-1";
+        history = await ClientPortalService.GetServiceHistoryAsync("clearwater", "client-1");
+    }
+}

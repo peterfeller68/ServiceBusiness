@@ -1,0 +1,1189 @@
+# UI Specifications
+
+## 1. Global UI Requirements
+
+The application must be responsive and usable on desktop, tablet, and mobile browsers. Field-user and client-user workflows should be optimized for mobile first.
+
+Global layout:
+
+- Authenticated shell with role-aware navigation.
+- Company selector when a user belongs to more than one company.
+- Persona-specific dashboard as the default landing page after sign-in.
+- Clear pending approval and incomplete setup indicators.
+- Consistent form validation.
+- Toast or inline feedback for save, error, and background-job states.
+
+Global screens:
+
+- Sign In
+- First-Time Profile Setup
+- Company Selection
+- Access Pending
+- Unauthorized
+- Account Profile
+
+## 2. Sign In Screen
+
+Persona:
+
+- All users.
+
+Purpose:
+
+- Authenticate using Google.
+
+UI elements:
+
+- Product name.
+- Sign in with Google button.
+- Test-user email field for seeded development accounts.
+- Skip Google Auth button for test users only.
+- Short support/contact link.
+
+Behavior:
+
+- Redirect to Google Authentication.
+- On successful authentication, create or update user profile.
+- Route user to persona dashboard or onboarding flow.
+- Test users marked `IsTestUser` may bypass Google authentication and route through the test sign-in endpoint.
+
+## 3. First-Time Profile Setup Screen
+
+Persona:
+
+- All users.
+
+Purpose:
+
+- Capture missing application profile details.
+
+Fields:
+
+- Display name.
+- Phone.
+- Preferred contact email, defaulted from Google.
+
+Actions:
+
+- Save profile.
+- Continue.
+
+Current implementation:
+
+- `/profile` provides the current account profile form after sign-in.
+- The user can edit display name, notification email, and phone.
+- Login email is shown as read-only.
+- Logout is available from the profile screen and top-right shell profile area.
+
+## 4. System Administrator Screens
+
+### 4.1 System Admin Dashboard
+
+Purpose:
+
+- Provide platform overview.
+
+Content:
+
+- Active companies count.
+- Total users count.
+- System admins count.
+- Disabled users count.
+- Pending access count.
+- Pending company setup count.
+- Suspended companies count.
+- Active user count.
+- Email log count.
+- Recent sent-email log entries.
+- Application health and telemetry summary when Application Insights data is surfaced in a future dashboard slice.
+- Recent platform audit events.
+- Stripe/payment health summary.
+
+Actions:
+
+- Create company.
+- Manage company types.
+- View companies.
+- Promote registered users to System Admin.
+- Remove System Admin privileges when safe.
+- Enable or disable users.
+- Edit built-in role display names, descriptions, owner-approval requirements, and permissions.
+- Review sent email delivery status.
+
+### 4.2 Company Types List
+
+Purpose:
+
+- Manage available tenant business categories.
+
+Columns:
+
+- Name.
+- Description.
+- Active status.
+- Sort order.
+- Last updated.
+
+Actions:
+
+- Add company type.
+- Edit company type.
+- Archive company type.
+- Reactivate company type.
+
+### 4.3 Company Type Form
+
+Purpose:
+
+- Create or edit company type.
+
+Fields:
+
+- Name.
+- Description.
+- Active.
+- Sort order.
+
+Actions:
+
+- Save.
+- Cancel.
+
+Validation:
+
+- Name is required.
+- Name must be unique among active company types.
+
+### 4.4 Companies List
+
+Purpose:
+
+- View and manage SaaS customer companies.
+
+Filters:
+
+- Company type.
+- Status.
+- Search by name or email.
+
+Columns:
+
+- Company name.
+- Company type.
+- Primary email.
+- Status.
+- Stripe status.
+- Created date.
+
+Actions:
+
+- Add company.
+- View company.
+- Edit company.
+- Suspend.
+- Reactivate.
+
+### 4.5 Company Detail
+
+Purpose:
+
+- View tenant summary from the platform perspective.
+
+Sections:
+
+- Company profile.
+- Company admins.
+- User count.
+- Client count.
+- Billing status.
+- Recent audit events.
+
+Actions:
+
+- Edit company.
+- Assign initial admin.
+- Suspend or reactivate.
+
+### 4.6 Create/Edit Company
+
+Purpose:
+
+- Create or update a SaaS customer company.
+
+Fields:
+
+- Company name.
+- Legal name.
+- Company type.
+- Business email.
+- Business phone.
+- Website.
+- Address.
+- Time zone.
+- Status.
+
+Actions:
+
+- Save.
+- Cancel.
+
+### 4.7 Assign Company Admin
+
+Purpose:
+
+- Assign or invite the first Company Admin.
+
+Fields:
+
+- Email.
+- Display name.
+- Invitation message.
+
+Actions:
+
+- Send invite.
+- Assign existing user.
+
+## 5. Company Admin Screens
+
+### 5.1 Company Admin Dashboard
+
+Purpose:
+
+- Give the business owner a daily operating view.
+
+Content:
+
+- Today's scheduled visits.
+- Visits completed today.
+- Visits needing assignment.
+- Pending employee requests.
+- Pending client access requests.
+- Open client messages.
+- Recent payments.
+
+Actions:
+
+- Add client.
+- Create schedule.
+- Assign visits.
+- Open reports.
+
+### 5.2 Company Profile and Settings
+
+Purpose:
+
+- Maintain company configuration.
+
+Sections:
+
+- Business profile.
+- Logo.
+- Contact information.
+- Time zone.
+- Service area.
+- Email notification settings.
+- Service completion email template.
+- Self-service settings.
+
+Actions:
+
+- Save.
+- Upload logo.
+- Send test email.
+
+### 5.3 Company Users List
+
+Purpose:
+
+- Manage employees and admins.
+
+Filters:
+
+- Role.
+- Status.
+- Search by name or email.
+
+Columns:
+
+- Name.
+- Email.
+- Role.
+- Status.
+- Last login.
+
+Actions:
+
+- Invite user.
+- Edit role.
+- Deactivate.
+- Reactivate.
+- Remove.
+
+### 5.4 Invite Company User
+
+Purpose:
+
+- Invite an employee or admin.
+
+Fields:
+
+- Email.
+- Role.
+- Invitation message.
+
+Actions:
+
+- Send invite.
+- Cancel.
+
+### 5.5 Pending Employee Requests
+
+Purpose:
+
+- Approve or reject employee requests to join the company.
+
+Columns:
+
+- Name.
+- Email.
+- Requested date.
+- Requested role if applicable.
+
+Actions:
+
+- Approve as Company User.
+- Approve as Company Admin.
+- Reject.
+
+### 5.6 Clients List
+
+Purpose:
+
+- Manage serviced homeowners/properties.
+
+Filters:
+
+- Status.
+- Client type.
+- Search by name, email, phone, or address.
+
+Columns:
+
+- Client name.
+- Service address.
+- Client type.
+- Assigned default user if implemented.
+- Status.
+- Next scheduled visit.
+
+Actions:
+
+- Add client.
+- View client.
+- Edit client.
+- Deactivate.
+
+### 5.7 Client Detail
+
+Purpose:
+
+- View and manage one company client.
+
+Sections:
+
+- Contact information.
+- Billing information.
+- Service address.
+- Property and access notes.
+- Client users.
+- Upcoming visits.
+- Service history.
+- Billing history.
+- Messages.
+
+Actions:
+
+- Edit client.
+- Add schedule.
+- Invite client user.
+- Create message.
+- View report filtered to client.
+
+### 5.8 Create/Edit Client
+
+Purpose:
+
+- Create or update a serviced client/property.
+
+Fields:
+
+- Client display name.
+- Primary contact name.
+- Email.
+- Phone.
+- Billing address.
+- Service address.
+- Property notes.
+- Access notes.
+- Preferred service days.
+- Client type.
+- Rate override.
+- Notification preferences.
+- Active status.
+
+Actions:
+
+- Save.
+- Cancel.
+- Geocode address if maps are enabled.
+
+### 5.9 Pending Client User Requests
+
+Purpose:
+
+- Approve or reject homeowner access requests.
+
+Columns:
+
+- User name.
+- Email.
+- Requested client.
+- Requested date.
+- Match confidence if self-service matching is implemented.
+
+Actions:
+
+- Approve.
+- Link to different client.
+- Reject.
+
+### 5.10 Client Types List
+
+Purpose:
+
+- Manage reimbursement models and default rates.
+
+Columns:
+
+- Name.
+- Billing frequency.
+- Default rate.
+- Active status.
+
+Actions:
+
+- Add client type.
+- Edit.
+- Archive.
+- Reactivate.
+
+### 5.11 Client Type Form
+
+Fields:
+
+- Name.
+- Description.
+- Billing frequency.
+- Default rate.
+- Currency.
+- Active.
+
+Actions:
+
+- Save.
+- Cancel.
+
+Validation:
+
+- Name is required.
+- Billing frequency is required.
+- Default rate must be zero or greater.
+
+### 5.12 Services List
+
+Purpose:
+
+- Manage service catalog.
+
+Columns:
+
+- Name.
+- Default duration.
+- Default price.
+- Taxable.
+- Active.
+
+Actions:
+
+- Add service.
+- Edit.
+- Archive.
+- Reactivate.
+
+### 5.13 Service Form
+
+Fields:
+
+- Name.
+- Description.
+- Default duration.
+- Default price.
+- Taxable.
+- Active.
+- Sort order.
+
+Actions:
+
+- Save.
+- Cancel.
+
+### 5.14 Materials List
+
+Purpose:
+
+- Manage material catalog.
+
+Columns:
+
+- Name.
+- Unit of measure.
+- Default unit cost.
+- Default billable price.
+- Taxable.
+- Active.
+
+Actions:
+
+- Add material.
+- Edit.
+- Archive.
+- Reactivate.
+
+### 5.15 Material Form
+
+Fields:
+
+- Name.
+- Description.
+- Unit of measure.
+- Default unit cost.
+- Default billable unit price.
+- Taxable.
+- Active.
+- Sort order.
+
+Actions:
+
+- Save.
+- Cancel.
+
+### 5.16 Schedule Calendar
+
+Purpose:
+
+- View and manage company service schedule.
+
+Views:
+
+- Day.
+- Week.
+- Month.
+- List.
+
+Filters:
+
+- Assigned user.
+- Client.
+- Visit status.
+
+Content:
+
+- Scheduled visits.
+- Assigned users.
+- Status indicators.
+
+Actions:
+
+- Create one-time visit.
+- Create recurring schedule.
+- Open visit.
+- Reassign visit.
+- Reschedule visit.
+- Cancel visit.
+
+### 5.17 Create/Edit Visit
+
+Purpose:
+
+- Create or update one scheduled visit.
+
+Fields:
+
+- Client.
+- Scheduled date.
+- Service window start.
+- Service window end.
+- Assigned user.
+- Planned services.
+- Notes.
+- Status.
+
+Actions:
+
+- Save.
+- Cancel.
+
+### 5.18 Create/Edit Recurring Schedule
+
+Purpose:
+
+- Configure recurring visits.
+
+Fields:
+
+- Client.
+- Assigned user.
+- Start date.
+- End date.
+- Recurrence type.
+- Interval.
+- Days of week.
+- Day of month.
+- Service window.
+- Planned services.
+- Notes.
+
+Actions:
+
+- Save.
+- Generate upcoming visits.
+- Cancel.
+
+### 5.19 Assignment Board
+
+Purpose:
+
+- Assign scheduled client visits to company users.
+
+Layout:
+
+- Date picker.
+- Unassigned visits list.
+- User columns or grouped lists.
+- Visit cards with client name, address, window, and status.
+
+Actions:
+
+- Assign to user.
+- Reassign.
+- Clear assignment.
+- Open visit detail.
+
+### 5.20 Visit Detail
+
+Purpose:
+
+- Review scheduled or completed visit.
+
+Sections:
+
+- Client.
+- Address.
+- Assigned user.
+- Schedule.
+- Status.
+- Services planned.
+- Services performed.
+- Materials used.
+- Notes.
+- Completion timestamps.
+- Email notification status.
+
+Actions:
+
+- Edit visit.
+- Reassign.
+- Cancel.
+- Resend completion email.
+
+### 5.21 Reports
+
+Purpose:
+
+- Generate operational and billing reports.
+
+Report types:
+
+- Completed visits.
+- Scheduled visits.
+- Revenue summary.
+- Materials usage.
+- User productivity.
+- Client service history.
+- Billing and payment summary.
+
+Filters:
+
+- Date range preset.
+- Custom date range.
+- User.
+- Client.
+- Service.
+- Material.
+- Visit status.
+
+Actions:
+
+- Run report.
+- Export CSV.
+
+### 5.22 Billing Dashboard
+
+Purpose:
+
+- View Stripe and client billing status.
+
+Content:
+
+- Stripe connection status.
+- Recent invoices.
+- Recent payments.
+- Failed payments.
+- Clients missing billing setup.
+
+Actions:
+
+- Connect Stripe.
+- Open Stripe dashboard link.
+- View invoice.
+- Send payment link.
+
+### 5.23 Messages Inbox
+
+Purpose:
+
+- Manage homeowner messages.
+
+Filters:
+
+- Open.
+- Pending.
+- Closed.
+- Client.
+
+Columns:
+
+- Client.
+- Subject.
+- Last message.
+- Status.
+- Last updated.
+
+Actions:
+
+- Open thread.
+- Reply.
+- Close thread.
+
+## 6. Standard Company User Screens
+
+### 6.1 Field User Dashboard
+
+Purpose:
+
+- Show field user work for the selected day.
+
+Mobile-first content:
+
+- Date selector.
+- Assigned visit count.
+- Completed count.
+- Next visit card.
+- Route action.
+
+Actions:
+
+- View route.
+- Open next visit.
+- Change date.
+
+### 6.2 My Assigned Visits
+
+Purpose:
+
+- List all assigned visits for a date.
+
+Content:
+
+- Client name.
+- Service address.
+- Scheduled window.
+- Visit status.
+- Planned services.
+
+Actions:
+
+- Open visit.
+- Start visit.
+- Open navigation.
+
+### 6.3 Route View
+
+Purpose:
+
+- Help the field user service clients efficiently.
+
+Content:
+
+- Ordered stop list.
+- Map if maps are enabled.
+- Distance and duration estimate if available.
+
+Actions:
+
+- Optimize route.
+- Manually reorder.
+- Open navigation for stop.
+- Open visit.
+
+### 6.4 Field Visit Detail
+
+Purpose:
+
+- Show visit information needed on site.
+
+Content:
+
+- Client name.
+- Service address.
+- Contact phone.
+- Access notes.
+- Property notes.
+- Planned services.
+- Prior customer-visible notes if allowed.
+
+Actions:
+
+- Start visit.
+- Mark arrived.
+- Complete visit.
+- Open navigation.
+
+### 6.5 Complete Visit
+
+Purpose:
+
+- Record work performed.
+
+Fields:
+
+- Services performed dropdown or checklist.
+- Materials used dropdown with quantity.
+- Completion notes.
+- Customer-visible note toggle.
+- Internal note field if supported separately.
+
+Actions:
+
+- Save draft.
+- Complete visit.
+- Cancel.
+
+Validation:
+
+- At least one service or note should be required to complete a visit.
+- Material quantity must be greater than zero.
+
+### 6.6 Visit Completion Confirmation
+
+Purpose:
+
+- Confirm successful completion.
+
+Content:
+
+- Completion timestamp.
+- Email notification status.
+- Next assigned visit.
+
+Actions:
+
+- Open next visit.
+- Return to route.
+- Return to assigned visits.
+
+### 6.7 Join Company Request
+
+Purpose:
+
+- Let an employee request access to a company.
+
+Fields:
+
+- Company invite code or company search.
+- Message to admin.
+
+Actions:
+
+- Submit request.
+- Cancel.
+
+## 7. Company Client User Screens
+
+### 7.1 Client Dashboard
+
+Purpose:
+
+- Show homeowner service overview.
+
+Content:
+
+- Upcoming service date.
+- Recent completed services.
+- Outstanding invoice or payment status.
+- Open messages.
+
+Actions:
+
+- View service history.
+- View bills and payments.
+- Message company.
+
+### 7.2 My Services
+
+Purpose:
+
+- Display service history.
+
+Filters:
+
+- Date range.
+- Service type.
+
+Content:
+
+- Service date.
+- Services performed.
+- Materials shown only if company allows customer visibility.
+- Customer-visible notes.
+
+Actions:
+
+- Open service detail.
+
+### 7.3 Service Detail
+
+Purpose:
+
+- Show details from a completed visit.
+
+Content:
+
+- Date completed.
+- Services performed.
+- Customer-visible materials.
+- Customer-visible notes.
+- Company contact option.
+
+Actions:
+
+- Message company about this service.
+
+### 7.4 Bills and Payments
+
+Purpose:
+
+- Show billing history.
+
+Content:
+
+- Invoice list.
+- Payment list.
+- Status.
+- Amounts.
+- Due dates.
+
+Actions:
+
+- Open invoice.
+- Pay invoice through Stripe-hosted link.
+
+### 7.5 Message Threads
+
+Purpose:
+
+- View homeowner-company conversations.
+
+Content:
+
+- Thread subject.
+- Last message preview.
+- Status.
+- Last updated.
+
+Actions:
+
+- Open thread.
+- Create new message.
+
+### 7.6 Message Thread Detail
+
+Purpose:
+
+- Read and send messages.
+
+Content:
+
+- Message history.
+- Sender.
+- Timestamp.
+
+Fields:
+
+- Reply text.
+
+Actions:
+
+- Send reply.
+
+### 7.7 Request Client Access
+
+Purpose:
+
+- Let a homeowner request access to their service account.
+
+Fields:
+
+- Company invite code or company search.
+- Service address.
+- Contact email.
+- Contact phone.
+- Message to company.
+
+Actions:
+
+- Submit request.
+- Cancel.
+
+### 7.8 Client Profile Preferences
+
+Purpose:
+
+- Let homeowner maintain communication preferences.
+
+Fields:
+
+- Phone.
+- Preferred email.
+- Service completion email enabled.
+- Billing email enabled.
+
+Actions:
+
+- Save.
+
+## 8. Navigation by Persona
+
+### 8.1 System Admin Navigation
+
+Items:
+
+- Dashboard
+- Companies
+- Company Types
+- Audit
+- Settings
+
+### 8.2 Company Admin Navigation
+
+Items:
+
+- Dashboard
+- Schedule
+- Assignment
+- Clients
+- Users
+- Services
+- Materials
+- Client Types
+- Reports
+- Billing
+- Messages
+- Settings
+
+### 8.3 Standard Company User Navigation
+
+Items:
+
+- Today
+- Route
+- Visits
+- Profile
+
+### 8.4 Company Client User Navigation
+
+Items:
+
+- Home
+- Services
+- Bills
+- Messages
+- Profile
+
+## 9. Responsive Design Requirements
+
+Desktop:
+
+- Use left navigation or top navigation with clear active state.
+- Tables may show multiple columns.
+- Admin schedule can use calendar and assignment board views.
+
+Mobile:
+
+- Use bottom navigation or compact menu for field and client users.
+- Replace wide tables with cards or stacked rows.
+- Keep visit actions reachable with large touch targets.
+- Route and completion screens should require minimal typing.
+- Avoid dense admin-only screens as primary mobile workflows, but they must remain usable.
+
+## 10. Empty, Loading, and Error States
+
+Every list screen must define:
+
+- Loading state.
+- Empty state.
+- Error state.
+- No-results state when filters return nothing.
+
+Examples:
+
+- No clients have been created.
+- No visits assigned for this date.
+- No reports match the selected filters.
+- This account is waiting for company admin approval.
+
+## 11. Permission-Based UI Rules
+
+- Hide System Admin navigation from non-System Admins.
+- Hide company configuration from Standard Company Users.
+- Hide internal notes from Company Client Users.
+- Disable visit completion for users not assigned to the visit unless the user is a Company Admin.
+- Prevent client users from seeing other client accounts.
+- Show pending approval status when a membership is not active.
+
+Current implementation:
+
+- The navigation menu filters System Admin, Company Admin, Field, and Client Portal links from the current user's active memberships and system-admin flag.
+
+## 12. Implementation Prompt Guidance
+
+When feeding this UI spec into Codex, implement in vertical slices:
+
+1. Authentication shell and role-aware navigation.
+2. System Admin company type and company management.
+3. Company Admin company setup, users, clients, services, and materials.
+4. Scheduling and assignment.
+5. Field-user daily visits and visit completion.
+6. Client-user service history and messages.
+7. Billing and reports.

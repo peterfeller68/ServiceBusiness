@@ -1,0 +1,127 @@
+@page "/field"
+@rendermode InteractiveServer
+@using ServiceBusiness.Domain
+@inject ServiceBusiness.Application.FieldWorkService FieldWorkService
+@inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
+@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+
+<PageTitle>Field Work</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">Standard Company User</p>
+        <h1>Today's route</h1>
+        <p class="lede">Assigned visits for @selectedDate.ToLongDateString().</p>
+    </div>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="notice">@message</div>
+}
+
+@if (items is null || services is null || materials is null)
+{
+    <p>Loading route...</p>
+}
+else
+{
+    <div class="route-list">
+        @foreach (var item in items)
+        {
+            <article class="visit-card">
+                <div class="visit-order">@item.Visit.RouteOrder</div>
+                <div class="visit-body">
+                    <div class="visit-heading">
+                        <strong>@item.Client.DisplayName</strong>
+                        <span class="status-pill">@item.Visit.Status</span>
+                    </div>
+                    <p>@item.Client.ServiceAddress</p>
+                    <small>@item.Client.AccessNotes</small>
+
+                    @if (item.Visit.Status != VisitStatus.Completed)
+                    {
+                        <div class="completion-panel">
+                            <label>
+                                Service
+                                <select @bind="selectedServiceId">
+                                    @foreach (var service in services)
+                                    {
+                                        <option value="@service.Id">@service.Name</option>
+                                    }
+                                </select>
+                            </label>
+                            <label>
+                                Material
+                                <select @bind="selectedMaterialId">
+                                    @foreach (var material in materials)
+                                    {
+                                        <option value="@material.Id">@material.Name</option>
+                                    }
+                                </select>
+                            </label>
+                            <label>
+                                Qty
+                                <input type="number" min="0" step="0.5" @bind="materialQuantity" />
+                            </label>
+                            <label class="wide">
+                                Customer notes
+                                <textarea @bind="customerNotes"></textarea>
+                            </label>
+                            <button class="button primary" @onclick="() => Complete(item.Visit.Id)">Complete Visit</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="completed-note">@item.Completion?.CustomerNotes</p>
+                    }
+                </div>
+            </article>
+        }
+    </div>
+}
+
+@code {
+    private DateOnly selectedDate = DateOnly.FromDateTime(DateTime.Today);
+    private IReadOnlyList<ServiceHistoryItem>? items;
+    private IReadOnlyList<ServiceOffering>? services;
+    private IReadOnlyList<Material>? materials;
+    private string? selectedServiceId;
+    private string? selectedMaterialId;
+    private decimal materialQuantity = 1;
+    private string customerNotes = "Service completed and property left secure.";
+    private string? message;
+
+    protected override async Task OnInitializedAsync()
+    {
+        DemoUser.UserId = "tech-1";
+        services = await CompanyAdminService.GetServicesAsync("clearwater");
+        materials = await CompanyAdminService.GetMaterialsAsync("clearwater");
+        selectedServiceId = services.FirstOrDefault()?.Id;
+        selectedMaterialId = materials.FirstOrDefault()?.Id;
+        await LoadAsync();
+    }
+
+    private async Task Complete(string visitId)
+    {
+        var materialUsage = selectedMaterialId is null || materialQuantity <= 0
+            ? []
+            : new List<MaterialUsage> { new(selectedMaterialId, materialQuantity) };
+
+        await FieldWorkService.CompleteVisitAsync(
+            "clearwater",
+            visitId,
+            selectedServiceId is null ? [] : [selectedServiceId],
+            materialUsage,
+            customerNotes,
+            string.Empty);
+
+        message = "Visit completed and service email queued.";
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        items = await FieldWorkService.GetAssignedVisitsAsync("clearwater", selectedDate);
+    }
+}

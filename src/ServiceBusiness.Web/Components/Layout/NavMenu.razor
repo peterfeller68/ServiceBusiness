@@ -1,0 +1,118 @@
+@using ServiceBusiness.Application
+@using ServiceBusiness.Domain
+@inject OnboardingService OnboardingService
+@inject ICurrentUserContext CurrentUser
+
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">RouteOps</a>
+    </div>
+</div>
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="nav flex-column">
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="dashboard">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Dashboard
+            </NavLink>
+        </div>
+
+        @if (HasRole(CompanyRole.CompanyAdmin))
+        {
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="company">
+                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Company
+                </NavLink>
+            </div>
+
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="approvals">
+                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Approvals
+                </NavLink>
+            </div>
+
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="clients">
+                    <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Clients
+                </NavLink>
+            </div>
+
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="catalog">
+                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Catalog
+                </NavLink>
+            </div>
+
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="schedule">
+                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Schedule
+                </NavLink>
+            </div>
+        }
+
+        @if (HasRole(CompanyRole.CompanyUser))
+        {
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="field">
+                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Field
+                </NavLink>
+            </div>
+        }
+
+        @if (HasRole(CompanyRole.CompanyClientUser))
+        {
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="client-portal">
+                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Client Portal
+                </NavLink>
+            </div>
+        }
+
+        @if (isSystemAdmin)
+        {
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="admin">
+                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> System Admin
+                </NavLink>
+            </div>
+        }
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="profile">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Profile
+            </NavLink>
+        </div>
+    </nav>
+</div>
+
+@code {
+    private IReadOnlyList<CompanyAccess> activeAccess = [];
+    private bool isSystemAdmin;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var overview = await OnboardingService.GetAccessOverviewAsync(CurrentUser.UserId);
+            isSystemAdmin = overview.User.IsSystemAdmin;
+            activeAccess = overview.Companies
+                .Where(c => c.Status == MembershipStatus.Active)
+                .ToList();
+        }
+        catch
+        {
+            activeAccess = [];
+            isSystemAdmin = false;
+        }
+    }
+
+    private bool HasRole(CompanyRole role) => activeAccess.Any(a => a.Role == role);
+}

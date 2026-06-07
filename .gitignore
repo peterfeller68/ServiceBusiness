@@ -1,0 +1,19 @@
+# Build output
+bin/
+obj/
+artifacts/
+TestResults/
+
+# User and IDE state
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Local secrets and machine-specific configuration
+Notes.txt
+src/ServiceBusiness.Web/appsettings.Development.json
+
+# OS files
+Thumbs.db
+.DS_Store
