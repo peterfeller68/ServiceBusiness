@@ -55,13 +55,13 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        DemoUser.UserId = "admin-1";
+        DemoUser.UserId = "clearwater-owner-1";
         await LoadAsync();
     }
 
     private async Task AssignVisit(string visitId)
     {
-        await CompanyAdminService.AssignVisitAsync("clearwater", visitId, "tech-1");
+        await CompanyAdminService.AssignVisitAsync("clearwater", visitId, "clearwater-user-1");
         message = "Visit assigned to Morgan Tech.";
         await LoadAsync();
     }

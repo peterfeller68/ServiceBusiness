@@ -3,27 +3,26 @@
 @using ServiceBusiness.Domain
 @inject ServiceBusiness.Application.PlatformAdminService PlatformAdminService
 @inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+@inject ServiceBusiness.Web.ApplicationModeService ApplicationMode
 
-<PageTitle>System Admin</PageTitle>
+<PageTitle>@appMode.ProductName System Admin</PageTitle>
+
+<section class="dashboard-hero" style="background-image: linear-gradient(90deg, rgba(13, 30, 26, .68), rgba(13, 30, 26, .22)), url('@appMode.HeroImageUrl');">
+    <div>
+        <p class="eyebrow">@appMode.ProductCategory</p>
+        <h1>@appMode.ProductName Platform</h1>
+    </div>
+</section>
 
 <section class="page-header">
     <div>
         <p class="eyebrow">System Administrator</p>
-        <h1>Platform operations</h1>
+        <h1>Platform dashboard</h1>
+        <p class="lede">Review platform summary metrics and open focused management pages.</p>
     </div>
 </section>
 
-@if (!string.IsNullOrWhiteSpace(message))
-{
-    <div class="notice success">@message</div>
-}
-
-@if (!string.IsNullOrWhiteSpace(errorMessage))
-{
-    <div class="notice error">@errorMessage</div>
-}
-
-@if (companyTypes is null || companies is null || emailLogs is null || userOverview is null || roleForms is null)
+@if (companyTypes is null || companies is null || emailLogs is null || userOverview is null)
 {
     <p>Loading platform data...</p>
 }
@@ -33,6 +32,10 @@ else
         <div class="metric">
             <span>Companies</span>
             <strong>@companies.Count</strong>
+        </div>
+        <div class="metric">
+            <span>Company Types</span>
+            <strong>@companyTypes.Count</strong>
         </div>
         <div class="metric">
             <span>Users</span>
@@ -57,158 +60,33 @@ else
     </div>
 
     <section class="section">
-        <h2>User Management</h2>
-        <div class="data-list">
-            @foreach (var row in userOverview.Users)
-            {
-                <article class="row-card">
-                    <div>
-                        <strong>@row.User.DisplayName</strong>
-                        <p>@row.User.Email</p>
-                        <small>
-                            @row.User.Status
-                            @if (row.User.IsSystemAdmin)
-                            {
-                                <span> &middot; System Admin</span>
-                            }
-                            @if (row.User.IsTestUser)
-                            {
-                                <span> &middot; Test User</span>
-                            }
-                        </small>
-                        @if (row.CompanyAccess.Count > 0)
-                        {
-                            <p>@string.Join(", ", row.CompanyAccess.Select(a => $"{a.Company.Name}: {a.Role} ({a.Status})"))</p>
-                        }
-                    </div>
-                    <div class="row-actions">
-                        <span class="status-pill">@row.User.Status</span>
-                        @if (row.User.IsSystemAdmin)
-                        {
-                            <button class="button" type="button" @onclick="() => SetSystemAdminAsync(row.User, false)">Remove Admin</button>
-                        }
-                        else
-                        {
-                            <button class="button" type="button" @onclick="() => SetSystemAdminAsync(row.User, true)">Make Admin</button>
-                        }
-
-                        @if (row.User.Status == UserStatus.Active)
-                        {
-                            <button class="button danger" type="button" @onclick="() => SetUserStatusAsync(row.User, UserStatus.Disabled)">Disable</button>
-                        }
-                        else
-                        {
-                            <button class="button primary" type="button" @onclick="() => SetUserStatusAsync(row.User, UserStatus.Active)">Enable</button>
-                        }
-                    </div>
-                </article>
-            }
+        <h2>Management Pages</h2>
+        <div class="quick-link-grid">
+            <a class="row-card quick-link" href="admin/companies">
+                <strong>Companies</strong>
+                <p>Manage tenant companies and company types.</p>
+            </a>
+            <a class="row-card quick-link" href="admin/users">
+                <strong>Users</strong>
+                <p>Manage registered users, status, and system-admin access.</p>
+            </a>
+            <a class="row-card quick-link" href="admin/roles">
+                <strong>Roles</strong>
+                <p>Edit built-in role metadata and permissions.</p>
+            </a>
+            <a class="row-card quick-link" href="admin/catalog/materials">
+                <strong>Materials</strong>
+                <p>Review material categories and material items.</p>
+            </a>
+            <a class="row-card quick-link" href="admin/catalog/services">
+                <strong>Services</strong>
+                <p>Review service categories and service items.</p>
+            </a>
+            <a class="row-card quick-link" href="admin/email-log">
+                <strong>Email Log</strong>
+                <p>Review email attempts, reroutes, failures, and suppression.</p>
+            </a>
         </div>
-    </section>
-
-    <section class="section">
-        <h2>Role Management</h2>
-        <div class="data-list">
-            @foreach (var role in roleForms)
-            {
-                <article class="form-panel">
-                    <EditForm Model="role" OnValidSubmit="() => SaveRoleAsync(role)" FormName="@($"role-{role.Role}")">
-                        <div class="role-form-grid">
-                            <label>
-                                Role
-                                <input class="form-control" value="@role.Role" disabled />
-                            </label>
-                            <label>
-                                Display name
-                                <InputText class="form-control" @bind-Value="role.DisplayName" />
-                            </label>
-                            <label class="wide">
-                                Description
-                                <InputTextArea class="form-control" @bind-Value="role.Description" />
-                            </label>
-                            <label class="wide">
-                                Permissions
-                                <InputTextArea class="form-control permission-list" @bind-Value="role.PermissionsText" />
-                            </label>
-                            <label class="check-row">
-                                <InputCheckbox @bind-Value="role.RequiresOwnerApproval" />
-                                <span>Requires owner approval</span>
-                            </label>
-                        </div>
-                        <div class="form-actions">
-                            <button class="button primary" type="submit">Save Role</button>
-                        </div>
-                    </EditForm>
-                </article>
-            }
-        </div>
-    </section>
-
-    <section class="section split">
-        <div>
-            <h2>Company Types</h2>
-            <div class="data-list">
-                @foreach (var type in companyTypes)
-                {
-                    <article class="row-card">
-                        <div>
-                            <strong>@type.Name</strong>
-                            <p>@type.Description</p>
-                        </div>
-                        <span class="status-pill">@((type.IsActive ? "Active" : "Inactive"))</span>
-                    </article>
-                }
-            </div>
-        </div>
-
-        <div>
-            <h2>Companies</h2>
-            <div class="data-list">
-                @foreach (var company in companies)
-                {
-                    <article class="row-card">
-                        <div>
-                            <strong>@company.Name</strong>
-                            <p>@company.BusinessEmail &middot; @company.BusinessPhone</p>
-                        </div>
-                        <span class="status-pill">@company.Status</span>
-                    </article>
-                }
-            </div>
-        </div>
-    </section>
-
-    <section class="section">
-        <h2>Sent Email Log</h2>
-        @if (emailLogs.Count == 0)
-        {
-            <div class="callout">
-                <strong>No emails logged yet</strong>
-                <p>Email notifications will appear here after visit completion or access approval decisions.</p>
-            </div>
-        }
-        else
-        {
-            <div class="data-list">
-                @foreach (var email in emailLogs.Take(10))
-                {
-                    <article class="row-card">
-                        <div>
-                            <strong>@email.Subject</strong>
-                            <p>@email.RecipientEmail &middot; @email.EmailType</p>
-                            @if (!string.Equals(email.OriginalRecipientEmail, email.RecipientEmail, StringComparison.OrdinalIgnoreCase))
-                            {
-                                <small>Original recipient: @email.OriginalRecipientEmail</small>
-                            }
-                        </div>
-                        <div class="row-actions">
-                            <span class="status-pill">@email.Status</span>
-                            <small>@email.CreatedUtc.LocalDateTime.ToString("g")</small>
-                        </div>
-                    </article>
-                }
-            </div>
-        }
     </section>
 }
 
@@ -217,99 +95,15 @@ else
     private IReadOnlyList<Company>? companies;
     private IReadOnlyList<EmailLogEntry>? emailLogs;
     private PlatformUserManagementOverview? userOverview;
-    private List<RoleForm>? roleForms;
-    private string? message;
-    private string? errorMessage;
+    private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
 
     protected override async Task OnInitializedAsync()
     {
         DemoUser.UserId = "sys-admin";
-        await LoadAsync();
-    }
-
-    private async Task SetSystemAdminAsync(AppUser user, bool isSystemAdmin)
-    {
-        await RunUserActionAsync(async () =>
-        {
-            await PlatformAdminService.SetSystemAdminAsync(user.Id, isSystemAdmin);
-            message = isSystemAdmin
-                ? $"{user.DisplayName} is now a system admin."
-                : $"{user.DisplayName} is no longer a system admin.";
-        });
-    }
-
-    private async Task SetUserStatusAsync(AppUser user, UserStatus status)
-    {
-        await RunUserActionAsync(async () =>
-        {
-            await PlatformAdminService.SetUserStatusAsync(user.Id, status);
-            message = $"{user.DisplayName} is now {status.ToString().ToLowerInvariant()}.";
-        });
-    }
-
-    private async Task RunUserActionAsync(Func<Task> action)
-    {
-        message = null;
-        errorMessage = null;
-
-        try
-        {
-            await action();
-            await LoadAsync();
-        }
-        catch (InvalidOperationException ex)
-        {
-            errorMessage = ex.Message;
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            errorMessage = ex.Message;
-        }
-    }
-
-    private async Task SaveRoleAsync(RoleForm role)
-    {
-        await RunUserActionAsync(async () =>
-        {
-            await PlatformAdminService.UpdateRoleDefinitionAsync(new RoleDefinition(
-                role.Role,
-                role.DisplayName,
-                role.Description,
-                role.RequiresOwnerApproval,
-                role.Permissions));
-            message = $"{role.DisplayName} role was saved.";
-        });
-    }
-
-    private async Task LoadAsync()
-    {
+        appMode = await ApplicationMode.GetCurrentAsync();
         companyTypes = await PlatformAdminService.GetCompanyTypesAsync();
         companies = await PlatformAdminService.GetCompaniesAsync();
         emailLogs = await PlatformAdminService.GetEmailLogsAsync();
         userOverview = await PlatformAdminService.GetUserManagementOverviewAsync();
-        roleForms = userOverview.Roles.Select(RoleForm.FromRole).ToList();
-    }
-
-    private sealed class RoleForm
-    {
-        public CompanyRole Role { get; init; }
-        public string DisplayName { get; set; } = "";
-        public string Description { get; set; } = "";
-        public bool RequiresOwnerApproval { get; set; }
-        public string PermissionsText { get; set; } = "";
-
-        public IReadOnlyList<string> Permissions =>
-            PermissionsText
-                .Split(["\r\n", "\n", ","], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .ToList();
-
-        public static RoleForm FromRole(RoleDefinition role) => new()
-        {
-            Role = role.Role,
-            DisplayName = role.DisplayName,
-            Description = role.Description,
-            RequiresOwnerApproval = role.RequiresOwnerApproval,
-            PermissionsText = string.Join(Environment.NewLine, role.Permissions ?? [])
-        };
     }
 }

@@ -97,6 +97,7 @@ Suggested services:
 - `ClientTypeService`
 - `ServiceCatalogService`
 - `MaterialCatalogService`
+- `PoolEquipmentCatalogService`
 - `ScheduleService`
 - `VisitService`
 - `RouteService`
@@ -155,8 +156,10 @@ Current implementation details:
 - `/auth/google-complete` creates or updates `AppUser` from Google claims and signs in with an app cookie containing the application user ID claim.
 - `/auth/test-signin` is a development-only bypass for seeded users marked `IsTestUser`.
 - `/auth/signout` clears the application cookie.
-- The Blazor shell reads the current app user to show a profile indicator and logout link.
-- `/profile` updates mutable profile fields through `UserProfileService`.
+- The Blazor shell reads the current app user to show a profile indicator that opens `/profile`.
+- `/profile` updates mutable profile fields and the email notification preference through `UserProfileService`.
+- The Blazor shell uses authentication state for navigation visibility so unauthenticated users see only public links.
+- Independent Homeowner registration creates an active user without company memberships, stores an owner profile with home address/access notes, and seeds owner-scoped equipment data.
 
 ## 6. Authorization Model
 
@@ -167,6 +170,7 @@ Every secured operation requires:
 - Company membership check for company-scoped functions.
 - Role check for protected company functions.
 - Client access check for Company Client User functions.
+- Owner-scope user check for Independent Homeowner functions.
 
 Authorization examples:
 
@@ -176,10 +180,17 @@ Authorization examples:
 - Company Admin can manage users, clients, services, materials, schedules, billing, and reports for their company.
 - Standard Company User can view assigned visits and complete those visits.
 - Company Client User can view their own service history, billing history, and messages.
+- Independent Home Owner can manage owner-scoped pool equipment without company membership.
 
 Current UI enforcement:
 
-- Navigation items are filtered by the current user's active company memberships and system-admin flag.
+- Navigation items are filtered by the current user's active company memberships, system-admin flag, and independent-homeowner state.
+- Navigation sections can be expanded or collapsed, and each visible leaf points to an application route.
+- Editor leaves use focused routes instead of routing back to a combined dashboard: `/admin/companies`, `/admin/users`, `/admin/roles`, `/admin/email-log`, `/admin/catalog/poolequipment`, `/admin/catalog/materials`, `/admin/catalog/services`, `/company/users`, `/poolequipment`, `/catalog/poolequipment`, `/catalog/materials`, and `/catalog/services`.
+- Public navigation is limited to Home and Help when no application cookie is present.
+- Authenticated navigation hides Home and uses Dashboard as the post-sign-in workspace entry point.
+- `ApplicationModeService` reads the persisted `SystemSettings` row and provides PoolShark/TreeShark branding, hero imagery, and Pool Equipment visibility.
+- Landscape mode suppresses Pool Equipment navigation and redirects direct Pool Equipment routes back to the dashboard.
 - Backend service methods still enforce authorization independently of hidden navigation.
 
 ## 7. Multi-Tenant Storage Strategy
@@ -209,6 +220,7 @@ Use for:
 - Clients.
 - Services.
 - Materials.
+- Pool equipment.
 - Schedules.
 - Visits.
 - Billing references.
@@ -222,6 +234,15 @@ Current implementation:
 - `AzureTableServiceBusinessStore` is the active repository when `AzureStorage:UseAzureStorage` is enabled.
 - `AzureTableServiceBusinessStore` stores MVP records as JSON payloads in Azure Table entities and maintains lookup tables for email and Google subject sign-in.
 - Role definitions are persisted in the `RoleDefinitions` table and can be updated by system admins.
+- Service, material, and pool-equipment category tables are provisioned and used to group catalog items.
+- Initial seed data is defined in `InMemoryServiceBusinessStore` and is reused by the Azure Table store when hydrating an empty `Users` table; it includes Clearwater plus Pool1Clean1, PoolClean2, Landscape1, and Landscape2 test companies with service, material, and pool-equipment catalog data, plus three independent homeowner test users with owner-scoped pool-equipment records.
+- `CompanyAdminService.GetCatalogOverviewAsync` allows either system-admin access or active company admin/user access so focused system-admin catalog pages can inspect company-scoped starter catalog data.
+- `PlatformAdminService` owns company CRUD, system user create/edit/status/admin actions, and role-definition editing.
+- `CompanyAdminService` owns company-scoped user access decisions, company membership activation/deactivation, and company-scoped role reassignment with last-admin guardrails.
+- `CompanyAdminService` owns service/material category and item create/edit/archive/reactivate actions with system-admin or company-admin authorization.
+- `CompanyAdminService` also owns pool-equipment category and item create/edit/archive/reactivate actions across global, company, and homeowner scopes.
+- `CompanyAdminService` supports copy-as-custom actions for starter service, material, and pool-equipment records by creating new non-system-managed records in the current scope.
+- System mode is table-backed in the singleton `SystemSettings` row; `SystemMode` accepts `Pool` or `Landscape`, and app configuration only supplies the startup default when the row is missing.
 - `InMemoryServiceBusinessStore` remains the default local-development repository when Azure Storage is disabled.
 
 ### 8.2 Azure Blob Storage
@@ -314,6 +335,7 @@ Current implementation details:
 - If `Email:AzureCommunicationServices:ConnectionString` or `Email:AzureCommunicationServices:SenderAddress` is missing, the queue records an `EmailLogEntry` with `Queued` status and does not throw.
 - If Azure Communication Services is configured, the queue sends email through `EmailClient` and logs `Sent` or `Failed`.
 - Test-user email is rerouted to `Email:TestRecipientEmail` when configured and logged with `TestRerouted` status.
+- Recipient users with `EmailNotificationsEnabled` set to `false` are logged with `Suppressed` status and are not sent to the provider.
 - The System Admin dashboard displays recent email log entries.
 
 ## 11. Scheduling and Recurrence
@@ -440,13 +462,15 @@ Suggested solution structure:
 - `ServiceBusiness.Domain`: Domain models, enums, value objects.
 - `ServiceBusiness.Infrastructure.AzureStorage`: Table, Blob, and Queue implementations.
 - `ServiceBusiness.Infrastructure.Integrations`: Google, Stripe, Email, Maps.
-- `ServiceBusiness.Tests`: Unit and integration tests.
+- `ServiceBusiness.Tests`: Unit, application scenario, and browser scenario tests.
 
 ## 18. Quality Gates
 
 Before release:
 
 - Unit tests for authorization checks.
+- Application scenario tests for end-to-end business workflows at the service layer.
+- Playwright browser scenario tests for critical persona UI workflows.
 - Unit tests for schedule recurrence generation.
 - Unit tests for Stripe webhook idempotency.
 - Integration tests for table repositories.

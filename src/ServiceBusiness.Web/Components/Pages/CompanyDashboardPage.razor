@@ -3,6 +3,7 @@
 @using ServiceBusiness.Domain
 @inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
 @inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+@inject ServiceBusiness.Web.ApplicationModeService ApplicationMode
 
 <PageTitle>Company Dashboard</PageTitle>
 
@@ -12,6 +13,13 @@
 }
 else
 {
+    <section class="dashboard-hero" style="background-image: linear-gradient(90deg, rgba(13, 30, 26, .68), rgba(13, 30, 26, .22)), url('@appMode.HeroImageUrl');">
+        <div>
+            <p class="eyebrow">@appMode.ProductCategory</p>
+            <h1>@appMode.ProductName Dashboard</h1>
+        </div>
+    </section>
+
     <section class="page-header">
         <div>
             <p class="eyebrow">Company Admin</p>
@@ -57,10 +65,12 @@ else
 
 @code {
     private CompanyDashboard? dashboard;
+    private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
 
     protected override async Task OnInitializedAsync()
     {
-        DemoUser.UserId = "admin-1";
+        DemoUser.UserId = "clearwater-owner-1";
+        appMode = await ApplicationMode.GetCurrentAsync();
         dashboard = await CompanyAdminService.GetDashboardAsync("clearwater", DateOnly.FromDateTime(DateTime.Today));
     }
 }

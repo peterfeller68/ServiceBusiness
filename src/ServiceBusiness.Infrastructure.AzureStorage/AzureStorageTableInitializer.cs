@@ -1,14 +1,16 @@
 using Azure.Data.Tables;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
+using ServiceBusiness.Application;
 
 namespace ServiceBusiness.Infrastructure.AzureStorage;
 
-public sealed class AzureStorageTableInitializer(IConfiguration configuration) : IHostedService
+public sealed class AzureStorageTableInitializer(IConfiguration configuration, IServiceBusinessStore store) : IHostedService
 {
     public static readonly string[] TableNames =
     [
         "CompanyTypes",
+        "SystemSettings",
         "Companies",
         "Users",
         "UserByGoogleSubject",
@@ -17,9 +19,14 @@ public sealed class AzureStorageTableInitializer(IConfiguration configuration) :
         "CompanyMemberships",
         "UserCompanyMemberships",
         "CompanyClients",
+        "IndependentHomeOwnerProfiles",
         "ClientTypes",
+        "ServiceCategories",
+        "MaterialCategories",
+        "PoolEquipmentCategories",
         "Services",
         "Materials",
+        "PoolEquipmentItems",
         "ServiceVisits",
         "VisitCompletions",
         "EmailLogs"
@@ -43,6 +50,11 @@ public sealed class AzureStorageTableInitializer(IConfiguration configuration) :
         {
             await tableServiceClient.CreateTableIfNotExistsAsync(tableName, cancellationToken);
         }
+
+        // The store owns seed hydration. Touch it during startup so an empty Users
+        // table is reseeded even before the first page or endpoint reads data.
+        await store.GetSystemSettingsAsync(cancellationToken);
+        await store.GetUsersAsync(cancellationToken);
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

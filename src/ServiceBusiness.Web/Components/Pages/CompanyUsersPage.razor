@@ -1,0 +1,205 @@
+@page "/company/users"
+@rendermode InteractiveServer
+@using ServiceBusiness.Application
+@using ServiceBusiness.Domain
+@inject CompanyAdminService CompanyAdminService
+@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+
+<PageTitle>Users</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">Company Admin</p>
+        <h1>Users</h1>
+        <p class="lede">Review access requests, manage company access, and update company-scoped roles.</p>
+    </div>
+    <a class="button" href="company">Company Dashboard</a>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="notice success">@message</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="notice error">@errorMessage</div>
+}
+
+@if (overview is null)
+{
+    <p>Loading company users...</p>
+}
+else
+{
+    <div class="metric-grid">
+        <div class="metric">
+            <span>Company</span>
+            <strong>@overview.Company.Name</strong>
+        </div>
+        <div class="metric">
+            <span>Active Users</span>
+            <strong>@overview.ActiveUsers</strong>
+        </div>
+        <div class="metric">
+            <span>Pending Access</span>
+            <strong>@overview.PendingRequests</strong>
+        </div>
+    </div>
+
+    <section class="section">
+        <h2>Pending Access</h2>
+        @if (overview.PendingAccessRequests.Count == 0)
+        {
+            <div class="callout">
+                <strong>No pending requests</strong>
+                <p>New business user and business client registrations will appear here for owner review.</p>
+            </div>
+        }
+        else
+        {
+            <div class="data-list">
+                @foreach (var request in overview.PendingAccessRequests)
+                {
+                    <article class="row-card">
+                        <div>
+                            <strong>@request.User.DisplayName</strong>
+                            <p>@request.User.Email</p>
+                            <small>@request.Role.DisplayName &middot; requested @request.Membership.RequestedUtc.LocalDateTime.ToString("g")</small>
+                        </div>
+                        <div class="row-actions">
+                            <span class="status-pill">@request.Membership.Status</span>
+                            <button class="button primary" type="button" @onclick="() => DecideAsync(request, MembershipStatus.Active)">Approve</button>
+                            <button class="button danger" type="button" @onclick="() => DecideAsync(request, MembershipStatus.Rejected)">Reject</button>
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    </section>
+
+    <section class="section">
+        <h2>Company Access</h2>
+        <div class="data-list">
+            @foreach (var row in overview.Users)
+            {
+                var key = RoleEditKey(row);
+                <article class="row-card">
+                    <div>
+                        <strong>@row.User.DisplayName</strong>
+                        <p>@row.User.Email</p>
+                        <small>@row.Role.DisplayName &middot; @row.Membership.Status</small>
+                    </div>
+                    <div class="row-actions role-actions">
+                        <span class="status-pill">@row.Membership.Status</span>
+                        <label>
+                            Role
+                            <select class="form-control compact-select" @bind="roleEdits[key]">
+                                @foreach (var role in overview.Roles)
+                                {
+                                    <option value="@role.Role">@role.DisplayName</option>
+                                }
+                            </select>
+                        </label>
+                        <button class="button" type="button" @onclick="() => UpdateRoleAsync(row)">Update Role</button>
+                        @if (row.Membership.Status == MembershipStatus.Active)
+                        {
+                            <button class="button danger" type="button" @onclick="() => SetAccessStatusAsync(row, MembershipStatus.Inactive)">Deactivate Access</button>
+                        }
+                        else
+                        {
+                            <button class="button primary" type="button" @onclick="() => SetAccessStatusAsync(row, MembershipStatus.Active)">Reactivate Access</button>
+                        }
+                    </div>
+                </article>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    private const string CompanyId = "clearwater";
+    private CompanyUserManagementOverview? overview;
+    private readonly Dictionary<string, CompanyRole> roleEdits = [];
+    private string? message;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        DemoUser.UserId = "clearwater-owner-1";
+        await LoadAsync();
+    }
+
+    private async Task DecideAsync(AccessRequest request, MembershipStatus decision)
+    {
+        await RunAsync(async () =>
+        {
+            await CompanyAdminService.DecideAccessRequestAsync(
+                request.Company.Id,
+                request.User.Id,
+                request.Membership.Role,
+                decision);
+
+            message = $"{request.User.DisplayName} was {decision.ToString().ToLowerInvariant()} for {request.Company.Name}.";
+        });
+    }
+
+    private async Task SetAccessStatusAsync(CompanyUserManagementRow row, MembershipStatus status)
+    {
+        await RunAsync(async () =>
+        {
+            await CompanyAdminService.SetCompanyUserAccessStatusAsync(
+                row.Membership.CompanyId,
+                row.User.Id,
+                row.Membership.Role,
+                status);
+            message = $"{row.User.DisplayName} access is now {status.ToString().ToLowerInvariant()}.";
+        });
+    }
+
+    private async Task UpdateRoleAsync(CompanyUserManagementRow row)
+    {
+        await RunAsync(async () =>
+        {
+            var newRole = roleEdits[RoleEditKey(row)];
+            await CompanyAdminService.UpdateCompanyUserRoleAsync(
+                row.Membership.CompanyId,
+                row.User.Id,
+                row.Membership.Role,
+                newRole);
+            message = $"{row.User.DisplayName} role was updated to {newRole}.";
+        });
+    }
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        message = null;
+        errorMessage = null;
+
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        overview = await CompanyAdminService.GetCompanyUserManagementOverviewAsync(CompanyId);
+        roleEdits.Clear();
+        foreach (var row in overview.Users)
+        {
+            roleEdits[RoleEditKey(row)] = row.Membership.Role;
+        }
+    }
+
+    private static string RoleEditKey(CompanyUserManagementRow row) => $"{row.User.Id}|{row.Membership.Role}";
+}

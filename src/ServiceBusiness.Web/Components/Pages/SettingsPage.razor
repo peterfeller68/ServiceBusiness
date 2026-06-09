@@ -1,0 +1,108 @@
+@page "/settings"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Authorization
+@using ServiceBusiness.Domain
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject ServiceBusiness.Application.ICurrentUserContext CurrentUser
+@inject ServiceBusiness.Application.OnboardingService OnboardingService
+@inject ServiceBusiness.Application.PlatformAdminService PlatformAdminService
+@inject ServiceBusiness.Web.ApplicationModeService ApplicationMode
+@inject NavigationManager Navigation
+
+<PageTitle>Settings</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">Settings</p>
+        <h1>General settings</h1>
+        <p class="lede">Role-specific configuration tools will appear here as the settings editors are expanded.</p>
+    </div>
+</section>
+
+<section class="section">
+    <div class="form-panel">
+        <h2>Available Settings</h2>
+        <p class="form-note">Use the Settings menu to open the areas currently available for your role.</p>
+    </div>
+</section>
+
+@if (isSystemAdmin)
+{
+    <section class="section">
+        <div class="form-panel">
+            <h2>System Settings</h2>
+            @if (!string.IsNullOrWhiteSpace(errorMessage))
+            {
+                <div class="notice error">@errorMessage</div>
+            }
+            <EditForm Model="settingsForm" OnValidSubmit="SaveSystemSettingsAsync" FormName="system-settings-editor">
+                <div class="form-grid">
+                    <label>
+                        SystemMode
+                        <InputSelect class="form-control" @bind-Value="settingsForm.SystemMode">
+                            @foreach (var mode in Enum.GetValues<SystemMode>())
+                            {
+                                <option value="@mode">@mode</option>
+                            }
+                        </InputSelect>
+                    </label>
+                    <div>
+                        <strong>@appMode.ProductName</strong>
+                        <p>@appMode.ProductCategory</p>
+                        <small>Changing the mode updates the product name, hero image, and Pool Equipment visibility.</small>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button class="button primary" type="submit">Save System Settings</button>
+                </div>
+            </EditForm>
+        </div>
+    </section>
+}
+
+@code {
+    private bool isSystemAdmin;
+    private SystemSettingsForm settingsForm = new();
+    private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        appMode = await ApplicationMode.GetCurrentAsync();
+        var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        if (authenticationState.User.Identity?.IsAuthenticated == true)
+        {
+            var overview = await OnboardingService.GetAccessOverviewAsync(CurrentUser.UserId);
+            isSystemAdmin = overview.User.IsSystemAdmin;
+            if (isSystemAdmin)
+            {
+                var settings = await PlatformAdminService.GetSystemSettingsAsync();
+                settingsForm.SystemMode = settings.SystemMode;
+            }
+        }
+    }
+
+    private async Task SaveSystemSettingsAsync()
+    {
+        errorMessage = null;
+
+        try
+        {
+            await PlatformAdminService.UpdateSystemModeAsync(settingsForm.SystemMode);
+            Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private sealed class SystemSettingsForm
+    {
+        public SystemMode SystemMode { get; set; } = SystemMode.Pool;
+    }
+}

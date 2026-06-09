@@ -1,0 +1,275 @@
+@page "/admin/users"
+@rendermode InteractiveServer
+@using ServiceBusiness.Domain
+@inject ServiceBusiness.Application.PlatformAdminService PlatformAdminService
+@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+
+<PageTitle>Users</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">System Administrator</p>
+        <h1>Users</h1>
+        <p class="lede">Manage registered users, system-admin access, status, and company memberships.</p>
+    </div>
+    <a class="button" href="admin">Dashboard</a>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="notice success">@message</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="notice error">@errorMessage</div>
+}
+
+@if (userOverview is null)
+{
+    <p>Loading users...</p>
+}
+else
+{
+    <section class="section">
+        <h2>@(userForm.IsEditing ? "Edit User" : "Create User")</h2>
+        <EditForm Model="userForm" OnValidSubmit="SaveUserAsync" FormName="user-editor">
+            <div class="form-panel">
+                <div class="form-grid">
+                    @if (userForm.IsEditing)
+                    {
+                        <label>
+                            User ID
+                            <input class="form-control" value="@userForm.UserId" disabled />
+                        </label>
+                    }
+                    <label>
+                        Display name
+                        <InputText class="form-control" @bind-Value="userForm.DisplayName" />
+                    </label>
+                    <label>
+                        Login email
+                        <InputText class="form-control" @bind-Value="userForm.Email" />
+                    </label>
+                    <label>
+                        Notification email
+                        <InputText class="form-control" @bind-Value="userForm.NotificationEmail" />
+                    </label>
+                    <label>
+                        Phone
+                        <InputText class="form-control" @bind-Value="userForm.Phone" />
+                    </label>
+                    <label class="check-row">
+                        <InputCheckbox @bind-Value="userForm.IsTestUser" />
+                        <span>Test user</span>
+                    </label>
+                    <label class="check-row">
+                        <InputCheckbox @bind-Value="userForm.EmailNotificationsEnabled" />
+                        <span>Email notifications</span>
+                    </label>
+                </div>
+                <div class="form-actions">
+                    <button class="button primary" type="submit">Save User</button>
+                    <button class="button" type="button" @onclick="ResetUserForm">New User</button>
+                </div>
+            </div>
+        </EditForm>
+    </section>
+
+    <div class="metric-grid">
+        <div class="metric">
+            <span>Users</span>
+            <strong>@userOverview.TotalUsers</strong>
+        </div>
+        <div class="metric">
+            <span>Active</span>
+            <strong>@userOverview.ActiveUsers</strong>
+        </div>
+        <div class="metric">
+            <span>System Admins</span>
+            <strong>@userOverview.SystemAdmins</strong>
+        </div>
+        <div class="metric">
+            <span>Pending Access</span>
+            <strong>@userOverview.PendingMemberships</strong>
+        </div>
+        <div class="metric">
+            <span>Disabled</span>
+            <strong>@userOverview.DisabledUsers</strong>
+        </div>
+    </div>
+
+    <section class="section">
+        <h2>Users</h2>
+        <div class="data-list">
+            @foreach (var row in userOverview.Users)
+            {
+                <article class="row-card">
+                    <div>
+                        <strong>@row.User.DisplayName</strong>
+                        <p>@row.User.Email</p>
+                        <small>
+                            @row.User.Status
+                            @if (row.User.IsSystemAdmin)
+                            {
+                                <span> &middot; System Admin</span>
+                            }
+                            @if (row.User.IsTestUser)
+                            {
+                                <span> &middot; Test User</span>
+                            }
+                        </small>
+                        @if (row.CompanyAccess.Count > 0)
+                        {
+                            <p>@string.Join(", ", row.CompanyAccess.Select(a => $"{a.Company.Name}: {a.Role} ({a.Status})"))</p>
+                        }
+                    </div>
+                    <div class="row-actions">
+                        <span class="status-pill">@row.User.Status</span>
+                        <button class="button" type="button" @onclick="() => EditUser(row.User)">Edit</button>
+                        @if (row.User.IsSystemAdmin)
+                        {
+                            <button class="button" type="button" @onclick="() => SetSystemAdminAsync(row.User, false)">Remove Admin</button>
+                        }
+                        else
+                        {
+                            <button class="button" type="button" @onclick="() => SetSystemAdminAsync(row.User, true)">Make Admin</button>
+                        }
+
+                        @if (row.User.Status == UserStatus.Active)
+                        {
+                            <button class="button danger" type="button" @onclick="() => SetUserStatusAsync(row.User, UserStatus.Disabled)">Disable</button>
+                        }
+                        else
+                        {
+                            <button class="button primary" type="button" @onclick="() => SetUserStatusAsync(row.User, UserStatus.Active)">Enable</button>
+                        }
+                    </div>
+                </article>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    private PlatformUserManagementOverview? userOverview;
+    private UserForm userForm = new();
+    private string? message;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        DemoUser.UserId = "sys-admin";
+        await LoadAsync();
+    }
+
+    private async Task SetSystemAdminAsync(AppUser user, bool isSystemAdmin)
+    {
+        await RunUserActionAsync(async () =>
+        {
+            await PlatformAdminService.SetSystemAdminAsync(user.Id, isSystemAdmin);
+            message = isSystemAdmin
+                ? $"{user.DisplayName} is now a system admin."
+                : $"{user.DisplayName} is no longer a system admin.";
+        });
+    }
+
+    private async Task SaveUserAsync()
+    {
+        await RunUserActionAsync(async () =>
+        {
+            if (userForm.IsEditing)
+            {
+                await PlatformAdminService.UpdateUserAsync(
+                    userForm.UserId,
+                    userForm.DisplayName,
+                    userForm.Email,
+                    userForm.NotificationEmail,
+                    userForm.Phone,
+                    userForm.IsTestUser,
+                    userForm.EmailNotificationsEnabled);
+            }
+            else
+            {
+                await PlatformAdminService.CreateUserAsync(
+                    userForm.DisplayName,
+                    userForm.Email,
+                    userForm.NotificationEmail,
+                    userForm.Phone,
+                    userForm.IsTestUser,
+                    userForm.EmailNotificationsEnabled);
+            }
+
+            message = $"{userForm.DisplayName} was saved.";
+            ResetUserForm();
+        });
+    }
+
+    private async Task SetUserStatusAsync(AppUser user, UserStatus status)
+    {
+        await RunUserActionAsync(async () =>
+        {
+            await PlatformAdminService.SetUserStatusAsync(user.Id, status);
+            message = $"{user.DisplayName} is now {status.ToString().ToLowerInvariant()}.";
+        });
+    }
+
+    private async Task RunUserActionAsync(Func<Task> action)
+    {
+        message = null;
+        errorMessage = null;
+
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        userOverview = await PlatformAdminService.GetUserManagementOverviewAsync();
+    }
+
+    private void EditUser(AppUser user)
+    {
+        userForm = UserForm.FromUser(user);
+    }
+
+    private void ResetUserForm()
+    {
+        userForm = new UserForm();
+    }
+
+    private sealed class UserForm
+    {
+        public string UserId { get; set; } = "";
+        public string DisplayName { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string? NotificationEmail { get; set; }
+        public string? Phone { get; set; }
+        public bool IsTestUser { get; set; }
+        public bool EmailNotificationsEnabled { get; set; } = true;
+        public bool IsEditing { get; set; }
+
+        public static UserForm FromUser(AppUser user) => new()
+        {
+            UserId = user.Id,
+            DisplayName = user.DisplayName,
+            Email = user.Email,
+            NotificationEmail = user.NotificationEmail,
+            Phone = user.Phone,
+            IsTestUser = user.IsTestUser,
+            EmailNotificationsEnabled = user.EmailNotificationsEnabled ?? true,
+            IsEditing = true
+        };
+    }
+}

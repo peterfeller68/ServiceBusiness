@@ -10,10 +10,11 @@
     <div>
         <p class="eyebrow">Company Admin</p>
         <h1>Services and materials</h1>
+        <p class="lede">Manage company-scoped catalog items grouped by category.</p>
     </div>
 </section>
 
-@if (services is null || materials is null)
+@if (catalog is null)
 {
     <p>Loading catalog...</p>
 }
@@ -21,15 +22,40 @@ else
 {
     <section class="section">
         <h2>Services</h2>
-        <div class="data-list">
-            @foreach (var service in services)
+        <div class="category-grid">
+            @foreach (var group in catalog.ServiceGroups)
             {
-                <article class="row-card">
-                    <div>
-                        <strong>@service.Name</strong>
-                        <p>@service.Description</p>
+                <article class="form-panel">
+                    <div class="category-heading">
+                        <div>
+                            <strong>@group.Category.Name</strong>
+                            <p>@group.Category.Description</p>
+                        </div>
+                        @if (group.Category.IsSystemManaged)
+                        {
+                            <span class="status-pill">Starter</span>
+                        }
                     </div>
-                    <span class="price">@service.DefaultPrice.ToString("C")</span>
+
+                    @if (group.Services.Count == 0)
+                    {
+                        <p class="form-note">No services in this category yet.</p>
+                    }
+                    else
+                    {
+                        <div class="data-list">
+                            @foreach (var service in group.Services)
+                            {
+                                <article class="row-card compact">
+                                    <div>
+                                        <strong>@service.Name</strong>
+                                        <p>@service.Description</p>
+                                    </div>
+                                    <span class="price">@service.DefaultPrice.ToString("C")</span>
+                                </article>
+                            }
+                        </div>
+                    }
                 </article>
             }
         </div>
@@ -37,15 +63,40 @@ else
 
     <section class="section">
         <h2>Materials</h2>
-        <div class="data-list">
-            @foreach (var material in materials)
+        <div class="category-grid">
+            @foreach (var group in catalog.MaterialGroups)
             {
-                <article class="row-card">
-                    <div>
-                        <strong>@material.Name</strong>
-                        <p>@material.UnitOfMeasure · Cost @material.DefaultUnitCost.ToString("C")</p>
+                <article class="form-panel">
+                    <div class="category-heading">
+                        <div>
+                            <strong>@group.Category.Name</strong>
+                            <p>@group.Category.Description</p>
+                        </div>
+                        @if (group.Category.IsSystemManaged)
+                        {
+                            <span class="status-pill">Starter</span>
+                        }
                     </div>
-                    <span class="price">@material.DefaultBillableUnitPrice.ToString("C")</span>
+
+                    @if (group.Materials.Count == 0)
+                    {
+                        <p class="form-note">No materials in this category yet.</p>
+                    }
+                    else
+                    {
+                        <div class="data-list">
+                            @foreach (var material in group.Materials)
+                            {
+                                <article class="row-card compact">
+                                    <div>
+                                        <strong>@material.Name</strong>
+                                        <p>@material.UnitOfMeasure - Cost @material.DefaultUnitCost.ToString("C")</p>
+                                    </div>
+                                    <span class="price">@material.DefaultBillableUnitPrice.ToString("C")</span>
+                                </article>
+                            }
+                        </div>
+                    }
                 </article>
             }
         </div>
@@ -53,13 +104,11 @@ else
 }
 
 @code {
-    private IReadOnlyList<ServiceOffering>? services;
-    private IReadOnlyList<Material>? materials;
+    private CatalogOverview? catalog;
 
     protected override async Task OnInitializedAsync()
     {
-        DemoUser.UserId = "admin-1";
-        services = await CompanyAdminService.GetServicesAsync("clearwater");
-        materials = await CompanyAdminService.GetMaterialsAsync("clearwater");
+        DemoUser.UserId = "clearwater-owner-1";
+        catalog = await CompanyAdminService.GetCatalogOverviewAsync("clearwater");
     }
 }

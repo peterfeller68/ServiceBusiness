@@ -4,6 +4,7 @@
 @using ServiceBusiness.Domain
 @inject OnboardingService OnboardingService
 @inject ICurrentUserContext CurrentUser
+@inject ServiceBusiness.Web.ApplicationModeService ApplicationMode
 
 <PageTitle>Dashboard</PageTitle>
 
@@ -13,6 +14,13 @@
 }
 else
 {
+    <section class="dashboard-hero" style="background-image: linear-gradient(90deg, rgba(13, 30, 26, .68), rgba(13, 30, 26, .22)), url('@appMode.HeroImageUrl');">
+        <div>
+            <p class="eyebrow">@appMode.ProductCategory</p>
+            <h1>@appMode.ProductName Dashboard</h1>
+        </div>
+    </section>
+
     <section class="page-header">
         <div>
             <p class="eyebrow">Account Dashboard</p>
@@ -44,31 +52,54 @@ else
     <section class="section split">
         <div>
             <h2>Workspace access</h2>
-            <div class="data-list">
-                @foreach (var access in overview.Companies)
-                {
-                    <article class="row-card">
-                        <div>
-                            <strong>@access.Company.Name</strong>
-                            <p>@GetRoleDescription(access.Role)</p>
-                            @if (access.Status != MembershipStatus.Active)
-                            {
-                                <small>Access is @access.Status.ToString().ToLowerInvariant(); a business owner must approve it before features unlock.</small>
-                            }
-                        </div>
-                        <div class="row-actions">
-                            <span class="status-pill">@access.Status</span>
-                            @if (access.Status == MembershipStatus.Active)
-                            {
-                                @foreach (var link in GetFeatureLinks(access.Role))
+            @if (overview.Companies.Count == 0)
+            {
+                <article class="row-card">
+                    <div>
+                        <strong>Independent homeowner workspace</strong>
+                        <p>@(appMode.IsPoolMode ? "Manage your own pool equipment records without joining a service business." : "Manage your independent homeowner workspace without joining a service business.")</p>
+                        @if (homeOwnerProfile is not null)
+                        {
+                            <small>@homeOwnerProfile.HomeAddress</small>
+                        }
+                    </div>
+                    <div class="row-actions">
+                        <span class="status-pill">Active</span>
+                        @if (appMode.IsPoolMode)
+                        {
+                            <a class="button primary" href="poolequipment">Pool Equipment</a>
+                        }
+                    </div>
+                </article>
+            }
+            else
+            {
+                <div class="data-list">
+                    @foreach (var access in overview.Companies)
+                    {
+                        <article class="row-card">
+                            <div>
+                                <strong>@access.Company.Name</strong>
+                                <p>@GetRoleDescription(access.Role)</p>
+                                @if (access.Status != MembershipStatus.Active)
                                 {
-                                    <a class="button" href="@link.Href">@link.Label</a>
+                                    <small>Access is @access.Status.ToString().ToLowerInvariant(); a business owner must approve it before features unlock.</small>
                                 }
-                            }
-                        </div>
-                    </article>
-                }
-            </div>
+                            </div>
+                            <div class="row-actions">
+                                <span class="status-pill">@access.Status</span>
+                                @if (access.Status == MembershipStatus.Active)
+                                {
+                                    @foreach (var link in GetFeatureLinks(access.Role))
+                                    {
+                                        <a class="button" href="@link.Href">@link.Label</a>
+                                    }
+                                }
+                            </div>
+                        </article>
+                    }
+                </div>
+            }
         </div>
 
         <aside class="callout">
@@ -80,10 +111,17 @@ else
 
 @code {
     private UserAccessOverview? overview;
+    private IndependentHomeOwnerProfile? homeOwnerProfile;
+    private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
 
     protected override async Task OnInitializedAsync()
     {
+        appMode = await ApplicationMode.GetCurrentAsync();
         overview = await OnboardingService.GetAccessOverviewAsync(CurrentUser.UserId);
+        if (overview.Companies.Count == 0)
+        {
+            homeOwnerProfile = await OnboardingService.GetIndependentHomeOwnerProfileAsync(CurrentUser.UserId);
+        }
     }
 
     private static string GetRoleDescription(CompanyRole role) => role switch

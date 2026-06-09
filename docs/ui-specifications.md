@@ -47,6 +47,12 @@ Behavior:
 - Route user to persona dashboard or onboarding flow.
 - Test users marked `IsTestUser` may bypass Google authentication and route through the test sign-in endpoint.
 
+Current implementation:
+
+- `/register` includes Business Owner, Business User, Business Client, and Independent Homeowner choices.
+- Independent Homeowner registration captures account contact fields, home address, and access notes, and does not show the business association selector.
+- Successful Independent Homeowner registration routes to `/poolequipment`.
+
 ## 3. First-Time Profile Setup Screen
 
 Persona:
@@ -62,6 +68,7 @@ Fields:
 - Display name.
 - Phone.
 - Preferred contact email, defaulted from Google.
+- Email notifications enabled toggle.
 
 Actions:
 
@@ -71,7 +78,7 @@ Actions:
 Current implementation:
 
 - `/profile` provides the current account profile form after sign-in.
-- The user can edit display name, notification email, and phone.
+- The user can edit display name, notification email, phone, and email notification preference.
 - Login email is shown as read-only.
 - Logout is available from the profile screen and top-right shell profile area.
 
@@ -320,6 +327,14 @@ Actions:
 - Reactivate.
 - Remove.
 
+Current implementation:
+
+- `/company/users` is a focused company user-management page.
+- The page shows active, inactive, and removed company memberships plus pending access requests.
+- Company admins can approve/reject pending requests, update the company-scoped role for an approved user, deactivate company access, and reactivate company access.
+- The page does not show system-admin promotion, global account disablement, company editor, role-definition editor, catalog editor, or email-log controls.
+- Global account enable/disable remains on `/admin/users`; company-user deactivate/reactivate changes only the company membership status.
+
 ### 5.4 Invite Company User
 
 Purpose:
@@ -508,6 +523,7 @@ Purpose:
 
 Columns:
 
+- Category.
 - Name.
 - Default duration.
 - Default price.
@@ -525,6 +541,7 @@ Actions:
 
 Fields:
 
+- Category.
 - Name.
 - Description.
 - Default duration.
@@ -546,6 +563,7 @@ Purpose:
 
 Columns:
 
+- Category.
 - Name.
 - Unit of measure.
 - Default unit cost.
@@ -564,6 +582,7 @@ Actions:
 
 Fields:
 
+- Category.
 - Name.
 - Description.
 - Unit of measure.
@@ -577,6 +596,16 @@ Actions:
 
 - Save.
 - Cancel.
+
+Current implementation:
+
+- `/catalog` displays services and materials grouped by category cards.
+- `/catalog/materials` and `/catalog/services` provide focused company catalog editors.
+- `/admin/catalog/materials` and `/admin/catalog/services` provide focused system-admin catalog editors for the seeded company catalog in this slice.
+- Focused catalog editors include category and item forms plus archive/reactivate actions.
+- System/starter categories are visually marked.
+- System/starter categories and items expose copy-as-custom actions that create editable records in the current scope.
+- Empty categories and legacy uncategorized rows have explicit states.
 
 ### 5.16 Schedule Calendar
 
@@ -1090,46 +1119,60 @@ Actions:
 Items:
 
 - Dashboard
-- Companies
-- Company Types
-- Audit
 - Settings
+- Settings / Companies
+- Settings / Users
+- Settings / Roles
+- Settings / Catalog
+- Settings / Catalog / Pool Equipment
+- Settings / Catalog / Materials
+- Settings / Catalog / Services
+- Log / Email
+- Reports
+- Help
 
 ### 8.2 Company Admin Navigation
 
 Items:
 
 - Dashboard
-- Schedule
-- Assignment
-- Clients
-- Users
-- Services
-- Materials
-- Client Types
-- Reports
-- Billing
-- Messages
 - Settings
+- Settings / Customers
+- Settings / Users
+- Settings / Catalog
+- Settings / Catalog / Pool Equipment
+- Settings / Catalog / Materials
+- Settings / Catalog / Services
+- Reports
+- Help
 
 ### 8.3 Standard Company User Navigation
 
 Items:
 
-- Today
-- Route
-- Visits
-- Profile
+- Dashboard
+- Reports
+- Help
 
 ### 8.4 Company Client User Navigation
 
 Items:
 
 - Home
-- Services
-- Bills
-- Messages
-- Profile
+- Dashboard
+- Settings
+- Reports
+- Help
+
+### 8.5 Independent Home Owner Navigation
+
+Items:
+
+- Dashboard
+- Settings
+- Settings / Catalog / Pool Equipment
+- Reports
+- Help
 
 ## 9. Responsive Design Requirements
 
@@ -1174,7 +1217,24 @@ Examples:
 
 Current implementation:
 
-- The navigation menu filters System Admin, Company Admin, Field, and Client Portal links from the current user's active memberships and system-admin flag.
+- The navigation menu filters authenticated role links from the current user's active memberships and system-admin flag.
+- Authenticated navigation groups supported leaf links under collapsible Settings and Log sections.
+- Unauthenticated users see only Home and Help.
+- Authenticated users do not see the Home link; Dashboard remains the signed-in workspace entry point.
+- The top-right profile indicator shows the logged-in user's display name with their current role label underneath, and opens the profile page.
+- Dashboard pages show the current system-mode hero image.
+- Persisted `SystemSettings.SystemMode` controls product branding and imagery: Pool mode shows `PoolShark` with the pool waterfall image, while Landscape mode shows `TreeShark` with the mature fruit-tree landscape image.
+- The System Admin General Settings page includes a SystemMode selector with `Pool` and `Landscape` values; saving the selector updates branding, hero imagery, and Pool Equipment visibility after the page refreshes.
+- Settings, Reports, and Help have stable routes; reporting workflows remain future slices.
+- System-admin leaves route to focused pages: `/admin/companies`, `/admin/users`, `/admin/roles`, `/admin/catalog/poolequipment`, `/admin/catalog/materials`, `/admin/catalog/services`, and `/admin/email-log`.
+- Company-admin leaves route to focused pages: `/clients`, `/company/users`, `/catalog/poolequipment`, `/catalog/materials`, and `/catalog/services`.
+- In Pool mode, company-client users with homeowner equipment access route to `/poolequipment`.
+- In Pool mode, Independent Home Owner users have no company memberships and route to `/poolequipment` for owner-scoped pool equipment management.
+- Landscape mode hides Pool Equipment navigation and redirects direct Pool Equipment routes back to Dashboard.
+- `/admin/companies`, `/admin/users`, `/catalog/poolequipment`, `/catalog/materials`, `/catalog/services`, `/admin/catalog/poolequipment`, `/admin/catalog/materials`, and `/admin/catalog/services` expose create/edit/archive-reactivate workflows appropriate to their models.
+- `/admin/roles` edits the built-in role definitions; adding arbitrary role identities remains out of scope while roles are represented by the fixed `CompanyRole` enum.
+- Pool-equipment editor pages expose category/item forms, active/archive controls, scope labels, and image URL thumbnails without showing material or service editor controls.
+- Catalog editor pages expose copy-as-custom controls for starter records without mixing unrelated editor controls onto the focused page.
 
 ## 12. Implementation Prompt Guidance
 

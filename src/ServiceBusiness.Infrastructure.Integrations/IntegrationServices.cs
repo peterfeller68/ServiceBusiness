@@ -35,6 +35,7 @@ public sealed class AzureCommunicationEmailNotificationQueue(
             null,
             false,
             false,
+            true,
             UserStatus.Active);
 
         await SendAndLogAsync(
@@ -103,6 +104,19 @@ public sealed class AzureCommunicationEmailNotificationQueue(
             null,
             createdUtc,
             null);
+
+        if (recipientUser.EmailNotificationsEnabled == false)
+        {
+            var suppressedLog = log with
+            {
+                Status = EmailDeliveryStatus.Suppressed,
+                FailureReason = "User disabled email notifications."
+            };
+            await store.UpsertEmailLogAsync(suppressedLog, cancellationToken);
+            activity?.SetTag("email.status.initial", suppressedLog.Status.ToString());
+            ServiceBusinessTelemetry.EmailNotifications.Add(1, new KeyValuePair<string, object?>("email.status", suppressedLog.Status.ToString()));
+            return;
+        }
 
         try
         {

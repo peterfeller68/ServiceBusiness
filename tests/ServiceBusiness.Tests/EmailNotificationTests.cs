@@ -19,7 +19,7 @@ public sealed class EmailNotificationTests
             })
             .Build();
         var queue = new AzureCommunicationEmailNotificationQueue(store, configuration);
-        var user = (await store.GetUserAsync("new-tech"))!;
+        var user = (await store.GetUserAsync("clearwater-pending-user-1"))!;
         var company = (await store.GetCompanyAsync("clearwater"))!;
         var role = (await store.GetRoleDefinitionsAsync()).First(r => r.Role == CompanyRole.CompanyUser);
         var membership = (await store.GetMembershipsForUserAsync(user.Id)).Single();
@@ -32,5 +32,28 @@ public sealed class EmailNotificationTests
         Assert.Equal(EmailDeliveryStatus.TestRerouted, email.Status);
         Assert.Equal("pending.tech.test@example.com", email.OriginalRecipientEmail);
         Assert.Equal("test-inbox@example.com", email.RecipientEmail);
+    }
+
+    [Fact]
+    public async Task Approval_email_is_suppressed_when_user_disables_email_notifications()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var queue = new AzureCommunicationEmailNotificationQueue(store, new ConfigurationBuilder().Build());
+        var user = (await store.GetUserAsync("clearwater-pending-user-1"))! with { EmailNotificationsEnabled = false };
+        await store.UpsertUserAsync(user);
+
+        var company = (await store.GetCompanyAsync("clearwater"))!;
+        var role = (await store.GetRoleDefinitionsAsync()).First(r => r.Role == CompanyRole.CompanyUser);
+        var membership = (await store.GetMembershipsForUserAsync(user.Id)).Single();
+
+        await queue.QueueAccountApprovalDecisionEmailAsync(
+            new AccessRequest(membership, user, company, role),
+            MembershipStatus.Active);
+
+        var email = Assert.Single(await store.GetEmailLogsAsync());
+        Assert.Equal(EmailDeliveryStatus.Suppressed, email.Status);
+        Assert.Equal("User disabled email notifications.", email.FailureReason);
+        Assert.Null(email.ProviderMessageId);
+        Assert.Null(email.SentUtc);
     }
 }

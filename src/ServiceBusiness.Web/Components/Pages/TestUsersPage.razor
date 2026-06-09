@@ -1,0 +1,220 @@
+@page "/test/users"
+@rendermode InteractiveServer
+@using ServiceBusiness.Domain
+@inject ServiceBusiness.Application.PlatformAdminService PlatformAdminService
+
+<PageTitle>Test Users</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">Test</p>
+        <h1>Test Users</h1>
+        <p class="lede">Manage seeded and ad hoc test accounts used during development.</p>
+    </div>
+    <a class="button" href="test">Test Page</a>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="notice success">@message</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="notice error">@errorMessage</div>
+}
+
+<section class="section split">
+    <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="test-user-editor">
+        <div class="form-panel">
+            <h2>@(form.IsEditing ? "Edit Test User" : "Create Test User")</h2>
+            <div class="form-grid">
+                <label>
+                    Display Name
+                    <InputText class="form-control" @bind-Value="form.DisplayName" />
+                </label>
+                <label>
+                    Email
+                    <InputText class="form-control" @bind-Value="form.Email" />
+                </label>
+                <label>
+                    Notification Email
+                    <InputText class="form-control" @bind-Value="form.NotificationEmail" />
+                </label>
+                <label>
+                    Phone
+                    <InputText class="form-control" @bind-Value="form.Phone" />
+                </label>
+                <label class="check-row">
+                    <InputCheckbox @bind-Value="form.EmailNotificationsEnabled" />
+                    <span>Email notifications enabled</span>
+                </label>
+            </div>
+            <div class="form-actions">
+                <button class="button primary" type="submit">Save Test User</button>
+                <button class="button" type="button" @onclick="ResetForm">New Test User</button>
+            </div>
+        </div>
+    </EditForm>
+
+    <aside class="callout">
+        <strong>Test accounts</strong>
+        <p>New accounts created here are marked as test users so they can use the test sign-in route.</p>
+    </aside>
+</section>
+
+<section class="section">
+    <h2>Existing Test Users</h2>
+    @if (overview is null)
+    {
+        <p>Loading test users...</p>
+    }
+    else
+    {
+        <div class="data-list">
+            @foreach (var row in TestUsers)
+            {
+                <article class="row-card">
+                    <div>
+                        <strong>@row.User.DisplayName</strong>
+                        <p>@row.User.Email</p>
+                        <small>@row.User.Id</small>
+                    </div>
+                    <div class="row-actions">
+                        <span class="status-pill">@row.User.Status</span>
+                        <button class="button" type="button" @onclick="() => Edit(row.User)">Edit</button>
+                        @if (row.User.Status == UserStatus.Active)
+                        {
+                            <button class="button danger" type="button" @onclick="() => SetStatusAsync(row.User, UserStatus.Disabled)">Delete</button>
+                        }
+                        else
+                        {
+                            <button class="button primary" type="button" @onclick="() => SetStatusAsync(row.User, UserStatus.Active)">Reactivate</button>
+                        }
+                    </div>
+                </article>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    private PlatformUserManagementOverview? overview;
+    private TestUserForm form = new();
+    private string? message;
+    private string? errorMessage;
+    private IEnumerable<UserManagementRow> TestUsers =>
+        overview is null
+            ? []
+            : overview.Users.Where(row => row.User.IsTestUser).OrderBy(row => row.User.DisplayName);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await LoadAsync();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        await RunAsync(async () =>
+        {
+            if (form.IsEditing)
+            {
+                await PlatformAdminService.UpdateUserAsync(
+                    form.UserId,
+                    form.DisplayName,
+                    form.Email,
+                    form.NotificationEmail,
+                    form.Phone,
+                    isTestUser: true,
+                    form.EmailNotificationsEnabled);
+                message = $"{form.DisplayName} was updated.";
+            }
+            else
+            {
+                var user = await PlatformAdminService.CreateUserAsync(
+                    form.DisplayName,
+                    form.Email,
+                    form.NotificationEmail,
+                    form.Phone,
+                    isTestUser: true,
+                    form.EmailNotificationsEnabled);
+                message = $"{user.DisplayName} was created.";
+            }
+
+            ResetForm();
+        });
+    }
+
+    private async Task SetStatusAsync(AppUser user, UserStatus status)
+    {
+        await RunAsync(async () =>
+        {
+            await PlatformAdminService.SetUserStatusAsync(user.Id, status);
+            message = $"{user.DisplayName} was {(status == UserStatus.Active ? "reactivated" : "deleted")}.";
+        });
+    }
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        message = null;
+        errorMessage = null;
+
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        overview = await PlatformAdminService.GetUserManagementOverviewAsync();
+    }
+
+    private void Edit(AppUser user)
+    {
+        form = TestUserForm.FromUser(user);
+    }
+
+    private void ResetForm()
+    {
+        form = new();
+    }
+
+    private sealed class TestUserForm
+    {
+        public string UserId { get; set; } = "";
+        public string DisplayName { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string? NotificationEmail { get; set; }
+        public string? Phone { get; set; }
+        public bool EmailNotificationsEnabled { get; set; } = true;
+        public bool IsEditing { get; set; }
+
+        public static TestUserForm FromUser(AppUser user) => new()
+        {
+            UserId = user.Id,
+            DisplayName = user.DisplayName,
+            Email = user.Email,
+            NotificationEmail = user.NotificationEmail,
+            Phone = user.Phone,
+            EmailNotificationsEnabled = user.EmailNotificationsEnabled ?? true,
+            IsEditing = true
+        };
+    }
+}

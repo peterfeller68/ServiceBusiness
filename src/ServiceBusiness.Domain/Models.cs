@@ -11,7 +11,8 @@ public enum RegistrationAccountType
 {
     BusinessOwner,
     BusinessUser,
-    BusinessClient
+    BusinessClient,
+    IndependentHomeOwner
 }
 
 public enum MembershipStatus
@@ -53,7 +54,8 @@ public enum EmailDeliveryStatus
     Queued,
     Sent,
     Failed,
-    TestRerouted
+    TestRerouted,
+    Suppressed
 }
 
 public enum UserStatus
@@ -61,6 +63,21 @@ public enum UserStatus
     Active,
     Disabled
 }
+
+public enum EquipmentScope
+{
+    Global,
+    Company,
+    HomeOwner
+}
+
+public enum SystemMode
+{
+    Pool,
+    Landscape
+}
+
+public sealed record SystemSettings(SystemMode SystemMode);
 
 public sealed record AppUser(
     string Id,
@@ -72,6 +89,7 @@ public sealed record AppUser(
     string? ProfileImageUrl,
     bool IsSystemAdmin,
     bool IsTestUser,
+    bool? EmailNotificationsEnabled,
     UserStatus Status);
 
 public sealed record RoleDefinition(
@@ -113,6 +131,32 @@ public sealed record ClientType(
     decimal DefaultRate,
     bool IsActive);
 
+public sealed record ServiceCategory(
+    string Id,
+    string CompanyId,
+    string Name,
+    string Description,
+    bool IsSystemManaged,
+    bool IsActive);
+
+public sealed record MaterialCategory(
+    string Id,
+    string CompanyId,
+    string Name,
+    string Description,
+    bool IsSystemManaged,
+    bool IsActive);
+
+public sealed record PoolEquipmentCategory(
+    string Id,
+    EquipmentScope Scope,
+    string ScopeOwnerId,
+    string Manufacturer,
+    string Name,
+    string Description,
+    bool IsSystemManaged,
+    bool IsActive);
+
 public sealed record CompanyClient(
     string Id,
     string CompanyId,
@@ -126,9 +170,17 @@ public sealed record CompanyClient(
     decimal? RateOverride,
     bool IsActive);
 
+public sealed record IndependentHomeOwnerProfile(
+    string UserId,
+    string HomeAddress,
+    string AccessNotes,
+    DateTimeOffset CreatedUtc,
+    DateTimeOffset UpdatedUtc);
+
 public sealed record ServiceOffering(
     string Id,
     string CompanyId,
+    string? CategoryId,
     string Name,
     string Description,
     int DefaultDurationMinutes,
@@ -139,11 +191,22 @@ public sealed record ServiceOffering(
 public sealed record Material(
     string Id,
     string CompanyId,
+    string? CategoryId,
     string Name,
     string UnitOfMeasure,
     decimal DefaultUnitCost,
     decimal DefaultBillableUnitPrice,
     bool IsTaxable,
+    bool IsActive);
+
+public sealed record PoolEquipmentItem(
+    string Id,
+    EquipmentScope Scope,
+    string ScopeOwnerId,
+    string CategoryId,
+    string Name,
+    string Description,
+    string? ImageUrl,
     bool IsActive);
 
 public sealed record ServiceVisit(
@@ -181,6 +244,25 @@ public sealed record ServiceHistoryItem(
     AppUser? AssignedUser,
     VisitCompletion? Completion);
 
+public sealed record CatalogOverview(
+    IReadOnlyList<ServiceCategoryGroup> ServiceGroups,
+    IReadOnlyList<MaterialCategoryGroup> MaterialGroups);
+
+public sealed record ServiceCategoryGroup(
+    ServiceCategory Category,
+    IReadOnlyList<ServiceOffering> Services);
+
+public sealed record MaterialCategoryGroup(
+    MaterialCategory Category,
+    IReadOnlyList<Material> Materials);
+
+public sealed record PoolEquipmentOverview(
+    IReadOnlyList<PoolEquipmentCategoryGroup> CategoryGroups);
+
+public sealed record PoolEquipmentCategoryGroup(
+    PoolEquipmentCategory Category,
+    IReadOnlyList<PoolEquipmentItem> Items);
+
 public sealed record CompanyDashboard(
     Company Company,
     int TodayScheduled,
@@ -199,7 +281,9 @@ public sealed record RegistrationSubmission(
     string? BusinessPhone,
     string? BusinessEmail,
     string? ServiceArea,
-    IReadOnlyList<string> InitialServices);
+    IReadOnlyList<string> InitialServices,
+    string? HomeAddress = null,
+    string? HomeAccessNotes = null);
 
 public sealed record GoogleUserProfile(
     string GoogleSubjectId,
@@ -259,3 +343,16 @@ public sealed record PlatformUserManagementOverview(
     int PendingMemberships,
     IReadOnlyList<RoleDefinition> Roles,
     IReadOnlyList<UserManagementRow> Users);
+
+public sealed record CompanyUserManagementRow(
+    AppUser User,
+    CompanyMembership Membership,
+    RoleDefinition Role);
+
+public sealed record CompanyUserManagementOverview(
+    Company Company,
+    int ActiveUsers,
+    int PendingRequests,
+    IReadOnlyList<RoleDefinition> Roles,
+    IReadOnlyList<CompanyUserManagementRow> Users,
+    IReadOnlyList<AccessRequest> PendingAccessRequests);

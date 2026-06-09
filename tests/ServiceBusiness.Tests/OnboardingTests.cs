@@ -47,7 +47,9 @@ public sealed class OnboardingTests
             null,
             null,
             null,
-            []));
+            [],
+            "500 Scenario Way, Phoenix, AZ",
+            "Side gate"));
 
         Assert.True(result.RequiresApproval);
         Assert.Equal("clearwater", result.Membership!.CompanyId);
@@ -56,10 +58,46 @@ public sealed class OnboardingTests
     }
 
     [Fact]
+    public async Task Independent_homeowner_registration_creates_active_owner_workspace_without_company_membership()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var service = new OnboardingService(store);
+
+        var result = await service.RegisterAsync(new RegistrationSubmission(
+            RegistrationAccountType.IndependentHomeOwner,
+            "homeowner.new@gmail.com",
+            "Harper Homeowner",
+            "555-0166",
+            null,
+            null,
+            null,
+            null,
+            null,
+            [],
+            HomeAddress: "500 Scenario Way, Phoenix, AZ",
+            HomeAccessNotes: "Side gate"));
+
+        Assert.False(result.RequiresApproval);
+        Assert.Null(result.Company);
+        Assert.Null(result.Membership);
+
+        var memberships = await store.GetMembershipsForUserAsync(result.User.Id);
+        Assert.Empty(memberships);
+
+        var categories = await store.GetPoolEquipmentCategoriesAsync(EquipmentScope.HomeOwner, result.User.Id);
+        var items = await store.GetPoolEquipmentItemsAsync(EquipmentScope.HomeOwner, result.User.Id);
+        var profile = await store.GetIndependentHomeOwnerProfileAsync(result.User.Id);
+        Assert.Equal("500 Scenario Way, Phoenix, AZ", profile!.HomeAddress);
+        Assert.Equal("Side gate", profile.AccessNotes);
+        Assert.Contains(categories, c => c.Id == "my-pool-equipment");
+        Assert.Contains(items, i => i.Id == "primary-pool-equipment");
+    }
+
+    [Fact]
     public async Task Business_owner_can_approve_pending_access_request()
     {
         var store = new InMemoryServiceBusinessStore();
-        var currentUser = new TestCurrentUser("admin-1");
+        var currentUser = new TestCurrentUser("clearwater-owner-1");
         var authorization = new TenantAuthorizationService(store, currentUser);
         var notificationQueue = new TestNotificationQueue();
         var service = new CompanyAdminService(store, authorization, currentUser, notificationQueue);
@@ -77,7 +115,7 @@ public sealed class OnboardingTests
         var approved = Assert.Single(memberships, m => m.CompanyId == "clearwater");
 
         Assert.Equal(MembershipStatus.Active, approved.Status);
-        Assert.Equal("admin-1", approved.DecidedByUserId);
+        Assert.Equal("clearwater-owner-1", approved.DecidedByUserId);
         Assert.Single(notificationQueue.Decisions);
     }
 
@@ -97,21 +135,24 @@ public sealed class OnboardingTests
     public async Task Current_user_can_update_profile_contact_details()
     {
         var store = new InMemoryServiceBusinessStore();
-        var currentUser = new TestCurrentUser("tech-1");
+        var currentUser = new TestCurrentUser("clearwater-user-1");
         var authorization = new TenantAuthorizationService(store, currentUser);
         var service = new UserProfileService(store, authorization);
 
         var updated = await service.UpdateCurrentProfileAsync(
             "Morgan Route",
             "route-notify@example.com",
-            "555-0200");
+            "555-0200",
+            false);
 
         Assert.Equal("Morgan Route", updated.DisplayName);
         Assert.Equal("route-notify@example.com", updated.NotificationEmail);
         Assert.Equal("555-0200", updated.Phone);
+        Assert.False(updated.EmailNotificationsEnabled);
 
-        var persisted = await store.GetUserAsync("tech-1");
+        var persisted = await store.GetUserAsync("clearwater-user-1");
         Assert.Equal("Morgan Route", persisted!.DisplayName);
+        Assert.False(persisted.EmailNotificationsEnabled);
     }
 
     private sealed class TestCurrentUser(string userId) : ICurrentUserContext

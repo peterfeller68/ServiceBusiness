@@ -1,0 +1,67 @@
+@page "/admin/email-log"
+@rendermode InteractiveServer
+@using ServiceBusiness.Domain
+@inject ServiceBusiness.Application.PlatformAdminService PlatformAdminService
+@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+
+<PageTitle>Email Log</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">System Administrator</p>
+        <h1>Email Log</h1>
+        <p class="lede">Review email notification attempts, reroutes, failures, and suppressed sends.</p>
+    </div>
+    <a class="button" href="admin">Dashboard</a>
+</section>
+
+@if (emailLogs is null)
+{
+    <p>Loading email log...</p>
+}
+else if (emailLogs.Count == 0)
+{
+    <div class="callout">
+        <strong>No emails logged yet</strong>
+        <p>Email notifications will appear here after visit completion or access approval decisions.</p>
+    </div>
+}
+else
+{
+    <section class="section">
+        <h2>Recent Emails</h2>
+        <div class="data-list">
+            @foreach (var email in emailLogs.Take(25))
+            {
+                <article class="row-card">
+                    <div>
+                        <strong>@email.Subject</strong>
+                        <p>@email.RecipientEmail &middot; @email.EmailType</p>
+                        @if (!string.Equals(email.OriginalRecipientEmail, email.RecipientEmail, StringComparison.OrdinalIgnoreCase))
+                        {
+                            <small>Original recipient: @email.OriginalRecipientEmail</small>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(email.FailureReason))
+                        {
+                            <small>@email.FailureReason</small>
+                        }
+                    </div>
+                    <div class="row-actions">
+                        <span class="status-pill">@email.Status</span>
+                        <small>@email.CreatedUtc.LocalDateTime.ToString("g")</small>
+                    </div>
+                </article>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    private IReadOnlyList<EmailLogEntry>? emailLogs;
+
+    protected override async Task OnInitializedAsync()
+    {
+        DemoUser.UserId = "sys-admin";
+        emailLogs = await PlatformAdminService.GetEmailLogsAsync();
+    }
+}

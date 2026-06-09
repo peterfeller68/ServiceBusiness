@@ -1,7 +1,11 @@
 @inherits LayoutComponentBase
 @using ServiceBusiness.Application
+@using ServiceBusiness.Domain
+@using Microsoft.AspNetCore.Components.Authorization
 @inject OnboardingService OnboardingService
 @inject ICurrentUserContext CurrentUser
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject ServiceBusiness.Web.ApplicationModeService ApplicationMode
 
 <div class="page">
     <div class="sidebar">
@@ -10,7 +14,7 @@
 
     <main>
         <div class="top-row px-4">
-            <span>Azure-ready Blazor SaaS MVP</span>
+            <span>@appMode.ProductName Azure-ready Blazor SaaS MVP</span>
             <div class="profile-chip">
                 @if (currentUser is null)
                 {
@@ -18,8 +22,10 @@
                 }
                 else
                 {
-                    <a href="profile" title="Open account profile">@currentUser.DisplayName</a>
-                    <a href="auth/signout">Logout</a>
+                    <a class="profile-link" href="profile" title="Open account profile">
+                        <span>@currentUser.DisplayName</span>
+                        <small>@currentRoleLabel</small>
+                    </a>
                 }
             </div>
         </div>
@@ -38,16 +44,61 @@
 
 @code {
     private ServiceBusiness.Domain.AppUser? currentUser;
+    private string currentRoleLabel = "";
+    private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
 
     protected override async Task OnInitializedAsync()
     {
+        appMode = await ApplicationMode.GetCurrentAsync();
+
         try
         {
-            currentUser = (await OnboardingService.GetAccessOverviewAsync(CurrentUser.UserId)).User;
+            var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            if (authenticationState.User.Identity?.IsAuthenticated == true)
+            {
+                var overview = await OnboardingService.GetAccessOverviewAsync(CurrentUser.UserId);
+                currentUser = overview.User;
+                currentRoleLabel = GetRoleLabel(overview);
+            }
         }
         catch
         {
             currentUser = null;
+            currentRoleLabel = "";
         }
     }
+
+    private static string GetRoleLabel(UserAccessOverview overview)
+    {
+        if (overview.User.IsSystemAdmin)
+        {
+            return "System Administrator";
+        }
+
+        var activeRoles = overview.Companies
+            .Where(access => access.Status == MembershipStatus.Active)
+            .Select(access => access.Role)
+            .Distinct()
+            .ToList();
+
+        if (activeRoles.Count > 0)
+        {
+            return string.Join(", ", activeRoles.Select(GetRoleDisplayName));
+        }
+
+        if (overview.Companies.Any(access => access.Status == MembershipStatus.Pending))
+        {
+            return "Pending Approval";
+        }
+
+        return "Independent Home Owner";
+    }
+
+    private static string GetRoleDisplayName(CompanyRole role) => role switch
+    {
+        CompanyRole.CompanyAdmin => "Company Admin",
+        CompanyRole.CompanyUser => "Company User",
+        CompanyRole.CompanyClientUser => "Business Client",
+        _ => role.ToString()
+    };
 }

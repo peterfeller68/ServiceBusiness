@@ -47,6 +47,10 @@ else
                     Notification email
                     <InputText class="form-control" @bind-Value="form.NotificationEmail" />
                 </label>
+                <label class="check-row">
+                    <InputCheckbox @bind-Value="form.EmailNotificationsEnabled" />
+                    Email notifications
+                </label>
                 <label>
                     Phone
                     <InputText class="form-control" @bind-Value="form.Phone" />
@@ -96,7 +100,8 @@ else
             var updated = await ProfileService.UpdateCurrentProfileAsync(
                 form.DisplayName,
                 form.NotificationEmail,
-                form.Phone);
+                form.Phone,
+                form.EmailNotificationsEnabled);
             form = ProfileForm.FromUser(updated);
             message = "Profile saved.";
         }
@@ -115,6 +120,7 @@ else
         public string Email { get; init; } = "";
         public string DisplayName { get; set; } = "";
         public string? NotificationEmail { get; set; }
+        public bool EmailNotificationsEnabled { get; set; } = true;
         public string? Phone { get; set; }
         public string? ProfileImageUrl { get; init; }
         public UserStatus Status { get; init; }
@@ -124,6 +130,7 @@ else
             Email = user.Email,
             DisplayName = user.DisplayName,
             NotificationEmail = user.NotificationEmail,
+            EmailNotificationsEnabled = user.EmailNotificationsEnabled ?? true,
             Phone = user.Phone,
             ProfileImageUrl = user.ProfileImageUrl,
             Status = user.Status

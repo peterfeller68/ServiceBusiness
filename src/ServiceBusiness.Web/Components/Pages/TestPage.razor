@@ -1,0 +1,49 @@
+@page "/test"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Authorization
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Test Page</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">Test</p>
+        <h1>Test Page</h1>
+        <p class="lede">Sandbox area for validating new application components before release.</p>
+    </div>
+</section>
+
+<section class="section split">
+    <div class="form-panel">
+        <h2>Session</h2>
+        <div class="data-list">
+            <article class="row-card compact">
+                <div>
+                    <strong>@(isAuthenticated ? "Authenticated" : "Anonymous")</strong>
+                    <p>@displayName</p>
+                </div>
+                <span class="status-pill">Sandbox</span>
+            </article>
+        </div>
+    </div>
+
+    <aside class="callout">
+        <strong>Testing environment</strong>
+        <p>This page is isolated from operational workflows.</p>
+    </aside>
+</section>
+
+@code {
+    private bool isAuthenticated;
+    private string displayName = "No signed-in user.";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        isAuthenticated = authenticationState.User.Identity?.IsAuthenticated == true;
+        if (isAuthenticated)
+        {
+            displayName = authenticationState.User.Identity?.Name ?? "Signed-in user";
+        }
+    }
+}

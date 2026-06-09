@@ -1,11 +1,12 @@
 @page "/"
+@inject ServiceBusiness.Web.ApplicationModeService ApplicationMode
 
-<PageTitle>RouteOps</PageTitle>
+<PageTitle>@appMode.ProductName</PageTitle>
 
-<section class="landing-hero">
+<section class="landing-hero" style="background-image: linear-gradient(90deg, rgba(13, 30, 26, .78), rgba(13, 30, 26, .34), rgba(13, 30, 26, .08)), url('@appMode.HeroImageUrl');">
     <div class="landing-copy">
-        <p class="eyebrow">Pool cleaning and landscaping operations</p>
-        <h1>RouteOps</h1>
+        <p class="eyebrow">@appMode.ProductCategory</p>
+        <h1>@appMode.ProductName</h1>
         <p>Manage clients, recurring service, field visits, completion notes, and client access from one tenant-aware workspace.</p>
         <div class="landing-actions">
             <a class="button primary" href="signin">Sign In</a>
@@ -13,6 +14,15 @@
         </div>
     </div>
 </section>
+
+@code {
+    private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
+
+    protected override async Task OnInitializedAsync()
+    {
+        appMode = await ApplicationMode.GetCurrentAsync();
+    }
+}
 
 <section class="landing-band">
     <div>

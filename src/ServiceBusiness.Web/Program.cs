@@ -60,6 +60,7 @@ if (googleAuthConfigured)
 }
 
 builder.Services.AddAuthorization();
+builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddHttpContextAccessor();
 if (bool.TryParse(builder.Configuration["AzureStorage:UseAzureStorage"], out var useAzureStorage) && useAzureStorage)
 {
@@ -71,6 +72,7 @@ else
 }
 builder.Services.AddHostedService<AzureStorageTableInitializer>();
 builder.Services.AddSingleton<DemoCurrentUserContext>();
+builder.Services.AddSingleton<ApplicationModeService>();
 builder.Services.AddScoped<ICurrentUserContext, AuthenticatedCurrentUserContext>();
 builder.Services.AddSingleton<INotificationQueue, AzureCommunicationEmailNotificationQueue>();
 builder.Services.AddScoped<TenantAuthorizationService>();

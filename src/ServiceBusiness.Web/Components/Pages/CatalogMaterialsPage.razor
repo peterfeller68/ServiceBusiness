@@ -1,0 +1,363 @@
+@page "/catalog/materials"
+@page "/admin/catalog/materials"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components
+@using ServiceBusiness.Domain
+@inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
+@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+@inject NavigationManager Navigation
+
+<PageTitle>Materials</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">@PageScope</p>
+        <h1>Materials</h1>
+        <p class="lede">Create, edit, archive, and reactivate material categories and material items.</p>
+    </div>
+    <a class="button" href="catalog">Catalog Overview</a>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="notice success">@message</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="notice error">@errorMessage</div>
+}
+
+@if (catalog is null)
+{
+    <p>Loading materials...</p>
+}
+else
+{
+    <section class="section split">
+        <EditForm Model="categoryForm" OnValidSubmit="SaveCategoryAsync" FormName="material-category-editor">
+            <div class="form-panel">
+                <h2>@(categoryForm.IsEditing ? "Edit Category" : "Create Category")</h2>
+                <label>
+                    Category ID
+                    <InputText class="form-control" @bind-Value="categoryForm.Id" disabled="@categoryForm.IsEditing" />
+                </label>
+                <label>
+                    Name
+                    <InputText class="form-control" @bind-Value="categoryForm.Name" />
+                </label>
+                <label>
+                    Description
+                    <InputTextArea class="form-control" @bind-Value="categoryForm.Description" />
+                </label>
+                <label class="check-row">
+                    <InputCheckbox @bind-Value="categoryForm.IsActive" />
+                    <span>Active</span>
+                </label>
+                <div class="form-actions">
+                    <button class="button primary" type="submit">Save Category</button>
+                    <button class="button" type="button" @onclick="ResetCategoryForm">New Category</button>
+                </div>
+            </div>
+        </EditForm>
+
+        <EditForm Model="materialForm" OnValidSubmit="SaveMaterialAsync" FormName="material-item-editor">
+            <div class="form-panel">
+                <h2>@(materialForm.IsEditing ? "Edit Material" : "Create Material")</h2>
+                <div class="form-grid">
+                    <label>
+                        Material ID
+                        <InputText class="form-control" @bind-Value="materialForm.Id" disabled="@materialForm.IsEditing" />
+                    </label>
+                    <label>
+                        Category
+                        <InputSelect class="form-control" @bind-Value="materialForm.CategoryId">
+                            <option value="">Uncategorized</option>
+                            @foreach (var category in MaterialCategories)
+                            {
+                                <option value="@category.Id">@category.Name</option>
+                            }
+                        </InputSelect>
+                    </label>
+                    <label>
+                        Name
+                        <InputText class="form-control" @bind-Value="materialForm.Name" />
+                    </label>
+                    <label>
+                        Unit
+                        <InputText class="form-control" @bind-Value="materialForm.UnitOfMeasure" />
+                    </label>
+                    <label>
+                        Unit cost
+                        <InputNumber class="form-control" @bind-Value="materialForm.DefaultUnitCost" />
+                    </label>
+                    <label>
+                        Billable price
+                        <InputNumber class="form-control" @bind-Value="materialForm.DefaultBillableUnitPrice" />
+                    </label>
+                    <label class="check-row">
+                        <InputCheckbox @bind-Value="materialForm.IsTaxable" />
+                        <span>Taxable</span>
+                    </label>
+                    <label class="check-row">
+                        <InputCheckbox @bind-Value="materialForm.IsActive" />
+                        <span>Active</span>
+                    </label>
+                </div>
+                <div class="form-actions">
+                    <button class="button primary" type="submit">Save Material</button>
+                    <button class="button" type="button" @onclick="ResetMaterialForm">New Material</button>
+                </div>
+            </div>
+        </EditForm>
+    </section>
+
+    <section class="section">
+        <h2>Material Categories</h2>
+        <div class="category-grid">
+            @foreach (var group in catalog.MaterialGroups)
+            {
+                <article class="form-panel">
+                    <div class="category-heading">
+                        <div>
+                            <strong>@group.Category.Name</strong>
+                            <p>@group.Category.Description</p>
+                        </div>
+                        <div class="row-actions">
+                            @if (group.Category.IsSystemManaged)
+                            {
+                                <span class="status-pill">Starter</span>
+                            }
+                            <span class="status-pill">@(group.Category.IsActive ? "Active" : "Archived")</span>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button class="button" type="button" @onclick="() => EditCategory(group.Category)">Edit Category</button>
+                        @if (group.Category.IsSystemManaged)
+                        {
+                            <button class="button" type="button" @onclick="() => CopyCategoryAsync(group.Category)">Copy as Custom</button>
+                        }
+                        @if (group.Category.IsActive)
+                        {
+                            <button class="button danger" type="button" @onclick="() => SetCategoryActiveAsync(group.Category, false)">Archive Category</button>
+                        }
+                        else
+                        {
+                            <button class="button primary" type="button" @onclick="() => SetCategoryActiveAsync(group.Category, true)">Reactivate Category</button>
+                        }
+                    </div>
+
+                    @if (group.Materials.Count == 0)
+                    {
+                        <p class="form-note">No materials in this category yet.</p>
+                    }
+                    else
+                    {
+                        <div class="data-list">
+                            @foreach (var material in group.Materials)
+                            {
+                                <article class="row-card compact">
+                                    <div>
+                                        <strong>@material.Name</strong>
+                                        <p>@material.UnitOfMeasure &middot; Cost @material.DefaultUnitCost.ToString("C")</p>
+                                        <small>@(material.IsTaxable ? "Taxable" : "Non-taxable") &middot; @(material.IsActive ? "Active" : "Archived")</small>
+                                    </div>
+                                    <div class="row-actions">
+                                        <span class="price">@material.DefaultBillableUnitPrice.ToString("C")</span>
+                                        <button class="button" type="button" @onclick="() => EditMaterial(material)">Edit</button>
+                                        @if (group.Category.IsSystemManaged)
+                                        {
+                                            <button class="button" type="button" @onclick="() => CopyMaterialAsync(material)">Copy</button>
+                                        }
+                                        @if (material.IsActive)
+                                        {
+                                            <button class="button danger" type="button" @onclick="() => SetMaterialActiveAsync(material, false)">Archive</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="button primary" type="button" @onclick="() => SetMaterialActiveAsync(material, true)">Reactivate</button>
+                                        }
+                                    </div>
+                                </article>
+                            }
+                        </div>
+                    }
+                </article>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    private const string CompanyId = "clearwater";
+    private CatalogOverview? catalog;
+    private MaterialCategoryForm categoryForm = new();
+    private MaterialForm materialForm = new();
+    private string? message;
+    private string? errorMessage;
+    private bool IsSystemAdminRoute => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("admin/", StringComparison.OrdinalIgnoreCase);
+    private string PageScope => IsSystemAdminRoute ? "System Administrator" : "Company Admin";
+    private IReadOnlyList<MaterialCategory> MaterialCategories => catalog?.MaterialGroups.Select(g => g.Category).ToList() ?? [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        DemoUser.UserId = IsSystemAdminRoute ? "sys-admin" : "clearwater-owner-1";
+        await LoadAsync();
+    }
+
+    private async Task SaveCategoryAsync()
+    {
+        await RunAsync(async () =>
+        {
+            await CompanyAdminService.UpsertMaterialCategoryAsync(new MaterialCategory(
+                categoryForm.Id,
+                CompanyId,
+                categoryForm.Name,
+                categoryForm.Description,
+                categoryForm.IsSystemManaged,
+                categoryForm.IsActive));
+            message = $"{categoryForm.Name} category was saved.";
+            ResetCategoryForm();
+        });
+    }
+
+    private async Task SaveMaterialAsync()
+    {
+        await RunAsync(async () =>
+        {
+            await CompanyAdminService.UpsertMaterialAsync(new Material(
+                materialForm.Id,
+                CompanyId,
+                materialForm.CategoryId,
+                materialForm.Name,
+                materialForm.UnitOfMeasure,
+                materialForm.DefaultUnitCost,
+                materialForm.DefaultBillableUnitPrice,
+                materialForm.IsTaxable,
+                materialForm.IsActive));
+            message = $"{materialForm.Name} was saved.";
+            ResetMaterialForm();
+        });
+    }
+
+    private async Task SetCategoryActiveAsync(MaterialCategory category, bool isActive)
+    {
+        await RunAsync(async () =>
+        {
+            await CompanyAdminService.SetMaterialCategoryActiveAsync(CompanyId, category.Id, isActive);
+            message = $"{category.Name} was {(isActive ? "reactivated" : "archived")}.";
+        });
+    }
+
+    private async Task CopyCategoryAsync(MaterialCategory category)
+    {
+        await RunAsync(async () =>
+        {
+            var copy = await CompanyAdminService.CopyMaterialCategoryAsync(CompanyId, category.Id);
+            message = $"{category.Name} was copied to {copy.Name}.";
+        });
+    }
+
+    private async Task SetMaterialActiveAsync(Material material, bool isActive)
+    {
+        await RunAsync(async () =>
+        {
+            await CompanyAdminService.SetMaterialActiveAsync(CompanyId, material.Id, isActive);
+            message = $"{material.Name} was {(isActive ? "reactivated" : "archived")}.";
+        });
+    }
+
+    private async Task CopyMaterialAsync(Material material)
+    {
+        await RunAsync(async () =>
+        {
+            var copy = await CompanyAdminService.CopyMaterialAsync(CompanyId, material.Id);
+            message = $"{material.Name} was copied to {copy.Name}.";
+        });
+    }
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        message = null;
+        errorMessage = null;
+
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        catalog = await CompanyAdminService.GetCatalogOverviewAsync(CompanyId);
+    }
+
+    private void EditCategory(MaterialCategory category)
+    {
+        categoryForm = MaterialCategoryForm.FromCategory(category);
+    }
+
+    private void EditMaterial(Material material)
+    {
+        materialForm = MaterialForm.FromMaterial(material);
+    }
+
+    private void ResetCategoryForm() => categoryForm = new();
+
+    private void ResetMaterialForm() => materialForm = new();
+
+    private sealed class MaterialCategoryForm
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Description { get; set; } = "";
+        public bool IsSystemManaged { get; set; }
+        public bool IsActive { get; set; } = true;
+        public bool IsEditing { get; set; }
+
+        public static MaterialCategoryForm FromCategory(MaterialCategory category) => new()
+        {
+            Id = category.Id,
+            Name = category.Name,
+            Description = category.Description,
+            IsSystemManaged = category.IsSystemManaged,
+            IsActive = category.IsActive,
+            IsEditing = true
+        };
+    }
+
+    private sealed class MaterialForm
+    {
+        public string Id { get; set; } = "";
+        public string? CategoryId { get; set; }
+        public string Name { get; set; } = "";
+        public string UnitOfMeasure { get; set; } = "";
+        public decimal DefaultUnitCost { get; set; }
+        public decimal DefaultBillableUnitPrice { get; set; }
+        public bool IsTaxable { get; set; } = true;
+        public bool IsActive { get; set; } = true;
+        public bool IsEditing { get; set; }
+
+        public static MaterialForm FromMaterial(Material material) => new()
+        {
+            Id = material.Id,
+            CategoryId = material.CategoryId,
+            Name = material.Name,
+            UnitOfMeasure = material.UnitOfMeasure,
+            DefaultUnitCost = material.DefaultUnitCost,
+            DefaultBillableUnitPrice = material.DefaultBillableUnitPrice,
+            IsTaxable = material.IsTaxable,
+            IsActive = material.IsActive,
+            IsEditing = true
+        };
+    }
+}

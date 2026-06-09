@@ -39,7 +39,7 @@ Current seeded test accounts:
 ```text
 owner@clearwater.example
 morgan@clearwater.example
-homeowner@example.com
+homeowner-1@independent.com
 pending.tech@gmail.com
 ```
 

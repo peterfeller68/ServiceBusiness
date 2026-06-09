@@ -11,7 +11,7 @@ public sealed class FieldWorkTests
     public async Task Completing_visit_persists_completion_and_marks_visit_completed()
     {
         var store = new InMemoryServiceBusinessStore();
-        var currentUser = new TestCurrentUser("tech-1");
+        var currentUser = new TestCurrentUser("clearwater-user-1");
         var authorization = new TenantAuthorizationService(store, currentUser);
         var notificationQueue = new TestNotificationQueue();
         var service = new FieldWorkService(store, authorization, currentUser, notificationQueue);
@@ -30,6 +30,24 @@ public sealed class FieldWorkTests
         Assert.Equal(VisitStatus.Completed, visit!.Status);
         Assert.NotNull(completion);
         Assert.Single(notificationQueue.Items);
+    }
+
+    [Fact]
+    public async Task Catalog_overview_groups_services_and_materials_by_category()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var currentUser = new TestCurrentUser("clearwater-owner-1");
+        var authorization = new TenantAuthorizationService(store, currentUser);
+        var service = new CompanyAdminService(store, authorization, currentUser, new TestNotificationQueue());
+
+        var catalog = await service.GetCatalogOverviewAsync("clearwater");
+
+        var maintenance = Assert.Single(catalog.ServiceGroups, group => group.Category.Id == "svc-cat-maintenance");
+        Assert.Contains(maintenance.Services, item => item.Id == "svc-basic");
+        Assert.Contains(maintenance.Services, item => item.Id == "svc-chem");
+
+        var chemicals = Assert.Single(catalog.MaterialGroups, group => group.Category.Id == "mat-cat-chemicals");
+        Assert.Contains(chemicals.Materials, item => item.Id == "mat-chlorine");
     }
 
     private sealed class TestCurrentUser(string userId) : ICurrentUserContext

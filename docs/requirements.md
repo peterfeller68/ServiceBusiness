@@ -69,6 +69,18 @@ Responsibilities:
 - Send questions or messages to the company.
 - Maintain basic contact preferences.
 
+### 2.5 Independent Home Owner
+
+The Independent Home Owner is a homeowner who is not associated with a service company tenant.
+
+Responsibilities:
+
+- Register without selecting a company.
+- Provide home address and access notes.
+- Manage owner-scoped pool equipment categories and equipment items.
+- Maintain personal pool equipment records.
+- Use homeowner tools without requiring company-owner approval.
+
 ## 3. Tenant and Role Model
 
 The application must be multi-tenant.
@@ -116,6 +128,12 @@ Company roles:
 - `CompanyAdmin`
 - `CompanyUser`
 - `CompanyClientUser`
+
+Independent Home Owner access:
+
+- Independent Home Owner users are active application users without company memberships.
+- Owner-scoped features must validate the current user and use the user's ID as the owner scope.
+- Independent Home Owner access does not grant company-scoped or platform-scoped permissions.
 
 Role definitions:
 
@@ -181,6 +199,7 @@ The app stores:
 - Google subject ID.
 - Email.
 - Notification email.
+- Email notifications enabled flag.
 - Display name.
 - Phone.
 - Profile image URL.
@@ -193,8 +212,12 @@ The app stores:
 Current implementation:
 
 - The profile page at `/profile` lets signed-in users update display name, notification email, and phone.
+- Signed-in users can turn email notifications on or off from `/profile`; existing users without the stored flag are treated as opted in.
 - Login email remains read-only on the profile page because it is tied to Google/test-user identity lookup.
-- The authenticated shell shows a profile indicator with logout access.
+- The authenticated shell shows a profile indicator that opens `/profile`; logout is available from the profile page.
+- Public navigation shows only Home and Help when no user is signed in.
+- Signed-in navigation is filtered by active company role and system-admin status.
+- Signed-in navigation uses collapsible sections with distinct focused routes for visible leaf items.
 
 ### 6.1.1 System Admin User Management
 
@@ -214,6 +237,14 @@ Rules:
 - The system must keep at least one active System Admin.
 - Disabled users cannot sign in or pass authorization checks.
 
+Current implementation:
+
+- `/admin` is the platform summary dashboard.
+- `/admin/companies`, `/admin/users`, `/admin/roles`, and `/admin/email-log` provide focused pages for company, user, role, and email-log management.
+- `/admin/companies` supports company create, edit, suspend, archive, and reactivate.
+- `/admin/users` supports user create, edit, system-admin promotion/removal, disable, and enable.
+- `/admin/roles` supports editing built-in role display metadata, permissions, and owner-approval requirements; role identities remain fixed to the built-in company role keys.
+
 ### 6.2 Company User Management
 
 Company Admins can:
@@ -230,6 +261,25 @@ Standard Company Users can:
 
 - Request to join a company using invite code, company code, or invitation link.
 - View the status of their request.
+
+Current implementation:
+
+- `/company/users` shows company users and pending employee/client-user access requests for the seeded company scope.
+- Company admins can approve or reject pending company access requests.
+- Company admins can deactivate and reactivate approved company memberships.
+- Company admins can update company-scoped roles by removing the previous membership role and activating the replacement role.
+- Company admins cannot deactivate or reassign their own Company Admin access, and at least one active Company Admin must remain.
+- Global account disablement remains a System Admin action on `/admin/users`.
+
+### 6.2.1 Independent Home Owner Registration
+
+Current implementation:
+
+- `/register` includes an Independent Homeowner account type.
+- Independent Homeowner registration creates or updates an active `AppUser` without creating a company membership.
+- Independent Homeowner registration captures and persists home address and access notes in an owner profile.
+- Independent Homeowner registration seeds owner-scoped pool equipment records under `EquipmentScope.HomeOwner` for the new user ID.
+- Independent Homeowner users can open `/poolequipment` immediately without owner approval.
 
 ### 6.3 Company Client User Management
 
@@ -301,13 +351,15 @@ Rules:
 - Fee-for-service billing is based on completed services and materials.
 - Recurring weekly, bi-weekly, and monthly billing may use a standard recurring amount, with optional additional charges for materials or one-off services.
 
-## 9. Services and Materials Requirements
+## 9. Services, Materials, and Pool Equipment Requirements
 
 ### 9.1 Services
 
 Company Admins can:
 
+- View services grouped by service category.
 - Create, edit, archive, and view services.
+- Assign each service to a service category.
 - Set service name, description, default duration, default price, taxable flag, and active status.
 
 Standard Company Users can:
@@ -318,13 +370,63 @@ Standard Company Users can:
 
 Company Admins can:
 
+- View materials grouped by material category.
 - Create, edit, archive, and view materials.
+- Assign each material to a material category.
 - Set material name, unit of measure, default unit cost, default billable price, taxable flag, and active status.
 
 Standard Company Users can:
 
 - Select materials used during a visit.
 - Enter quantity used.
+
+### 9.3 Pool Equipment
+
+System Admins can:
+
+- View pool equipment grouped by equipment category.
+- Create, edit, archive, and reactivate global equipment categories and equipment items.
+- Set equipment category manufacturer, name, description, scope, and active status.
+- Set equipment item category, name, description, image URL reference, and active status.
+
+Company Admins can:
+
+- View pool equipment grouped by equipment category for their company scope.
+- Create, edit, archive, and reactivate company-scoped equipment categories and equipment items.
+
+Home Owners can:
+
+- View pool equipment grouped by equipment category for their owner scope.
+- Create, edit, archive, and reactivate owner-scoped equipment categories and equipment items.
+
+Current implementation:
+
+- Company catalogs include service categories and material categories.
+- Seeded Clearwater catalog data groups pool services under maintenance/equipment categories and materials under chemicals.
+- Seed data includes four richer test companies: `Pool1Clean1`, `PoolClean2`, `Landscape1`, and `Landscape2`.
+- Each richer test company includes at least five services, five materials, three equipment items, and five users across owner, business user, and business client roles.
+- Seed data includes three independent homeowner test users with `homeowner-1@independent.com`, `homeowner-2@independent.com`, and `homeowner-3@independent.com`; each has no company memberships and has owner-scoped pool equipment.
+- The `/catalog` page displays company services and materials grouped by category.
+- The `/catalog/materials` and `/catalog/services` pages split the company catalog into focused material and service editors.
+- The `/admin/catalog/materials` and `/admin/catalog/services` pages provide focused system-admin catalog editors for this slice.
+- Focused material and service editors support category and item create, edit, archive, and reactivate.
+- The `/admin/catalog/poolequipment`, `/catalog/poolequipment`, and `/poolequipment` pages provide focused pool-equipment editors for global, company, and homeowner scopes.
+- Focused pool-equipment editors support category and item create, edit, archive, reactivate, and image URL reference display.
+- Focused service, material, and pool-equipment editors support copy-as-custom actions for seeded starter categories and starter items.
+- Copied starter records become editable non-system-managed custom records in the current scope with unique `-custom` IDs.
+- Existing uncategorized rows are displayed under an uncategorized fallback group.
+
+### 9.4 System Mode
+
+Current implementation:
+
+- `SystemSettings.SystemMode` is persisted as a system setting and supports `Pool` and `Landscape`; `SystemSettings:SystemMode` configuration supplies the default only when the persisted row is missing.
+- `Pool` mode brands the application as `PoolShark` and uses the pool waterfall hero image.
+- `Landscape` mode brands the application as `TreeShark` and uses the mature fruit-tree landscape hero image.
+- Dashboard pages show the current mode's hero image.
+- Authenticated navigation hides Home; public navigation still shows Home and Help.
+- Landscape mode hides Pool Equipment navigation and redirects direct Pool Equipment routes back to the dashboard.
+- System Administrators can change `SystemMode` from the General Settings page.
 
 ## 10. Scheduling Requirements
 
@@ -438,6 +540,7 @@ Email logging:
 - Email logs must include company ID when applicable, email type, recipient user ID, original recipient email, actual recipient email, subject, body, timestamp, status, provider message ID when available, and failure reason when applicable.
 - System Administrators can view recent email log entries from the platform dashboard.
 - Test-user email must be routed to a configured test inbox when available and must not accidentally send to fake seeded addresses.
+- If a recipient user disables email notifications, the provider send is skipped and an email log entry is written with `Suppressed` status.
 
 Company Admins can configure:
 
@@ -562,6 +665,7 @@ Audit fields:
 - Schedule generation must avoid duplicate visit creation.
 - Background jobs should be retryable.
 - Important workflows should emit telemetry so operational failures can be diagnosed in Application Insights.
+- Critical persona workflows should have scenario tests, including application-level workflow tests and Playwright browser tests for high-value UI paths.
 
 ### 18.3 Security
 

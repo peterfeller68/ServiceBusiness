@@ -11,6 +11,7 @@
     <PackageReference Include="coverlet.collector" Version="6.0.2" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.*" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="Microsoft.Playwright" Version="1.53.0" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
@@ -24,6 +25,7 @@
     <ProjectReference Include="..\..\src\ServiceBusiness.Domain\ServiceBusiness.Domain.csproj" />
     <ProjectReference Include="..\..\src\ServiceBusiness.Infrastructure.AzureStorage\ServiceBusiness.Infrastructure.AzureStorage.csproj" />
     <ProjectReference Include="..\..\src\ServiceBusiness.Infrastructure.Integrations\ServiceBusiness.Infrastructure.Integrations.csproj" />
+    <ProjectReference Include="..\..\src\ServiceBusiness.Web\ServiceBusiness.Web.csproj" />
   </ItemGroup>
 
 </Project>

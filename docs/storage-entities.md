@@ -9,7 +9,12 @@ Current implementation note:
 - `AzureStorageTableInitializer` provisions the currently modeled Azure Table names when `AzureStorage:UseAzureStorage` is enabled.
 - `AzureTableServiceBusinessStore` is used when `AzureStorage:UseAzureStorage` is enabled.
 - The Table-backed store seeds current MVP data when the `Users` table is empty.
+- Seed data includes Clearwater plus the requested test companies `Pool1Clean1`, `PoolClean2`, `Landscape1`, and `Landscape2`, with richer users, memberships, service catalogs, material catalogs, and pool-equipment catalogs for each requested company.
+- Seed data includes three independent homeowner test users using `homeowner-{n}@independent.com` emails; each homeowner has an `IndependentHomeOwnerProfiles` row and owner-scoped pool-equipment starter records.
 - The Table-backed store persists current MVP records as JSON payloads in Azure Table entities and keeps `UserByEmail` and `UserByGoogleSubject` lookup rows in sync.
+- Pool equipment is persisted in `PoolEquipmentCategories` and `PoolEquipmentItems` using `EQUIPMENT_{Scope}_{ScopeOwnerId}` partitions.
+- Independent Homeowner users are stored as `Users` rows without company membership rows; their owner profile is stored in `IndependentHomeOwnerProfiles`, and their equipment uses `EquipmentScope.HomeOwner` and `ScopeOwnerId = UserId`.
+- `SystemSettings` stores singleton platform settings in Azure Table Storage using partition `SYSTEM_SETTINGS` and row `CURRENT`; `SystemMode` supports `Pool` and `Landscape`, and configuration only supplies the default when this row is missing.
 - `InMemoryServiceBusinessStore` remains available for local development when Azure Storage is disabled.
 
 Common fields:
@@ -112,6 +117,7 @@ Fields:
 - `GlobalStatus`
 - `IsSystemAdmin`
 - `IsTestUser`
+- `EmailNotificationsEnabled`
 - `Status`
 - `CreatedUtc`
 - `LastLoginUtc`
@@ -214,6 +220,15 @@ Roles:
 
 - `CompanyAdmin`
 - `CompanyUser`
+- `CompanyClientUser`
+
+Current implementation:
+
+- Table name: `CompanyMemberships`.
+- Partition key format: `COMPANY_{CompanyId}`.
+- Row key format: `USER_{UserId}_ROLE_{Role}`.
+- Company-admin user deactivation/reactivation updates membership `Status` between `Inactive` and `Active`.
+- Company-scoped role reassignment marks the previous membership role `Removed` and creates or reactivates the replacement membership role with the previous active/inactive status.
 
 ### 3.2 UserCompanyMemberships
 
@@ -233,6 +248,14 @@ Fields:
 - `CompanyName`
 - `Role`
 - `Status`
+
+Current implementation:
+
+- Table name: `UserCompanyMemberships`.
+- Partition key format: `USER#{UserId}`.
+- Row key format: `COMPANY#{CompanyId}#ROLE#{Role}` so multiple role histories for the same user and company can coexist.
+- The Azure Table store writes this lookup whenever a `CompanyMembership` is upserted.
+- Startup hydration backfills this lookup from `CompanyMemberships` when the lookup table is empty but company membership rows already exist.
 
 ### 3.3 CompanyClientUserMemberships
 
@@ -338,7 +361,59 @@ Billing frequencies:
 - `BiWeekly`
 - `Monthly`
 
-### 4.3 Services
+### 4.3 ServiceCategories
+
+Purpose:
+
+- Stores company-scoped service category groupings.
+
+Suggested keys:
+
+- `PartitionKey`: `COMPANY#{CompanyId}`
+- `RowKey`: `SERVICE_CATEGORY#{ServiceCategoryId}`
+
+Fields:
+
+- `CompanyId`
+- `ServiceCategoryId`
+- `Name`
+- `Description`
+- `IsSystemManaged`
+- `IsActive`
+- `CreatedUtc`
+- `UpdatedUtc`
+
+Current implementation:
+
+- Copy-as-custom creates a new service category row with a unique `-custom` ID and `IsSystemManaged = false`.
+
+### 4.4 MaterialCategories
+
+Purpose:
+
+- Stores company-scoped material category groupings.
+
+Suggested keys:
+
+- `PartitionKey`: `COMPANY#{CompanyId}`
+- `RowKey`: `MATERIAL_CATEGORY#{MaterialCategoryId}`
+
+Fields:
+
+- `CompanyId`
+- `MaterialCategoryId`
+- `Name`
+- `Description`
+- `IsSystemManaged`
+- `IsActive`
+- `CreatedUtc`
+- `UpdatedUtc`
+
+Current implementation:
+
+- Copy-as-custom creates a new material category row with a unique `-custom` ID and `IsSystemManaged = false`.
+
+### 4.5 Services
 
 Purpose:
 
@@ -353,6 +428,7 @@ Fields:
 
 - `CompanyId`
 - `ServiceId`
+- `CategoryId`
 - `Name`
 - `Description`
 - `DefaultDurationMinutes`
@@ -363,7 +439,11 @@ Fields:
 - `CreatedUtc`
 - `UpdatedUtc`
 
-### 4.4 Materials
+Current implementation:
+
+- Copy-as-custom creates a new service row with a unique `-custom` ID in the same company scope.
+
+### 4.6 Materials
 
 Purpose:
 
@@ -378,6 +458,7 @@ Fields:
 
 - `CompanyId`
 - `MaterialId`
+- `CategoryId`
 - `Name`
 - `Description`
 - `UnitOfMeasure`
@@ -388,6 +469,75 @@ Fields:
 - `SortOrder`
 - `CreatedUtc`
 - `UpdatedUtc`
+
+Current implementation:
+
+- Copy-as-custom creates a new material row with a unique `-custom` ID in the same company scope.
+
+### 4.7 PoolEquipmentCategories
+
+Purpose:
+
+- Stores global, company-scoped, and homeowner-scoped pool equipment categories.
+
+Suggested keys:
+
+- `PartitionKey`: `EQUIPMENT#{Scope}#{ScopeOwnerId}`
+- `RowKey`: `EQUIPMENT_CATEGORY#{EquipmentCategoryId}`
+
+Fields:
+
+- `EquipmentCategoryId`
+- `Scope`
+- `ScopeOwnerId`
+- `Manufacturer`
+- `Name`
+- `Description`
+- `IsSystemManaged`
+- `IsActive`
+- `CreatedUtc`
+- `UpdatedUtc`
+
+Current implementation:
+
+- Table name: `PoolEquipmentCategories`.
+- Partition key format: `EQUIPMENT_{Scope}_{ScopeOwnerId}`.
+- Row key: category ID.
+- Copy-as-custom creates a new category row with a unique `-custom` ID and `IsSystemManaged = false`.
+- Records are JSON payloads in Azure Table entities.
+
+### 4.8 PoolEquipmentItems
+
+Purpose:
+
+- Stores global, company-scoped, and homeowner-scoped pool equipment item records.
+
+Suggested keys:
+
+- `PartitionKey`: `EQUIPMENT#{Scope}#{ScopeOwnerId}`
+- `RowKey`: `EQUIPMENT_ITEM#{EquipmentItemId}`
+
+Fields:
+
+- `EquipmentItemId`
+- `Scope`
+- `ScopeOwnerId`
+- `CategoryId`
+- `Name`
+- `Description`
+- `ImageUrl`
+- `IsActive`
+- `CreatedUtc`
+- `UpdatedUtc`
+
+Current implementation:
+
+- Table name: `PoolEquipmentItems`.
+- Partition key format: `EQUIPMENT_{Scope}_{ScopeOwnerId}`.
+- Row key: item ID.
+- Copy-as-custom creates a new item row with a unique `-custom` ID in the same scope.
+- `ImageUrl` stores a URL or blob reference string; direct blob upload remains a future UI slice.
+- Records are JSON payloads in Azure Table entities.
 
 ## 5. Client Tables
 
@@ -454,6 +604,31 @@ Fields:
 - `Email`
 - `ClientDisplayName`
 - `Status`
+
+### 5.3 IndependentHomeOwnerProfiles
+
+Purpose:
+
+- Stores profile details for Independent Home Owner users who are not associated with a company tenant.
+
+Suggested keys:
+
+- `PartitionKey`: `HOMEOWNER_PROFILE`
+- `RowKey`: `{UserId}`
+
+Fields:
+
+- `UserId`
+- `HomeAddress`
+- `AccessNotes`
+- `CreatedUtc`
+- `UpdatedUtc`
+
+Current implementation:
+
+- Table name: `IndependentHomeOwnerProfiles`.
+- The row key is the homeowner `UserId`.
+- Independent Homeowner registration creates or updates this profile before seeding owner-scoped equipment records.
 
 ## 6. Scheduling Tables
 
@@ -886,6 +1061,7 @@ Statuses:
 - `Sent`
 - `Failed`
 - `TestRerouted`
+- `Suppressed`
 
 ## 12. Reporting Tables
 

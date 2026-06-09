@@ -34,7 +34,7 @@
         }
         else
         {
-            <a class="button primary" href="dashboard">Open Dashboard</a>
+            <a class="button primary" href="@SuccessHref">@(result.Company is null ? "Manage Pool Equipment" : "Open Dashboard")</a>
         }
     </div>
 }
@@ -66,6 +66,13 @@ else
                             <span>
                                 <strong>Business client</strong>
                                 <small>Request homeowner portal access.</small>
+                            </span>
+                        </label>
+                        <label class="choice-card">
+                            <InputRadio Value="RegistrationAccountType.IndependentHomeOwner" />
+                            <span>
+                                <strong>Independent homeowner</strong>
+                                <small>Manage your own pool equipment without joining a business.</small>
                             </span>
                         </label>
                     </div>
@@ -116,7 +123,7 @@ else
                     </label>
                 </section>
             }
-            else
+            else if (form.AccountType is RegistrationAccountType.BusinessUser or RegistrationAccountType.BusinessClient)
             {
                 <section class="form-panel wide-panel">
                     <h2>Business association</h2>
@@ -133,6 +140,23 @@ else
                     <p class="form-note">Access stays pending until the business owner approves the request.</p>
                 </section>
             }
+            else
+            {
+                <section class="form-panel wide-panel">
+                    <h2>Homeowner setup</h2>
+                    <div class="form-grid">
+                        <label class="wide">
+                            Home address
+                            <InputText class="form-control" @bind-Value="form.HomeAddress" />
+                        </label>
+                        <label class="wide">
+                            Access notes
+                            <InputTextArea class="form-control" @bind-Value="form.HomeAccessNotes" />
+                        </label>
+                    </div>
+                    <p class="form-note">Your account will open owner-scoped pool equipment tools immediately. No business approval is required.</p>
+                </section>
+            }
         </div>
 
         <div class="form-actions">
@@ -147,6 +171,7 @@ else
     private IReadOnlyList<Company> companies = [];
     private RegistrationResult? result;
     private string? errorMessage;
+    private string SuccessHref => result?.Company is null ? "poolequipment" : "dashboard";
 
     protected override async Task OnInitializedAsync()
     {
@@ -169,7 +194,9 @@ else
                 form.BusinessPhone,
                 form.BusinessEmail,
                 form.ServiceArea,
-                form.InitialServices));
+                form.InitialServices,
+                form.HomeAddress,
+                form.HomeAccessNotes));
 
             DemoUser.UserId = result.User.Id;
         }
@@ -181,7 +208,7 @@ else
 
     private sealed class RegisterForm
     {
-        public RegistrationAccountType AccountType { get; set; }
+        public RegistrationAccountType AccountType { get; set; } = RegistrationAccountType.IndependentHomeOwner;
         public string Email { get; set; } = "";
         public string DisplayName { get; set; } = "";
         public string Phone { get; set; } = "";
@@ -190,6 +217,8 @@ else
         public string? BusinessEmail { get; set; }
         public string? BusinessPhone { get; set; }
         public string? ServiceArea { get; set; }
+        public string? HomeAddress { get; set; }
+        public string? HomeAccessNotes { get; set; }
         public string InitialServicesText { get; set; } = "Standard Pool Cleaning\r\nChemical Balance";
 
         public IReadOnlyList<string> InitialServices =>
