@@ -257,24 +257,21 @@ Actions:
 
 Purpose:
 
-- Give the business owner a daily operating view.
+- Give the business owner a focused setup and approval workspace.
 
 Content:
 
-- Today's scheduled visits.
-- Visits completed today.
-- Visits needing assignment.
-- Pending employee requests.
-- Pending client access requests.
-- Open client messages.
-- Recent payments.
+- Tile row for Customers, Employees, Pool Equipment in Pool mode, Materials, and Services.
+- Work tile row for Pending Employee Approvals and Pending Customer Approvals.
+- A scoped approval panel opens when a pending approval tile is selected.
+- The approval panel lists pending requester name, email, role, requested date, and action controls.
 
 Actions:
 
-- Add client.
-- Create schedule.
-- Assign visits.
-- Open reports.
+- Open focused editor pages from setup tiles.
+- Approve a pending access request using the approval toggle.
+- Reject a pending access request from the action column.
+- Open schedule from the header action.
 
 ### 5.2 Company Profile and Settings
 
@@ -331,6 +328,7 @@ Current implementation:
 
 - `/company/users` is a focused company user-management page.
 - The page shows active, inactive, and removed company memberships plus pending access requests.
+- Pending access and company access are presented as collapsible table panels with right-aligned row actions.
 - Company admins can approve/reject pending requests, update the company-scoped role for an approved user, deactivate company access, and reactivate company access.
 - The page does not show system-admin promotion, global account disablement, company editor, role-definition editor, catalog editor, or email-log controls.
 - Global account enable/disable remains on `/admin/users`; company-user deactivate/reactivate changes only the company membership status.
@@ -602,7 +600,9 @@ Current implementation:
 - `/catalog` displays services and materials grouped by category cards.
 - `/catalog/materials` and `/catalog/services` provide focused company catalog editors.
 - `/admin/catalog/materials` and `/admin/catalog/services` provide focused system-admin catalog editors for the seeded company catalog in this slice.
-- Focused catalog editors include category and item forms plus archive/reactivate actions.
+- Focused catalog editors use collapsible table panels for category and item lists.
+- Create buttons expand empty inline editor panels; Edit actions expand the same editor panels populated from the selected row.
+- Focused catalog editors include archive/reactivate actions.
 - System/starter categories are visually marked.
 - System/starter categories and items expose copy-as-custom actions that create editable records in the current scope.
 - Empty categories and legacy uncategorized rows have explicit states.
@@ -1232,6 +1232,8 @@ Current implementation:
 - In Pool mode, Independent Home Owner users have no company memberships and route to `/poolequipment` for owner-scoped pool equipment management.
 - Landscape mode hides Pool Equipment navigation and redirects direct Pool Equipment routes back to Dashboard.
 - `/admin/companies`, `/admin/users`, `/catalog/poolequipment`, `/catalog/materials`, `/catalog/services`, `/admin/catalog/poolequipment`, `/admin/catalog/materials`, and `/admin/catalog/services` expose create/edit/archive-reactivate workflows appropriate to their models.
+- Data-management pages use collapsible management panels with table rows and right-aligned actions by default.
+- Add/Create and Edit actions expand inline editor panels within the relevant management panel.
 - `/admin/roles` edits the built-in role definitions; adding arbitrary role identities remains out of scope while roles are represented by the fixed `CompanyRole` enum.
 - Pool-equipment editor pages expose category/item forms, active/archive controls, scope labels, and image URL thumbnails without showing material or service editor controls.
 - Catalog editor pages expose copy-as-custom controls for starter records without mixing unrelated editor controls onto the focused page.

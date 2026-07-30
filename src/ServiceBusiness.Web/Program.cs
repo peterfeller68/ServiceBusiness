@@ -74,6 +74,7 @@ builder.Services.AddHostedService<AzureStorageTableInitializer>();
 builder.Services.AddSingleton<DemoCurrentUserContext>();
 builder.Services.AddSingleton<ApplicationModeService>();
 builder.Services.AddScoped<ICurrentUserContext, AuthenticatedCurrentUserContext>();
+builder.Services.AddScoped<CurrentCompanyContext>();
 builder.Services.AddSingleton<INotificationQueue, AzureCommunicationEmailNotificationQueue>();
 builder.Services.AddScoped<TenantAuthorizationService>();
 builder.Services.AddScoped<PlatformAdminService>();

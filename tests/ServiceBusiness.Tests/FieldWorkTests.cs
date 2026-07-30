@@ -11,7 +11,7 @@ public sealed class FieldWorkTests
     public async Task Completing_visit_persists_completion_and_marks_visit_completed()
     {
         var store = new InMemoryServiceBusinessStore();
-        var currentUser = new TestCurrentUser("clearwater-user-1");
+        var currentUser = new TestCurrentUser("demo-user-1");
         var authorization = new TenantAuthorizationService(store, currentUser);
         var notificationQueue = new TestNotificationQueue();
         var service = new FieldWorkService(store, authorization, currentUser, notificationQueue);
@@ -36,7 +36,7 @@ public sealed class FieldWorkTests
     public async Task Catalog_overview_groups_services_and_materials_by_category()
     {
         var store = new InMemoryServiceBusinessStore();
-        var currentUser = new TestCurrentUser("clearwater-owner-1");
+        var currentUser = new TestCurrentUser("demo-owner-1");
         var authorization = new TenantAuthorizationService(store, currentUser);
         var service = new CompanyAdminService(store, authorization, currentUser, new TestNotificationQueue());
 

@@ -122,6 +122,35 @@ Current implementation:
 - In Pool mode their Settings menu exposes Pool Equipment at `/poolequipment`.
 - In Pool mode `/poolequipment` scopes equipment categories and items to the current user ID.
 
+## 1.10 Dashboard
+Once a user has successfully authenticated, they should be taken to a dashboard page. The Dashboard will be different by persona.
+
+### 1.10.1 System Administrator
+
+### 1.10.2 Company Admin or Owner
+When a company admin logs in he will be redirected to the Dashboard.
+That user needs access to all pages under Settings.
+On the dashboard there should be a row of tiles for Customers, Employees, Pool Equipment, Materials and Services. Each should show a count.
+Under the Workspace there will be a row of tiles is for work that needs to be completed. Pending Employee Approvals, Pending Custoemr Approvals. Each should show a count.
+Clicking the Pending .... Approval buttons will bring up a panel with all unapproved requests. A request shall be approved using a toggle button.
+Noting else should be on the Dashboard at the moment
+
+### 1.10.3 Company User or Employee
+
+### 1.10.4 Company Client User or Service Recipient
+
+### 1.10.5 Independent Homeowner User
+
+Current implementation:
+
+- Authenticated users land on `/dashboard`, which shows persona-aware workspace access based on the signed-in user's company memberships or independent homeowner profile.
+- Company admins can open the company dashboard at `/company`.
+- The company admin dashboard shows setup tiles for Customers, Employees, Pool Equipment in Pool mode, Materials, and Services.
+- The company admin dashboard shows work tiles for Pending Employee Approvals and Pending Customer Approvals.
+- Clicking a pending approval tile expands an approval panel scoped to that request type; pending users can be approved with the toggle or rejected from the action column.
+- Independent homeowners with no company memberships see an independent homeowner workspace and, in Pool mode, a Pool Equipment action.
+
+
 # 2. Email Support
 Sending emails will be used in various location in order to notify users of important events, such as account approval, service updates, or appointment reminders.
 Go ahead and wire up the project to support emails using Azure COmmunication Services. You can use the Azure Communication Services Email SDK to send emails from your application.
@@ -235,11 +264,33 @@ Current implementation:
 
 There are several pages that allow editing of reference data. Examples are: Equipment, Users, Companies, Services, Materials, etc.
 
-As a default, structure the pages as follows:
-Have a table with the list of items. Add action icons on the very right to allow editing or deletion of items.
+As a default, structure the pages to edit Data as follows:
+In a collapsible panel, have a table with the list of items. Add action icons on the very right to allow editing or deletion of items.
 Have a mechanism to allow a user to add an item.
 When the user clicks the Add button, a panel should expand with the fields needed to add the new item.
 When the user clicks the button to edit the item, a panel should expand with the fields populated, so they can be updated.
+
+Example for Service Categories and Services
+
+                                                                                       Create
+---------------------------------------------------------------------------------------------
+- Service Categories                                                                      ^ -
+---------------------------------------------------------------------------------------------
+  ID     Active   Name       Description                                               Action
+
+---------------------------------------------------------------------------------------------
+- Services                                                                                ^ -
+---------------------------------------------------------------------------------------------
+  ID     Active   Name       Category           Description                            Action
+
+Current implementation:
+
+- Reference-data editors use collapsible management panels with table lists and right-aligned action controls.
+- Create buttons expand an inline editor panel with empty fields for new rows.
+- Edit actions expand the same inline editor panel with the selected row populated.
+- Archive/delete actions are implemented as status toggles where the entity supports reactivation.
+
+
 
 ## 8.1 Navigation Routing Rules
 
@@ -315,6 +366,8 @@ Acceptance criteria:
 Current implementation:
 
 - `/admin/companies` is a focused company-management page showing company types and companies without user, role, catalog, email-log, or platform-dashboard controls.
+- Company Types and Companies render as collapsible table panels.
+- The Companies panel has a Create action that opens the company editor panel; Edit opens the same panel populated from the selected company row.
 - System admins can create companies, edit company details, suspend active companies, archive active companies, and reactivate suspended or inactive companies.
 
 ## 8.3 User Editor
@@ -358,6 +411,8 @@ Acceptance criteria:
 Current implementation:
 
 - `/admin/users` is a focused system-admin user-management page with create-user, edit-user, company access summaries, system-admin promotion/removal, and user enable/disable actions.
+- System-admin Users render in a collapsible table panel with right-aligned edit, admin, and status actions.
+- The Create action opens the user editor panel; Edit opens the same panel populated from the selected user row.
 - `/company/users` is a focused company-admin user page for pending employee and client-user access decisions, active/inactive company access management, and company-scoped role updates.
 - Company-admin enable/disable is implemented as company membership activation/deactivation, not global account disablement.
 - Company admins cannot deactivate or reassign their own Company Admin access, and the service layer requires at least one active Company Admin to remain.
@@ -384,6 +439,7 @@ Acceptance criteria:
 Current implementation:
 
 - `/admin/roles` is a focused role editor for built-in role display names, descriptions, permissions, and owner-approval requirements.
+- Roles render in a collapsible table panel; Edit opens an inline editor for the selected fixed role.
 
 ## 8.5 Materials Editor
 
@@ -440,7 +496,8 @@ Acceptance criteria:
 Current implementation:
 
 - `/admin/catalog/materials` and `/catalog/materials` are focused material catalog pages.
-- Material categories and material items are grouped clearly and starter categories are visually marked.
+- Material categories and material items render as separate collapsible table panels.
+- Each panel has a Create action that expands the appropriate editor panel; Edit opens the same editor populated from the selected row.
 - System admins and company admins can create, edit, archive, and reactivate material categories and material items for the selected company scope.
 - Starter categories and material items can be copied into editable custom records within the current company scope.
 - Cross-company global template management and company selection remain future slices.
@@ -507,6 +564,8 @@ Acceptance criteria:
 Current implementation:
 
 - `/admin/catalog/poolequipment`, `/catalog/poolequipment`, and `/poolequipment` are focused pool-equipment catalog pages.
+- Equipment categories and equipment items render as separate collapsible table panels.
+- Each panel has a Create action that expands the appropriate editor panel; Edit opens the same editor populated from the selected row.
 - System admins can create, edit, archive, and reactivate global equipment categories and equipment items.
 - Company admins can create, edit, archive, and reactivate Clearwater company-scoped equipment categories and equipment items.
 - Homeowners can create, edit, archive, and reactivate their own owner-scoped equipment categories and equipment items.
@@ -521,7 +580,8 @@ Shall work the same as the Materials Editor, but for services.
 Current implementation:
 
 - `/admin/catalog/services` and `/catalog/services` are focused service catalog pages.
-- Service categories and service items are grouped clearly and starter categories are visually marked.
+- Service categories and service items render as separate collapsible table panels.
+- Each panel has a Create action that expands the appropriate editor panel; Edit opens the same editor populated from the selected row.
 - System admins and company admins can create, edit, archive, and reactivate service categories and service items for the selected company scope.
 - Starter service categories and service items can be copied into editable custom records within the current company scope.
 - Cross-company global template management and company selection remain future slices.
@@ -565,10 +625,10 @@ Current implementation:
 
 # 11. Data Hydration
 
-# 11.1 Test Data
+## 11.1 Test Data
 Seed the database with test data for users, businesses, services, materials and pool equipment. This will allow for easier testing and development of the application, as well as providing a baseline set of data to work with.
 
-# 11.1.1 Test Companies
+### 11.1.1 Test Companies
 Hydrate the database with at least four test companies, each with different profiles and service offerings. This will allow for testing of various scenarios and use cases within the application.
 Two of the test companies will be pool service businesses, and the other two can be landscape service businesses. Each company should have a unique set of services and materials to provide a diverse testing environment.
 name the companies Pool1Clean1, PoolClean2, Landscape1, and Landscape2. The pool service businesses can offer services such as pool cleaning, pool maintenance, and pool repair, while the landscape service businesses can offer services such as lawn mowing, landscaping design, and tree trimming. This variety of companies and services will help ensure that the application is thoroughly tested across different business types and service offerings.
@@ -587,8 +647,19 @@ Current implementation:
 - Azure Storage also populates `UserCompanyMemberships` from `CompanyMemberships` so sign-in and approval-status testing can query memberships by user.
 - Seed data includes three independent homeowner users with `homeowner-1@independent.com`, `homeowner-2@independent.com`, and `homeowner-3@independent.com` emails.
 - Seeded independent homeowners have no company memberships, each has an owner profile, and each has owner-scoped pool-equipment starter records.
+- Seed data includes ten additional general-purpose test users with `other-1@gmail.com` through `other-10@gmail.com`; these users have no company memberships.
 - The in-memory store owns this seed data, and the Azure Table store hydrates from it when Azure Storage is enabled and the `Users` table is empty.
+- These test users shall never use google auth even if Google Auth is chosen.
 
+### 11.1.2 Additional Test Users, not associated with any Company
+Add at least 10 users in the format of '{other}-{n}@gmail.com that are not associated with any company. These are just users that can be used for any purpose.
+These test users shall never use google auth even if Google Auth is chosen.
+
+Current implementation:
+
+- Seed data includes `other-1@gmail.com` through `other-10@gmail.com`.
+- These users are flagged as test users, have no Google subject, bypass Google authentication through the seeded test-user sign-in flow, and have no company memberships.
+- The Test Users page supports General Test User records with no associated business.
 
 # 12. System Settings
 Only the system administrator will have access to the System Settings.

@@ -11,6 +11,7 @@ Current implementation note:
 - The Table-backed store seeds current MVP data when the `Users` table is empty.
 - Seed data includes Clearwater plus the requested test companies `Pool1Clean1`, `PoolClean2`, `Landscape1`, and `Landscape2`, with richer users, memberships, service catalogs, material catalogs, and pool-equipment catalogs for each requested company.
 - Seed data includes three independent homeowner test users using `homeowner-{n}@independent.com` emails; each homeowner has an `IndependentHomeOwnerProfiles` row and owner-scoped pool-equipment starter records.
+- Seed data includes ten general test users using `other-{n}@gmail.com` emails; these users are flagged as test users and intentionally have no company memberships.
 - The Table-backed store persists current MVP records as JSON payloads in Azure Table entities and keeps `UserByEmail` and `UserByGoogleSubject` lookup rows in sync.
 - Pool equipment is persisted in `PoolEquipmentCategories` and `PoolEquipmentItems` using `EQUIPMENT_{Scope}_{ScopeOwnerId}` partitions.
 - Independent Homeowner users are stored as `Users` rows without company membership rows; their owner profile is stored in `IndependentHomeOwnerProfiles`, and their equipment uses `EquipmentScope.HomeOwner` and `ScopeOwnerId = UserId`.

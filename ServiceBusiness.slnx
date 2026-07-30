@@ -1,18 +1,19 @@
 <Solution>
   <Folder Name="/docs/">
     <File Path="docs/email-and-storage-setup.md" />
-    <File Path="docs/follow-on implementation-prompt.md" />
+    <File Path="docs/fixes.md" />
     <File Path="docs/follow-on requirements.md" />
     <File Path="docs/google-auth-setup.md" />
     <File Path="docs/implementation-prompt.md" />
     <File Path="docs/Initial Specs to Model.txt" />
+    <File Path="docs/prompts.md" />
     <File Path="Notes.txt" />
   </Folder>
   <Folder Name="/docs/source of truth/">
-    <File Path="docs/architecture.md" />
-    <File Path="docs/requirements.md" />
-    <File Path="docs/storage-entities.md" />
-    <File Path="docs/ui-specifications.md" />
+    <File Path="docs/source of truth/architecture.md" />
+    <File Path="docs/source of truth/requirements.md" />
+    <File Path="docs/source of truth/storage-entities.md" />
+    <File Path="docs/source of truth/ui-specifications.md" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/ServiceBusiness.Application/ServiceBusiness.Application.csproj" />

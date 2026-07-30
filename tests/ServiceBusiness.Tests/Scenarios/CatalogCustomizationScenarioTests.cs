@@ -10,7 +10,7 @@ public sealed class CatalogCustomizationScenarioTests
     public async Task Company_admin_copies_starter_service_customizes_it_and_original_stays_unchanged()
     {
         var store = new InMemoryServiceBusinessStore();
-        var currentUser = new TestCurrentUser("clearwater-owner-1");
+        var currentUser = new TestCurrentUser("demo-owner-1");
         var authorization = new TenantAuthorizationService(store, currentUser);
         var service = new CompanyAdminService(store, authorization, currentUser, new TestNotificationQueue());
 

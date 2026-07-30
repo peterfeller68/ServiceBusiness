@@ -31,51 +31,6 @@
 }
 else
 {
-    <section class="section">
-        <h2>@(userForm.IsEditing ? "Edit User" : "Create User")</h2>
-        <EditForm Model="userForm" OnValidSubmit="SaveUserAsync" FormName="user-editor">
-            <div class="form-panel">
-                <div class="form-grid">
-                    @if (userForm.IsEditing)
-                    {
-                        <label>
-                            User ID
-                            <input class="form-control" value="@userForm.UserId" disabled />
-                        </label>
-                    }
-                    <label>
-                        Display name
-                        <InputText class="form-control" @bind-Value="userForm.DisplayName" />
-                    </label>
-                    <label>
-                        Login email
-                        <InputText class="form-control" @bind-Value="userForm.Email" />
-                    </label>
-                    <label>
-                        Notification email
-                        <InputText class="form-control" @bind-Value="userForm.NotificationEmail" />
-                    </label>
-                    <label>
-                        Phone
-                        <InputText class="form-control" @bind-Value="userForm.Phone" />
-                    </label>
-                    <label class="check-row">
-                        <InputCheckbox @bind-Value="userForm.IsTestUser" />
-                        <span>Test user</span>
-                    </label>
-                    <label class="check-row">
-                        <InputCheckbox @bind-Value="userForm.EmailNotificationsEnabled" />
-                        <span>Email notifications</span>
-                    </label>
-                </div>
-                <div class="form-actions">
-                    <button class="button primary" type="submit">Save User</button>
-                    <button class="button" type="button" @onclick="ResetUserForm">New User</button>
-                </div>
-            </div>
-        </EditForm>
-    </section>
-
     <div class="metric-grid">
         <div class="metric">
             <span>Users</span>
@@ -99,61 +54,120 @@ else
         </div>
     </div>
 
-    <section class="section">
-        <h2>Users</h2>
-        <div class="data-list">
-            @foreach (var row in userOverview.Users)
-            {
-                <article class="row-card">
-                    <div>
-                        <strong>@row.User.DisplayName</strong>
-                        <p>@row.User.Email</p>
-                        <small>
-                            @row.User.Status
-                            @if (row.User.IsSystemAdmin)
-                            {
-                                <span> &middot; System Admin</span>
-                            }
-                            @if (row.User.IsTestUser)
-                            {
-                                <span> &middot; Test User</span>
-                            }
-                        </small>
-                        @if (row.CompanyAccess.Count > 0)
-                        {
-                            <p>@string.Join(", ", row.CompanyAccess.Select(a => $"{a.Company.Name}: {a.Role} ({a.Status})"))</p>
-                        }
-                    </div>
-                    <div class="row-actions">
-                        <span class="status-pill">@row.User.Status</span>
-                        <button class="button" type="button" @onclick="() => EditUser(row.User)">Edit</button>
-                        @if (row.User.IsSystemAdmin)
-                        {
-                            <button class="button" type="button" @onclick="() => SetSystemAdminAsync(row.User, false)">Remove Admin</button>
-                        }
-                        else
-                        {
-                            <button class="button" type="button" @onclick="() => SetSystemAdminAsync(row.User, true)">Make Admin</button>
-                        }
-
-                        @if (row.User.Status == UserStatus.Active)
-                        {
-                            <button class="button danger" type="button" @onclick="() => SetUserStatusAsync(row.User, UserStatus.Disabled)">Disable</button>
-                        }
-                        else
-                        {
-                            <button class="button primary" type="button" @onclick="() => SetUserStatusAsync(row.User, UserStatus.Active)">Enable</button>
-                        }
-                    </div>
-                </article>
-            }
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>Users</h2>
+            <div class="management-panel-actions">
+                <button class="button primary" type="button" @onclick="ShowCreateUser">Create</button>
+                <button class="icon-button" type="button" title="Toggle users" @onclick="ToggleUsers">@(usersExpanded ? "^" : "v")</button>
+            </div>
         </div>
+        @if (usersExpanded)
+        {
+            <div class="management-panel-body">
+                @if (userEditorExpanded)
+                {
+                    <EditForm Model="userForm" OnValidSubmit="SaveUserAsync" FormName="user-editor">
+                        <div class="editor-panel">
+                            <h3>@(userForm.IsEditing ? "Edit User" : "Create User")</h3>
+                            <div class="form-grid">
+                                @if (userForm.IsEditing)
+                                {
+                                    <label>
+                                        User ID
+                                        <input class="form-control" value="@userForm.UserId" disabled />
+                                    </label>
+                                }
+                                <label>
+                                    Display name
+                                    <InputText class="form-control" @bind-Value="userForm.DisplayName" />
+                                </label>
+                                <label>
+                                    Login email
+                                    <InputText class="form-control" @bind-Value="userForm.Email" />
+                                </label>
+                                <label>
+                                    Notification email
+                                    <InputText class="form-control" @bind-Value="userForm.NotificationEmail" />
+                                </label>
+                                <label>
+                                    Phone
+                                    <InputText class="form-control" @bind-Value="userForm.Phone" />
+                                </label>
+                                <label class="check-row">
+                                    <InputCheckbox @bind-Value="userForm.IsTestUser" />
+                                    <span>Test user</span>
+                                </label>
+                                <label class="check-row">
+                                    <InputCheckbox @bind-Value="userForm.EmailNotificationsEnabled" />
+                                    <span>Email notifications</span>
+                                </label>
+                            </div>
+                            <div class="form-actions">
+                                <button class="button primary" type="submit">Save User</button>
+                                <button class="button" type="button" @onclick="HideUserEditor">Cancel</button>
+                            </div>
+                        </div>
+                    </EditForm>
+                }
+                <div class="management-table-wrap">
+                    <table class="management-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Status</th>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Flags</th>
+                                <th>Company Access</th>
+                                <th class="actions">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in userOverview.Users)
+                            {
+                                <tr>
+                                    <td>@row.User.Id</td>
+                                    <td>@row.User.Status</td>
+                                    <td>@row.User.DisplayName</td>
+                                    <td>@row.User.Email</td>
+                                    <td>@GetUserFlags(row.User)</td>
+                                    <td>@string.Join(", ", row.CompanyAccess.Select(a => $"{a.Company.Name}: {a.Role} ({a.Status})"))</td>
+                                    <td class="actions">
+                                        <button class="icon-button" type="button" title="Edit user" @onclick="() => EditUser(row.User)">Edit</button>
+                                        @if (row.User.IsSystemAdmin)
+                                        {
+                                            <button class="icon-button" type="button" title="Remove system admin" @onclick="() => SetSystemAdminAsync(row.User, false)">Adm-</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="icon-button" type="button" title="Make system admin" @onclick="() => SetSystemAdminAsync(row.User, true)">Adm+</button>
+                                        }
+
+                                        @if (row.User.Status == UserStatus.Active)
+                                        {
+                                            <button class="icon-button danger" type="button" title="Disable user" @onclick="() => SetUserStatusAsync(row.User, UserStatus.Disabled)">Del</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="icon-button" type="button" title="Enable user" @onclick="() => SetUserStatusAsync(row.User, UserStatus.Active)">On</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                    </div>
+        }
     </section>
 }
 
 @code {
     private PlatformUserManagementOverview? userOverview;
     private UserForm userForm = new();
+    private bool usersExpanded = true;
+    private bool userEditorExpanded;
     private string? message;
     private string? errorMessage;
 
@@ -202,6 +216,7 @@ else
 
             message = $"{userForm.DisplayName} was saved.";
             ResetUserForm();
+            userEditorExpanded = false;
         });
     }
 
@@ -242,11 +257,44 @@ else
     private void EditUser(AppUser user)
     {
         userForm = UserForm.FromUser(user);
+        userEditorExpanded = true;
+        usersExpanded = true;
     }
 
     private void ResetUserForm()
     {
         userForm = new UserForm();
+    }
+
+    private void ShowCreateUser()
+    {
+        ResetUserForm();
+        userEditorExpanded = true;
+        usersExpanded = true;
+    }
+
+    private void HideUserEditor()
+    {
+        ResetUserForm();
+        userEditorExpanded = false;
+    }
+
+    private void ToggleUsers() => usersExpanded = !usersExpanded;
+
+    private static string GetUserFlags(AppUser user)
+    {
+        var flags = new List<string>();
+        if (user.IsSystemAdmin)
+        {
+            flags.Add("System Admin");
+        }
+
+        if (user.IsTestUser)
+        {
+            flags.Add("Test User");
+        }
+
+        return flags.Count == 0 ? "-" : string.Join(", ", flags);
     }
 
     private sealed class UserForm

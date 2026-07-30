@@ -31,10 +31,59 @@
 }
 else
 {
-    <section class="section">
-        <h2>@(companyForm.IsEditing ? "Edit Company" : "Create Company")</h2>
-        <EditForm Model="companyForm" OnValidSubmit="SaveCompanyAsync" FormName="company-editor">
-            <div class="form-panel">
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>Company Types</h2>
+            <button class="icon-button" type="button" title="Toggle company types" @onclick="ToggleCompanyTypes">@(companyTypesExpanded ? "^" : "v")</button>
+        </div>
+        @if (companyTypesExpanded)
+        {
+            <div class="management-panel-body">
+                <div class="management-table-wrap">
+                    <table class="management-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Active</th>
+                                <th>Name</th>
+                                <th>Description</th>
+                                <th class="actions">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var type in companyTypes)
+                            {
+                                <tr>
+                                    <td>@type.Id</td>
+                                    <td>@(type.IsActive ? "Yes" : "No")</td>
+                                    <td>@type.Name</td>
+                                    <td>@type.Description</td>
+                                    <td class="actions"><span class="status-pill">Read Only</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    </section>
+
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>Companies</h2>
+            <div class="management-panel-actions">
+                <button class="button primary" type="button" @onclick="ShowCreateCompany">Create</button>
+                <button class="icon-button" type="button" title="Toggle companies" @onclick="ToggleCompanies">@(companiesExpanded ? "^" : "v")</button>
+            </div>
+        </div>
+        @if (companiesExpanded)
+        {
+            <div class="management-panel-body">
+                @if (companyEditorExpanded)
+                {
+                    <EditForm Model="companyForm" OnValidSubmit="SaveCompanyAsync" FormName="company-editor">
+                        <div class="editor-panel">
+                            <h3>@(companyForm.IsEditing ? "Edit Company" : "Create Company")</h3>
                 <div class="form-grid">
                     <label>
                         Company ID
@@ -77,57 +126,53 @@ else
                 </div>
                 <div class="form-actions">
                     <button class="button primary" type="submit">Save Company</button>
-                    <button class="button" type="button" @onclick="ResetCompanyForm">New Company</button>
+                                    <button class="button" type="button" @onclick="HideCompanyEditor">Cancel</button>
                 </div>
-            </div>
-        </EditForm>
-    </section>
-
-    <section class="section split">
-        <div>
-            <h2>Company Types</h2>
-            <div class="data-list">
-                @foreach (var type in companyTypes)
-                {
-                    <article class="row-card">
-                        <div>
-                            <strong>@type.Name</strong>
-                            <p>@type.Description</p>
                         </div>
-                        <span class="status-pill">@((type.IsActive ? "Active" : "Inactive"))</span>
-                    </article>
+                    </EditForm>
                 }
-            </div>
-        </div>
-
-        <div>
-            <h2>Companies</h2>
-            <div class="data-list">
-                @foreach (var company in companies)
-                {
-                    <article class="row-card">
-                        <div>
-                            <strong>@company.Name</strong>
-                            <p>@company.BusinessEmail &middot; @company.BusinessPhone</p>
-                            <small>@company.TimeZone</small>
-                        </div>
-                        <div class="row-actions">
-                            <span class="status-pill">@company.Status</span>
-                            <button class="button" type="button" @onclick="() => EditCompany(company)">Edit</button>
+                <div class="management-table-wrap">
+                    <table class="management-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Status</th>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>Email</th>
+                                <th>Phone</th>
+                                <th class="actions">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var company in companies)
+                            {
+                                <tr>
+                                    <td>@company.Id</td>
+                                    <td>@company.Status</td>
+                                    <td>@company.Name</td>
+                                    <td>@company.CompanyTypeId</td>
+                                    <td>@company.BusinessEmail</td>
+                                    <td>@company.BusinessPhone</td>
+                                    <td class="actions">
+                                        <button class="icon-button" type="button" title="Edit company" @onclick="() => EditCompany(company)">Edit</button>
                             @if (company.Status == CompanyStatus.Active)
                             {
-                                <button class="button danger" type="button" @onclick="() => SetCompanyStatusAsync(company, CompanyStatus.Suspended)">Suspend</button>
-                                <button class="button" type="button" @onclick="() => SetCompanyStatusAsync(company, CompanyStatus.Inactive)">Archive</button>
+                                            <button class="icon-button" type="button" title="Suspend company" @onclick="() => SetCompanyStatusAsync(company, CompanyStatus.Suspended)">Sus</button>
+                                            <button class="icon-button danger" type="button" title="Archive company" @onclick="() => SetCompanyStatusAsync(company, CompanyStatus.Inactive)">Del</button>
                             }
                             else
                             {
-                                <button class="button primary" type="button" @onclick="() => SetCompanyStatusAsync(company, CompanyStatus.Active)">Reactivate</button>
+                                            <button class="icon-button" type="button" title="Reactivate company" @onclick="() => SetCompanyStatusAsync(company, CompanyStatus.Active)">On</button>
                             }
-                        </div>
-                    </article>
-                }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
             </div>
-        </div>
+        }
     </section>
 }
 
@@ -135,6 +180,9 @@ else
     private IReadOnlyList<CompanyType>? companyTypes;
     private IReadOnlyList<Company>? companies;
     private CompanyForm companyForm = new();
+    private bool companyTypesExpanded = true;
+    private bool companiesExpanded = true;
+    private bool companyEditorExpanded;
     private string? message;
     private string? errorMessage;
 
@@ -180,6 +228,7 @@ else
             await action();
             await LoadAsync();
             ResetCompanyForm();
+            companyEditorExpanded = false;
         }
         catch (InvalidOperationException ex)
         {
@@ -200,6 +249,8 @@ else
     private void EditCompany(Company company)
     {
         companyForm = CompanyForm.FromCompany(company);
+        companyEditorExpanded = true;
+        companiesExpanded = true;
     }
 
     private void ResetCompanyForm()
@@ -210,6 +261,23 @@ else
             TimeZone = "America/Los_Angeles"
         };
     }
+
+    private void ShowCreateCompany()
+    {
+        ResetCompanyForm();
+        companyEditorExpanded = true;
+        companiesExpanded = true;
+    }
+
+    private void HideCompanyEditor()
+    {
+        ResetCompanyForm();
+        companyEditorExpanded = false;
+    }
+
+    private void ToggleCompanyTypes() => companyTypesExpanded = !companyTypesExpanded;
+
+    private void ToggleCompanies() => companiesExpanded = !companiesExpanded;
 
     private sealed class CompanyForm
     {

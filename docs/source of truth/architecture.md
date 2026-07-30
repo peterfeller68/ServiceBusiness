@@ -187,6 +187,7 @@ Current UI enforcement:
 - Navigation items are filtered by the current user's active company memberships, system-admin flag, and independent-homeowner state.
 - Navigation sections can be expanded or collapsed, and each visible leaf points to an application route.
 - Editor leaves use focused routes instead of routing back to a combined dashboard: `/admin/companies`, `/admin/users`, `/admin/roles`, `/admin/email-log`, `/admin/catalog/poolequipment`, `/admin/catalog/materials`, `/admin/catalog/services`, `/company/users`, `/poolequipment`, `/catalog/poolequipment`, `/catalog/materials`, and `/catalog/services`.
+- Focused data-management pages render collapsible table panels with inline add/edit editor panels rather than always-visible edit forms.
 - Public navigation is limited to Home and Help when no application cookie is present.
 - Authenticated navigation hides Home and uses Dashboard as the post-sign-in workspace entry point.
 - `ApplicationModeService` reads the persisted `SystemSettings` row and provides PoolShark/TreeShark branding, hero imagery, and Pool Equipment visibility.
@@ -235,7 +236,7 @@ Current implementation:
 - `AzureTableServiceBusinessStore` stores MVP records as JSON payloads in Azure Table entities and maintains lookup tables for email and Google subject sign-in.
 - Role definitions are persisted in the `RoleDefinitions` table and can be updated by system admins.
 - Service, material, and pool-equipment category tables are provisioned and used to group catalog items.
-- Initial seed data is defined in `InMemoryServiceBusinessStore` and is reused by the Azure Table store when hydrating an empty `Users` table; it includes Clearwater plus Pool1Clean1, PoolClean2, Landscape1, and Landscape2 test companies with service, material, and pool-equipment catalog data, plus three independent homeowner test users with owner-scoped pool-equipment records.
+- Initial seed data is defined in `InMemoryServiceBusinessStore` and is reused by the Azure Table store when hydrating an empty `Users` table; it includes Clearwater plus Pool1Clean1, PoolClean2, Landscape1, and Landscape2 test companies with service, material, and pool-equipment catalog data, three independent homeowner test users with owner-scoped pool-equipment records, and ten unassociated `other-{n}@gmail.com` test users.
 - `CompanyAdminService.GetCatalogOverviewAsync` allows either system-admin access or active company admin/user access so focused system-admin catalog pages can inspect company-scoped starter catalog data.
 - `PlatformAdminService` owns company CRUD, system user create/edit/status/admin actions, and role-definition editing.
 - `CompanyAdminService` owns company-scoped user access decisions, company membership activation/deactivation, and company-scoped role reassignment with last-admin guardrails.

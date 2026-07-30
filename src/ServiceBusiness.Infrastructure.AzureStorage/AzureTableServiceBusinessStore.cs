@@ -464,15 +464,17 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
     private async Task<T?> GetAsync<T>(string tableName, string partitionKey, string rowKey, CancellationToken cancellationToken)
     {
         var table = tableServiceClient.GetTableClient(tableName);
-        try
-        {
-            var response = await table.GetEntityAsync<TableEntity>(partitionKey, rowKey, cancellationToken: cancellationToken);
-            return Deserialize<T>(response.Value);
-        }
-        catch (RequestFailedException ex) when (ex.Status == 404)
+        var response = await table.GetEntityIfExistsAsync<TableEntity>(
+            AzureTableKey.ToStorageKey(partitionKey),
+            AzureTableKey.ToStorageKey(rowKey),
+            cancellationToken: cancellationToken);
+
+        if (!response.HasValue)
         {
             return default;
         }
+
+        return Deserialize<T>(response.Value!);
     }
 
     private async Task<IReadOnlyList<T>> GetPartitionAsync<T>(string tableName, string partitionKey, CancellationToken cancellationToken)
@@ -497,7 +499,8 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
     {
         var table = tableServiceClient.GetTableClient(tableName);
         var items = new List<T>();
-        await foreach (var entity in table.QueryAsync<TableEntity>(e => e.PartitionKey == partitionKey, cancellationToken: cancellationToken))
+        var storagePartitionKey = AzureTableKey.ToStorageKey(partitionKey);
+        await foreach (var entity in table.QueryAsync<TableEntity>(e => e.PartitionKey == storagePartitionKey, cancellationToken: cancellationToken))
         {
             items.Add(Deserialize<T>(entity));
         }
@@ -514,7 +517,13 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
     private async Task UpsertWithoutInitializationAsync<T>(string tableName, string partitionKey, string rowKey, T item, CancellationToken cancellationToken)
     {
         var table = tableServiceClient.GetTableClient(tableName);
-        await table.UpsertEntityAsync(ToEntity(partitionKey, rowKey, item), TableUpdateMode.Replace, cancellationToken);
+        await table.UpsertEntityAsync(
+            ToEntity(
+                AzureTableKey.ToStorageKey(partitionKey),
+                AzureTableKey.ToStorageKey(rowKey),
+                item),
+            TableUpdateMode.Replace,
+            cancellationToken);
     }
 
     private async Task HydrateUserMembershipLookupIfMissingAsync(CancellationToken cancellationToken)
@@ -564,4 +573,31 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
     }
 
     private sealed record UserLookup(string UserId, string Email);
+}
+
+internal static class AzureTableKey
+{
+    public static string ToStorageKey(string key)
+    {
+        var escaped = key
+            .SelectMany(EscapeCharacter)
+            .ToArray();
+
+        return new string(escaped);
+    }
+
+    private static IEnumerable<char> EscapeCharacter(char character)
+    {
+        if (character is '/' or '\\' or '#' or '?' or '!' || char.IsControl(character))
+        {
+            foreach (var escaped in $"!{(int)character:X4}")
+            {
+                yield return escaped;
+            }
+
+            yield break;
+        }
+
+        yield return character;
+    }
 }

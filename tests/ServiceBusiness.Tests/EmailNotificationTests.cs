@@ -19,7 +19,7 @@ public sealed class EmailNotificationTests
             })
             .Build();
         var queue = new AzureCommunicationEmailNotificationQueue(store, configuration);
-        var user = (await store.GetUserAsync("clearwater-pending-user-1"))!;
+        var user = (await store.GetUserAsync("demo-pending-user-1"))!;
         var company = (await store.GetCompanyAsync("clearwater"))!;
         var role = (await store.GetRoleDefinitionsAsync()).First(r => r.Role == CompanyRole.CompanyUser);
         var membership = (await store.GetMembershipsForUserAsync(user.Id)).Single();
@@ -30,7 +30,7 @@ public sealed class EmailNotificationTests
 
         var email = Assert.Single(await store.GetEmailLogsAsync());
         Assert.Equal(EmailDeliveryStatus.TestRerouted, email.Status);
-        Assert.Equal("pending.tech.test@example.com", email.OriginalRecipientEmail);
+        Assert.Equal("pending-user-1.notify@demo.example", email.OriginalRecipientEmail);
         Assert.Equal("test-inbox@example.com", email.RecipientEmail);
     }
 
@@ -39,7 +39,7 @@ public sealed class EmailNotificationTests
     {
         var store = new InMemoryServiceBusinessStore();
         var queue = new AzureCommunicationEmailNotificationQueue(store, new ConfigurationBuilder().Build());
-        var user = (await store.GetUserAsync("clearwater-pending-user-1"))! with { EmailNotificationsEnabled = false };
+        var user = (await store.GetUserAsync("demo-pending-user-1"))! with { EmailNotificationsEnabled = false };
         await store.UpsertUserAsync(user);
 
         var company = (await store.GetCompanyAsync("clearwater"))!;

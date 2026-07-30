@@ -31,47 +31,87 @@
 }
 else
 {
-    <section class="section">
-        <h2>Roles</h2>
-        <div class="data-list">
-            @foreach (var role in roleForms)
-            {
-                <article class="form-panel">
-                    <EditForm Model="role" OnValidSubmit="() => SaveRoleAsync(role)" FormName="@($"admin-role-{role.Role}")">
-                        <div class="role-form-grid">
-                            <label>
-                                Role
-                                <input class="form-control" value="@role.Role" disabled />
-                            </label>
-                            <label>
-                                Display name
-                                <InputText class="form-control" @bind-Value="role.DisplayName" />
-                            </label>
-                            <label class="wide">
-                                Description
-                                <InputTextArea class="form-control" @bind-Value="role.Description" />
-                            </label>
-                            <label class="wide">
-                                Permissions
-                                <InputTextArea class="form-control permission-list" @bind-Value="role.PermissionsText" />
-                            </label>
-                            <label class="check-row">
-                                <InputCheckbox @bind-Value="role.RequiresOwnerApproval" />
-                                <span>Requires owner approval</span>
-                            </label>
-                        </div>
-                        <div class="form-actions">
-                            <button class="button primary" type="submit">Save Role</button>
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>Roles</h2>
+            <button class="icon-button" type="button" title="Toggle roles" @onclick="ToggleRoles">@(rolesExpanded ? "^" : "v")</button>
+        </div>
+        @if (rolesExpanded)
+        {
+            <div class="management-panel-body">
+                @if (roleEditorExpanded && selectedRole is not null)
+                {
+                    <EditForm Model="selectedRole" OnValidSubmit="() => SaveRoleAsync(selectedRole)" FormName="@($"admin-role-{selectedRole.Role}")">
+                        <div class="editor-panel">
+                            <h3>Edit Role</h3>
+                            <div class="role-form-grid">
+                                <label>
+                                    Role
+                                    <input class="form-control" value="@selectedRole.Role" disabled />
+                                </label>
+                                <label>
+                                    Display name
+                                    <InputText class="form-control" @bind-Value="selectedRole.DisplayName" />
+                                </label>
+                                <label class="wide">
+                                    Description
+                                    <InputTextArea class="form-control" @bind-Value="selectedRole.Description" />
+                                </label>
+                                <label class="wide">
+                                    Permissions
+                                    <InputTextArea class="form-control permission-list" @bind-Value="selectedRole.PermissionsText" />
+                                </label>
+                                <label class="check-row">
+                                    <InputCheckbox @bind-Value="selectedRole.RequiresOwnerApproval" />
+                                    <span>Requires owner approval</span>
+                                </label>
+                            </div>
+                            <div class="form-actions">
+                                <button class="button primary" type="submit">Save Role</button>
+                                <button class="button" type="button" @onclick="HideRoleEditor">Cancel</button>
+                            </div>
                         </div>
                     </EditForm>
-                </article>
-            }
-        </div>
+                }
+                <div class="management-table-wrap">
+                    <table class="management-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Description</th>
+                                <th>Owner Approval</th>
+                                <th>Permissions</th>
+                                <th class="actions">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var role in roleForms)
+                            {
+                                <tr>
+                                    <td>@role.Role</td>
+                                    <td>@role.DisplayName</td>
+                                    <td>@role.Description</td>
+                                    <td>@(role.RequiresOwnerApproval ? "Yes" : "No")</td>
+                                    <td>@role.Permissions.Count</td>
+                                    <td class="actions">
+                                        <button class="icon-button" type="button" title="Edit role" @onclick="() => EditRole(role)">Edit</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
     </section>
 }
 
 @code {
     private List<RoleForm>? roleForms;
+    private RoleForm? selectedRole;
+    private bool rolesExpanded = true;
+    private bool roleEditorExpanded;
     private string? message;
     private string? errorMessage;
 
@@ -96,6 +136,7 @@ else
                 role.Permissions));
             message = $"{role.DisplayName} role was saved.";
             await LoadAsync();
+            HideRoleEditor();
         }
         catch (InvalidOperationException ex)
         {
@@ -112,6 +153,19 @@ else
         roleForms = (await PlatformAdminService.GetRoleDefinitionsAsync())
             .Select(RoleForm.FromRole)
             .ToList();
+    }
+
+    private void EditRole(RoleForm role)
+    {
+        selectedRole = role.Clone();
+        roleEditorExpanded = true;
+        rolesExpanded = true;
+    }
+
+    private void HideRoleEditor()
+    {
+        selectedRole = null;
+        roleEditorExpanded = false;
     }
 
     private sealed class RoleForm
@@ -135,5 +189,16 @@ else
             RequiresOwnerApproval = role.RequiresOwnerApproval,
             PermissionsText = string.Join(Environment.NewLine, role.Permissions ?? [])
         };
+
+        public RoleForm Clone() => new()
+        {
+            Role = Role,
+            DisplayName = DisplayName,
+            Description = Description,
+            RequiresOwnerApproval = RequiresOwnerApproval,
+            PermissionsText = PermissionsText
+        };
     }
+
+    private void ToggleRoles() => rolesExpanded = !rolesExpanded;
 }

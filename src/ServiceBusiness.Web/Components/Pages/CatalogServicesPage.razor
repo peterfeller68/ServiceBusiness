@@ -5,6 +5,7 @@
 @using ServiceBusiness.Domain
 @inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
 @inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+@inject ServiceBusiness.Web.CurrentCompanyContext CurrentCompany
 @inject NavigationManager Navigation
 
 <PageTitle>Services</PageTitle>
@@ -34,10 +35,22 @@
 }
 else
 {
-    <section class="section split">
-        <EditForm Model="categoryForm" OnValidSubmit="SaveCategoryAsync" FormName="service-category-editor">
-            <div class="form-panel">
-                <h2>@(categoryForm.IsEditing ? "Edit Category" : "Create Category")</h2>
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>Service Categories</h2>
+            <div class="management-panel-actions">
+                <button class="button primary" type="button" @onclick="ShowCreateCategory">Create</button>
+                <button class="icon-button" type="button" title="Toggle service categories" @onclick="ToggleCategoryList">@(categoryListExpanded ? "^" : "v")</button>
+            </div>
+        </div>
+        @if (categoryListExpanded)
+        {
+            <div class="management-panel-body">
+                @if (categoryEditorExpanded)
+                {
+                    <EditForm Model="categoryForm" OnValidSubmit="SaveCategoryAsync" FormName="service-category-editor">
+                        <div class="editor-panel">
+                            <h3>@(categoryForm.IsEditing ? "Edit Category" : "Create Category")</h3>
                 <label>
                     Category ID
                     <InputText class="form-control" @bind-Value="categoryForm.Id" disabled="@categoryForm.IsEditing" />
@@ -56,14 +69,70 @@ else
                 </label>
                 <div class="form-actions">
                     <button class="button primary" type="submit">Save Category</button>
-                    <button class="button" type="button" @onclick="ResetCategoryForm">New Category</button>
+                                    <button class="button" type="button" @onclick="HideCategoryEditor">Cancel</button>
+                </div>
+                        </div>
+                    </EditForm>
+                }
+                <div class="management-table-wrap">
+                    <table class="management-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Active</th>
+                                <th>Name</th>
+                                <th>Description</th>
+                                <th class="actions">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var group in catalog.ServiceGroups)
+                            {
+                                <tr>
+                                    <td>@group.Category.Id</td>
+                                    <td>@(group.Category.IsActive ? "Yes" : "No")</td>
+                                    <td>@group.Category.Name</td>
+                                    <td>@group.Category.Description</td>
+                                    <td class="actions">
+                                        <button class="icon-button" type="button" title="Edit category" @onclick="() => EditCategory(group.Category)">Edit</button>
+                                        @if (group.Category.IsSystemManaged)
+                                        {
+                                            <button class="icon-button" type="button" title="Copy as custom category" @onclick="() => CopyCategoryAsync(group.Category)">Copy</button>
+                                        }
+                                        @if (group.Category.IsActive)
+                                        {
+                                            <button class="icon-button danger" type="button" title="Archive category" @onclick="() => SetCategoryActiveAsync(group.Category, false)">Del</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="icon-button" type="button" title="Reactivate category" @onclick="() => SetCategoryActiveAsync(group.Category, true)">On</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
                 </div>
             </div>
-        </EditForm>
+        }
+    </section>
 
-        <EditForm Model="serviceForm" OnValidSubmit="SaveServiceAsync" FormName="service-item-editor">
-            <div class="form-panel">
-                <h2>@(serviceForm.IsEditing ? "Edit Service" : "Create Service")</h2>
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>Services</h2>
+            <div class="management-panel-actions">
+                <button class="button primary" type="button" @onclick="ShowCreateService">Create</button>
+                <button class="icon-button" type="button" title="Toggle services" @onclick="ToggleServiceList">@(serviceListExpanded ? "^" : "v")</button>
+            </div>
+        </div>
+        @if (serviceListExpanded)
+        {
+            <div class="management-panel-body">
+                @if (serviceEditorExpanded)
+                {
+                    <EditForm Model="serviceForm" OnValidSubmit="SaveServiceAsync" FormName="service-item-editor">
+                        <div class="editor-panel">
+                            <h3>@(serviceForm.IsEditing ? "Edit Service" : "Create Service")</h3>
                 <div class="form-grid">
                     <label>
                         Service ID
@@ -106,93 +175,69 @@ else
                 </div>
                 <div class="form-actions">
                     <button class="button primary" type="submit">Save Service</button>
-                    <button class="button" type="button" @onclick="ResetServiceForm">New Service</button>
+                                    <button class="button" type="button" @onclick="HideServiceEditor">Cancel</button>
+                </div>
+                        </div>
+                    </EditForm>
+                }
+                <div class="management-table-wrap">
+                    <table class="management-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Active</th>
+                                <th>Name</th>
+                                <th>Category</th>
+                                <th>Description</th>
+                                <th class="actions">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var group in catalog.ServiceGroups)
+                            {
+                                @foreach (var service in group.Services)
+                                {
+                                    <tr>
+                                        <td>@service.Id</td>
+                                        <td>@(service.IsActive ? "Yes" : "No")</td>
+                                        <td>@service.Name</td>
+                                        <td>@group.Category.Name</td>
+                                        <td>@service.Description</td>
+                                        <td class="actions">
+                                            <button class="icon-button" type="button" title="Edit service" @onclick="() => EditService(service)">Edit</button>
+                                            @if (group.Category.IsSystemManaged)
+                                            {
+                                                <button class="icon-button" type="button" title="Copy service" @onclick="() => CopyServiceAsync(service)">Copy</button>
+                                            }
+                                            @if (service.IsActive)
+                                            {
+                                                <button class="icon-button danger" type="button" title="Archive service" @onclick="() => SetServiceActiveAsync(service, false)">Del</button>
+                                            }
+                                            else
+                                            {
+                                                <button class="icon-button" type="button" title="Reactivate service" @onclick="() => SetServiceActiveAsync(service, true)">On</button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
                 </div>
             </div>
-        </EditForm>
-    </section>
-
-    <section class="section">
-        <h2>Service Categories</h2>
-        <div class="category-grid">
-            @foreach (var group in catalog.ServiceGroups)
-            {
-                <article class="form-panel">
-                    <div class="category-heading">
-                        <div>
-                            <strong>@group.Category.Name</strong>
-                            <p>@group.Category.Description</p>
-                        </div>
-                        <div class="row-actions">
-                            @if (group.Category.IsSystemManaged)
-                            {
-                                <span class="status-pill">Starter</span>
-                            }
-                            <span class="status-pill">@(group.Category.IsActive ? "Active" : "Archived")</span>
-                        </div>
-                    </div>
-                    <div class="form-actions">
-                        <button class="button" type="button" @onclick="() => EditCategory(group.Category)">Edit Category</button>
-                        @if (group.Category.IsSystemManaged)
-                        {
-                            <button class="button" type="button" @onclick="() => CopyCategoryAsync(group.Category)">Copy as Custom</button>
-                        }
-                        @if (group.Category.IsActive)
-                        {
-                            <button class="button danger" type="button" @onclick="() => SetCategoryActiveAsync(group.Category, false)">Archive Category</button>
-                        }
-                        else
-                        {
-                            <button class="button primary" type="button" @onclick="() => SetCategoryActiveAsync(group.Category, true)">Reactivate Category</button>
-                        }
-                    </div>
-
-                    @if (group.Services.Count == 0)
-                    {
-                        <p class="form-note">No services in this category yet.</p>
-                    }
-                    else
-                    {
-                        <div class="data-list">
-                            @foreach (var service in group.Services)
-                            {
-                                <article class="row-card compact">
-                                    <div>
-                                        <strong>@service.Name</strong>
-                                        <p>@service.Description</p>
-                                        <small>@service.DefaultDurationMinutes min &middot; @(service.IsTaxable ? "Taxable" : "Non-taxable") &middot; @(service.IsActive ? "Active" : "Archived")</small>
-                                    </div>
-                                    <div class="row-actions">
-                                        <span class="price">@service.DefaultPrice.ToString("C")</span>
-                                        <button class="button" type="button" @onclick="() => EditService(service)">Edit</button>
-                                        @if (group.Category.IsSystemManaged)
-                                        {
-                                            <button class="button" type="button" @onclick="() => CopyServiceAsync(service)">Copy</button>
-                                        }
-                                        @if (service.IsActive)
-                                        {
-                                            <button class="button danger" type="button" @onclick="() => SetServiceActiveAsync(service, false)">Archive</button>
-                                        }
-                                        else
-                                        {
-                                            <button class="button primary" type="button" @onclick="() => SetServiceActiveAsync(service, true)">Reactivate</button>
-                                        }
-                                    </div>
-                                </article>
-                            }
-                        </div>
-                    }
-                </article>
-            }
-        </div>
+        }
     </section>
 }
 
 @code {
-    private const string CompanyId = "clearwater";
+    private string companyId = "";
     private CatalogOverview? catalog;
     private ServiceCategoryForm categoryForm = new();
     private ServiceForm serviceForm = new();
+    private bool categoryListExpanded = true;
+    private bool serviceListExpanded = true;
+    private bool categoryEditorExpanded;
+    private bool serviceEditorExpanded;
     private string? message;
     private string? errorMessage;
     private bool IsSystemAdminRoute => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("admin/", StringComparison.OrdinalIgnoreCase);
@@ -201,7 +246,16 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        DemoUser.UserId = IsSystemAdminRoute ? "sys-admin" : "clearwater-owner-1";
+        if (IsSystemAdminRoute)
+        {
+            DemoUser.UserId = "sys-admin";
+            companyId = "clearwater";
+        }
+        else
+        {
+            companyId = await CurrentCompany.GetRequiredCompanyIdAsync([CompanyRole.CompanyAdmin]);
+        }
+
         await LoadAsync();
     }
 
@@ -211,13 +265,14 @@ else
         {
             await CompanyAdminService.UpsertServiceCategoryAsync(new ServiceCategory(
                 categoryForm.Id,
-                CompanyId,
+                companyId,
                 categoryForm.Name,
                 categoryForm.Description,
                 categoryForm.IsSystemManaged,
                 categoryForm.IsActive));
             message = $"{categoryForm.Name} category was saved.";
             ResetCategoryForm();
+            categoryEditorExpanded = false;
         });
     }
 
@@ -227,7 +282,7 @@ else
         {
             await CompanyAdminService.UpsertServiceAsync(new ServiceOffering(
                 serviceForm.Id,
-                CompanyId,
+                companyId,
                 serviceForm.CategoryId,
                 serviceForm.Name,
                 serviceForm.Description,
@@ -237,6 +292,7 @@ else
                 serviceForm.IsActive));
             message = $"{serviceForm.Name} was saved.";
             ResetServiceForm();
+            serviceEditorExpanded = false;
         });
     }
 
@@ -244,7 +300,7 @@ else
     {
         await RunAsync(async () =>
         {
-            await CompanyAdminService.SetServiceCategoryActiveAsync(CompanyId, category.Id, isActive);
+            await CompanyAdminService.SetServiceCategoryActiveAsync(companyId, category.Id, isActive);
             message = $"{category.Name} was {(isActive ? "reactivated" : "archived")}.";
         });
     }
@@ -253,7 +309,7 @@ else
     {
         await RunAsync(async () =>
         {
-            var copy = await CompanyAdminService.CopyServiceCategoryAsync(CompanyId, category.Id);
+            var copy = await CompanyAdminService.CopyServiceCategoryAsync(companyId, category.Id);
             message = $"{category.Name} was copied to {copy.Name}.";
         });
     }
@@ -262,7 +318,7 @@ else
     {
         await RunAsync(async () =>
         {
-            await CompanyAdminService.SetServiceActiveAsync(CompanyId, service.Id, isActive);
+            await CompanyAdminService.SetServiceActiveAsync(companyId, service.Id, isActive);
             message = $"{service.Name} was {(isActive ? "reactivated" : "archived")}.";
         });
     }
@@ -271,7 +327,7 @@ else
     {
         await RunAsync(async () =>
         {
-            var copy = await CompanyAdminService.CopyServiceAsync(CompanyId, service.Id);
+            var copy = await CompanyAdminService.CopyServiceAsync(companyId, service.Id);
             message = $"{service.Name} was copied to {copy.Name}.";
         });
     }
@@ -298,22 +354,56 @@ else
 
     private async Task LoadAsync()
     {
-        catalog = await CompanyAdminService.GetCatalogOverviewAsync(CompanyId);
+        catalog = await CompanyAdminService.GetCatalogOverviewAsync(companyId);
     }
 
     private void EditCategory(ServiceCategory category)
     {
         categoryForm = ServiceCategoryForm.FromCategory(category);
+        categoryEditorExpanded = true;
+        categoryListExpanded = true;
     }
 
     private void EditService(ServiceOffering service)
     {
         serviceForm = ServiceForm.FromService(service);
+        serviceEditorExpanded = true;
+        serviceListExpanded = true;
     }
 
     private void ResetCategoryForm() => categoryForm = new();
 
     private void ResetServiceForm() => serviceForm = new();
+
+    private void ShowCreateCategory()
+    {
+        ResetCategoryForm();
+        categoryEditorExpanded = true;
+        categoryListExpanded = true;
+    }
+
+    private void ShowCreateService()
+    {
+        ResetServiceForm();
+        serviceEditorExpanded = true;
+        serviceListExpanded = true;
+    }
+
+    private void HideCategoryEditor()
+    {
+        ResetCategoryForm();
+        categoryEditorExpanded = false;
+    }
+
+    private void HideServiceEditor()
+    {
+        ResetServiceForm();
+        serviceEditorExpanded = false;
+    }
+
+    private void ToggleCategoryList() => categoryListExpanded = !categoryListExpanded;
+
+    private void ToggleServiceList() => serviceListExpanded = !serviceListExpanded;
 
     private sealed class ServiceCategoryForm
     {

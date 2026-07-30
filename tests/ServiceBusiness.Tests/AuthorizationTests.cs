@@ -11,7 +11,7 @@ public sealed class AuthorizationTests
     public async Task Company_user_cannot_read_admin_dashboard()
     {
         var store = new InMemoryServiceBusinessStore();
-        var currentUser = new TestCurrentUser("clearwater-user-1");
+        var currentUser = new TestCurrentUser("demo-user-1");
         var authorization = new TenantAuthorizationService(store, currentUser);
         var service = new CompanyAdminService(store, authorization, currentUser, new TestNotificationQueue());
 
@@ -36,7 +36,7 @@ public sealed class AuthorizationTests
     public async Task Only_system_admin_can_update_system_mode()
     {
         var store = new InMemoryServiceBusinessStore();
-        var companyUserAuthorization = new TenantAuthorizationService(store, new TestCurrentUser("clearwater-owner-1"));
+        var companyUserAuthorization = new TenantAuthorizationService(store, new TestCurrentUser("demo-owner-1"));
         var companyUserService = new PlatformAdminService(store, companyUserAuthorization);
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
@@ -59,9 +59,9 @@ public sealed class AuthorizationTests
         var authorization = new TenantAuthorizationService(store, currentUser);
         var service = new PlatformAdminService(store, authorization);
 
-        await service.SetSystemAdminAsync("clearwater-owner-1", true);
+        await service.SetSystemAdminAsync("demo-owner-1", true);
 
-        var user = await store.GetUserAsync("clearwater-owner-1");
+        var user = await store.GetUserAsync("demo-owner-1");
         Assert.True(user!.IsSystemAdmin);
     }
 
@@ -181,7 +181,7 @@ public sealed class AuthorizationTests
     public async Task Company_admin_can_create_and_archive_catalog_items()
     {
         var store = new InMemoryServiceBusinessStore();
-        var currentUser = new TestCurrentUser("clearwater-owner-1");
+        var currentUser = new TestCurrentUser("demo-owner-1");
         var authorization = new TenantAuthorizationService(store, currentUser);
         var service = new CompanyAdminService(store, authorization, currentUser, new TestNotificationQueue());
 
@@ -234,7 +234,7 @@ public sealed class AuthorizationTests
     public async Task Company_admin_can_copy_starter_catalog_items_to_custom_records()
     {
         var store = new InMemoryServiceBusinessStore();
-        var currentUser = new TestCurrentUser("clearwater-owner-1");
+        var currentUser = new TestCurrentUser("demo-owner-1");
         var authorization = new TenantAuthorizationService(store, currentUser);
         var service = new CompanyAdminService(store, authorization, currentUser, new TestNotificationQueue());
 
@@ -290,7 +290,7 @@ public sealed class AuthorizationTests
     public async Task Company_admin_can_create_and_archive_company_equipment()
     {
         var store = new InMemoryServiceBusinessStore();
-        var currentUser = new TestCurrentUser("clearwater-owner-1");
+        var currentUser = new TestCurrentUser("demo-owner-1");
         var authorization = new TenantAuthorizationService(store, currentUser);
         var service = new CompanyAdminService(store, authorization, currentUser, new TestNotificationQueue());
 
@@ -322,7 +322,7 @@ public sealed class AuthorizationTests
     public async Task Company_admin_can_copy_starter_equipment_to_custom_records()
     {
         var store = new InMemoryServiceBusinessStore();
-        var currentUser = new TestCurrentUser("clearwater-owner-1");
+        var currentUser = new TestCurrentUser("demo-owner-1");
         var authorization = new TenantAuthorizationService(store, currentUser);
         var service = new CompanyAdminService(store, authorization, currentUser, new TestNotificationQueue());
 
@@ -356,7 +356,7 @@ public sealed class AuthorizationTests
             service.UpsertPoolEquipmentCategoryAsync(new PoolEquipmentCategory(
                 "Other Pump",
                 EquipmentScope.HomeOwner,
-                "clearwater-owner-1",
+                "demo-owner-1",
                 "Pentair",
                 "Other Pump",
                 "Other homeowner equipment.",
@@ -368,24 +368,24 @@ public sealed class AuthorizationTests
     public async Task Company_admin_can_manage_company_user_access_and_roles()
     {
         var store = new InMemoryServiceBusinessStore();
-        var currentUser = new TestCurrentUser("clearwater-owner-1");
+        var currentUser = new TestCurrentUser("demo-owner-1");
         var authorization = new TenantAuthorizationService(store, currentUser);
         var service = new CompanyAdminService(store, authorization, currentUser, new TestNotificationQueue());
 
-        await service.SetCompanyUserAccessStatusAsync("clearwater", "clearwater-user-1", CompanyRole.CompanyUser, MembershipStatus.Inactive);
+        await service.SetCompanyUserAccessStatusAsync("clearwater", "demo-user-1", CompanyRole.CompanyUser, MembershipStatus.Inactive);
         var inactiveMembership = (await store.GetMembershipsForCompanyAsync("clearwater"))
-            .Single(m => m.UserId == "clearwater-user-1" && m.Role == CompanyRole.CompanyUser);
+            .Single(m => m.UserId == "demo-user-1" && m.Role == CompanyRole.CompanyUser);
         Assert.Equal(MembershipStatus.Inactive, inactiveMembership.Status);
 
-        await service.UpdateCompanyUserRoleAsync("clearwater", "clearwater-user-1", CompanyRole.CompanyUser, CompanyRole.CompanyClientUser);
+        await service.UpdateCompanyUserRoleAsync("clearwater", "demo-user-1", CompanyRole.CompanyUser, CompanyRole.CompanyClientUser);
 
         var memberships = await store.GetMembershipsForCompanyAsync("clearwater");
-        Assert.Contains(memberships, m => m.UserId == "clearwater-user-1" && m.Role == CompanyRole.CompanyUser && m.Status == MembershipStatus.Removed);
-        Assert.Contains(memberships, m => m.UserId == "clearwater-user-1" && m.Role == CompanyRole.CompanyClientUser && m.Status == MembershipStatus.Inactive);
+        Assert.Contains(memberships, m => m.UserId == "demo-user-1" && m.Role == CompanyRole.CompanyUser && m.Status == MembershipStatus.Removed);
+        Assert.Contains(memberships, m => m.UserId == "demo-user-1" && m.Role == CompanyRole.CompanyClientUser && m.Status == MembershipStatus.Inactive);
 
-        await service.SetCompanyUserAccessStatusAsync("clearwater", "clearwater-user-1", CompanyRole.CompanyClientUser, MembershipStatus.Active);
+        await service.SetCompanyUserAccessStatusAsync("clearwater", "demo-user-1", CompanyRole.CompanyClientUser, MembershipStatus.Active);
         var activeMembership = (await store.GetMembershipsForCompanyAsync("clearwater"))
-            .Single(m => m.UserId == "clearwater-user-1" && m.Role == CompanyRole.CompanyClientUser);
+            .Single(m => m.UserId == "demo-user-1" && m.Role == CompanyRole.CompanyClientUser);
         Assert.Equal(MembershipStatus.Active, activeMembership.Status);
     }
 
@@ -393,15 +393,15 @@ public sealed class AuthorizationTests
     public async Task Company_admin_cannot_remove_last_active_company_admin()
     {
         var store = new InMemoryServiceBusinessStore();
-        var currentUser = new TestCurrentUser("clearwater-owner-1");
+        var currentUser = new TestCurrentUser("demo-owner-1");
         var authorization = new TenantAuthorizationService(store, currentUser);
         var service = new CompanyAdminService(store, authorization, currentUser, new TestNotificationQueue());
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            service.SetCompanyUserAccessStatusAsync("clearwater", "clearwater-owner-1", CompanyRole.CompanyAdmin, MembershipStatus.Inactive));
+            service.SetCompanyUserAccessStatusAsync("clearwater", "demo-owner-1", CompanyRole.CompanyAdmin, MembershipStatus.Inactive));
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            service.UpdateCompanyUserRoleAsync("clearwater", "clearwater-owner-1", CompanyRole.CompanyAdmin, CompanyRole.CompanyUser));
+            service.UpdateCompanyUserRoleAsync("clearwater", "demo-owner-1", CompanyRole.CompanyAdmin, CompanyRole.CompanyUser));
     }
 
     [Fact]
@@ -436,6 +436,36 @@ public sealed class AuthorizationTests
         Assert.Empty(await store.GetMembershipsForUserAsync("independent-homeowner-1"));
         Assert.True((await store.GetPoolEquipmentItemsAsync(EquipmentScope.HomeOwner, "independent-homeowner-2")).Count >= 1);
         Assert.True((await store.GetPoolEquipmentItemsAsync(EquipmentScope.HomeOwner, "independent-homeowner-3")).Count >= 1);
+
+        for (var i = 1; i <= 10; i++)
+        {
+            var user = Assert.Single(users, u => u.Email == $"other-{i}@gmail.com");
+            Assert.True(user.IsTestUser);
+            Assert.Empty(await store.GetMembershipsForUserAsync(user.Id));
+        }
+    }
+
+    [Fact]
+    public async Task Company_dashboard_includes_setup_counts_and_pending_approval_splits()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var currentUser = new TestCurrentUser("demo-owner-1");
+        var authorization = new TenantAuthorizationService(store, currentUser);
+        var service = new CompanyAdminService(store, authorization, currentUser, new TestNotificationQueue());
+
+        var dashboard = await service.GetDashboardAsync("clearwater", DateOnly.FromDateTime(DateTime.Today));
+
+        Assert.True(dashboard.CustomerCount >= 3);
+        Assert.True(dashboard.EmployeeCount >= 1);
+        Assert.True(dashboard.EquipmentCount >= 2);
+        Assert.True(dashboard.MaterialCount >= 3);
+        Assert.True(dashboard.ServiceCount >= 3);
+        Assert.Equal(1, dashboard.PendingEmployeeRequests);
+        Assert.Equal(0, dashboard.PendingCustomerRequests);
+        Assert.Contains(dashboard.PendingAccessRequests, r =>
+            r.User.Id == "demo-pending-user-1" &&
+            r.Membership.Role == CompanyRole.CompanyUser &&
+            r.Membership.Status == MembershipStatus.Pending);
     }
 
     private sealed class TestCurrentUser(string userId) : ICurrentUserContext

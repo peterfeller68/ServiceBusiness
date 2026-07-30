@@ -2,7 +2,7 @@
 @rendermode InteractiveServer
 @using ServiceBusiness.Domain
 @inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
-@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+@inject ServiceBusiness.Web.CurrentCompanyContext CurrentCompany
 
 <PageTitle>Clients</PageTitle>
 
@@ -36,10 +36,11 @@ else
 
 @code {
     private IReadOnlyList<CompanyClient>? clients;
+    private string companyId = "";
 
     protected override async Task OnInitializedAsync()
     {
-        DemoUser.UserId = "clearwater-owner-1";
-        clients = await CompanyAdminService.GetClientsAsync("clearwater");
+        companyId = await CurrentCompany.GetRequiredCompanyIdAsync([CompanyRole.CompanyAdmin]);
+        clients = await CompanyAdminService.GetClientsAsync(companyId);
     }
 }

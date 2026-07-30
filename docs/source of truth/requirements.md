@@ -244,6 +244,7 @@ Current implementation:
 - `/admin/companies` supports company create, edit, suspend, archive, and reactivate.
 - `/admin/users` supports user create, edit, system-admin promotion/removal, disable, and enable.
 - `/admin/roles` supports editing built-in role display metadata, permissions, and owner-approval requirements; role identities remain fixed to the built-in company role keys.
+- Focused admin data editors use collapsible table panels with right-aligned row actions; Create and Edit actions expand inline editor panels.
 
 ### 6.2 Company User Management
 
@@ -265,6 +266,7 @@ Standard Company Users can:
 Current implementation:
 
 - `/company/users` shows company users and pending employee/client-user access requests for the seeded company scope.
+- `/company/users` uses collapsible table panels for pending access and company access management.
 - Company admins can approve or reject pending company access requests.
 - Company admins can deactivate and reactivate approved company memberships.
 - Company admins can update company-scoped roles by removing the previous membership role and activating the replacement role.
@@ -412,6 +414,7 @@ Current implementation:
 - Focused material and service editors support category and item create, edit, archive, and reactivate.
 - The `/admin/catalog/poolequipment`, `/catalog/poolequipment`, and `/poolequipment` pages provide focused pool-equipment editors for global, company, and homeowner scopes.
 - Focused pool-equipment editors support category and item create, edit, archive, reactivate, and image URL reference display.
+- Focused service, material, and pool-equipment editors use collapsible table panels for category and item lists; Create and Edit actions expand inline editor panels.
 - Focused service, material, and pool-equipment editors support copy-as-custom actions for seeded starter categories and starter items.
 - Copied starter records become editable non-system-managed custom records in the current scope with unique `-custom` IDs.
 - Existing uncategorized rows are displayed under an uncategorized fallback group.
@@ -424,6 +427,8 @@ Current implementation:
 - `Pool` mode brands the application as `PoolShark` and uses the pool waterfall hero image.
 - `Landscape` mode brands the application as `TreeShark` and uses the mature fruit-tree landscape hero image.
 - Dashboard pages show the current mode's hero image.
+- The company admin dashboard shows setup tiles for Customers, Employees, Pool Equipment in Pool mode, Materials, and Services.
+- The company admin dashboard shows pending employee and pending customer approval tiles; selecting a tile opens the matching pending approval panel with approve and reject actions.
 - Authenticated navigation hides Home; public navigation still shows Home and Help.
 - Landscape mode hides Pool Equipment navigation and redirects direct Pool Equipment routes back to the dashboard.
 - System Administrators can change `SystemMode` from the General Settings page.

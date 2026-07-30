@@ -1,7 +1,10 @@
 @page "/test/users"
 @rendermode InteractiveServer
+@using ServiceBusiness.Application
 @using ServiceBusiness.Domain
-@inject ServiceBusiness.Application.PlatformAdminService PlatformAdminService
+@inject PlatformAdminService PlatformAdminService
+@inject IServiceBusinessStore Store
+@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
 
 <PageTitle>Test Users</PageTitle>
 
@@ -9,7 +12,7 @@
     <div>
         <p class="eyebrow">Test</p>
         <h1>Test Users</h1>
-        <p class="lede">Manage seeded and ad hoc test accounts used during development.</p>
+        <p class="lede">Create development accounts with a business, persona, and approval state.</p>
     </div>
     <a class="button" href="test">Test Page</a>
 </section>
@@ -24,83 +27,155 @@
     <div class="notice error">@errorMessage</div>
 }
 
-<section class="section split">
-    <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="test-user-editor">
-        <div class="form-panel">
-            <h2>@(form.IsEditing ? "Edit Test User" : "Create Test User")</h2>
-            <div class="form-grid">
-                <label>
-                    Display Name
-                    <InputText class="form-control" @bind-Value="form.DisplayName" />
-                </label>
-                <label>
-                    Email
-                    <InputText class="form-control" @bind-Value="form.Email" />
-                </label>
-                <label>
-                    Notification Email
-                    <InputText class="form-control" @bind-Value="form.NotificationEmail" />
-                </label>
-                <label>
-                    Phone
-                    <InputText class="form-control" @bind-Value="form.Phone" />
-                </label>
-                <label class="check-row">
-                    <InputCheckbox @bind-Value="form.EmailNotificationsEnabled" />
-                    <span>Email notifications enabled</span>
-                </label>
-            </div>
-            <div class="form-actions">
-                <button class="button primary" type="submit">Save Test User</button>
-                <button class="button" type="button" @onclick="ResetForm">New Test User</button>
+@if (overview is null)
+{
+    <p>Loading test users...</p>
+}
+else
+{
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>Test Users</h2>
+            <div class="management-panel-actions">
+                <button class="button primary" type="button" @onclick="ShowCreateUser">Create</button>
+                <button class="icon-button" type="button" title="Toggle test users" @onclick="ToggleUsers">@(usersExpanded ? "^" : "v")</button>
             </div>
         </div>
-    </EditForm>
+        @if (usersExpanded)
+        {
+            <div class="management-panel-body">
+                @if (editorExpanded)
+                {
+                    <EditForm Model="form" OnValidSubmit="SaveAsync" FormName="test-user-editor">
+                        <div class="editor-panel">
+                            <h3>@(form.IsEditing ? "Edit Test User" : "Create Test User")</h3>
+                            <div class="form-grid">
+                                @if (form.IsEditing)
+                                {
+                                    <label>
+                                        User ID
+                                        <input class="form-control" value="@form.UserId" disabled />
+                                    </label>
+                                }
+                                <label>
+                                    User type
+                                    <InputSelect class="form-control" @bind-Value="form.UserType">
+                                        @foreach (var userType in Enum.GetValues<TestUserType>())
+                                        {
+                                            <option value="@userType">@GetTypeLabel(userType)</option>
+                                        }
+                                    </InputSelect>
+                                </label>
+                                <label>
+                                    Associated business
+                                    <InputSelect class="form-control" @bind-Value="form.CompanyId">
+                                        <option value="">No associated business</option>
+                                        @foreach (var company in companies)
+                                        {
+                                            <option value="@company.Id">@company.Name</option>
+                                        }
+                                    </InputSelect>
+                                </label>
+                                <label>
+                                    Display name
+                                    <InputText class="form-control" @bind-Value="form.DisplayName" />
+                                </label>
+                                <label>
+                                    Login email
+                                    <InputText class="form-control" @bind-Value="form.Email" />
+                                </label>
+                                <label>
+                                    Notification email
+                                    <InputText class="form-control" @bind-Value="form.NotificationEmail" />
+                                </label>
+                                <label>
+                                    Phone
+                                    <InputText class="form-control" @bind-Value="form.Phone" />
+                                </label>
+                                <label class="check-row">
+                                    <InputCheckbox @bind-Value="form.ApprovalNeeded" />
+                                    <span>Approval needed</span>
+                                </label>
+                                <label class="check-row">
+                                    <InputCheckbox @bind-Value="form.EmailNotificationsEnabled" />
+                                    <span>Email notifications</span>
+                                </label>
+                            </div>
+                            <div class="form-actions">
+                                <button class="button primary" type="submit">Save Test User</button>
+                                <button class="button" type="button" @onclick="HideEditor">Cancel</button>
+                            </div>
+                        </div>
+                    </EditForm>
+                }
 
-    <aside class="callout">
-        <strong>Test accounts</strong>
-        <p>New accounts created here are marked as test users so they can use the test sign-in route.</p>
-    </aside>
-</section>
-
-<section class="section">
-    <h2>Existing Test Users</h2>
-    @if (overview is null)
-    {
-        <p>Loading test users...</p>
-    }
-    else
-    {
-        <div class="data-list">
-            @foreach (var row in TestUsers)
-            {
-                <article class="row-card">
-                    <div>
-                        <strong>@row.User.DisplayName</strong>
-                        <p>@row.User.Email</p>
-                        <small>@row.User.Id</small>
-                    </div>
-                    <div class="row-actions">
-                        <span class="status-pill">@row.User.Status</span>
-                        <button class="button" type="button" @onclick="() => Edit(row.User)">Edit</button>
-                        @if (row.User.Status == UserStatus.Active)
-                        {
-                            <button class="button danger" type="button" @onclick="() => SetStatusAsync(row.User, UserStatus.Disabled)">Delete</button>
-                        }
-                        else
-                        {
-                            <button class="button primary" type="button" @onclick="() => SetStatusAsync(row.User, UserStatus.Active)">Reactivate</button>
-                        }
-                    </div>
-                </article>
-            }
-        </div>
-    }
-</section>
+                <div class="management-table-wrap">
+                    <table class="management-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Active</th>
+                                <th>Status</th>
+                                <th>Type</th>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Business</th>
+                                <th>Approval Needed</th>
+                                <th class="actions">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in TestUsers)
+                            {
+                                var mapping = GetPrimaryMapping(row);
+                                <tr>
+                                    <td>@row.User.Id</td>
+                                    <td>
+                                        <label class="switch-control" title="Toggle active state">
+                                            <input type="checkbox" checked="@(row.User.Status == UserStatus.Active)" @onchange="args => ToggleUserStatusAsync(row.User, args)" />
+                                            <span></span>
+                                        </label>
+                                    </td>
+                                    <td>@(mapping?.Status.ToString() ?? "Unmapped")</td>
+                                    <td>@GetTypeLabel(GetUserType(row))</td>
+                                    <td>@row.User.DisplayName</td>
+                                    <td>@row.User.Email</td>
+                                    <td>@(mapping?.Company.Name ?? "None")</td>
+                                    <td>@(mapping?.Status == MembershipStatus.Pending ? "Yes" : "No")</td>
+                                    <td class="actions">
+                                        <button class="icon-button icon-only" type="button" title="Edit test user" aria-label="Edit test user" @onclick="() => Edit(row)">
+                                            <span class="action-icon edit-icon" aria-hidden="true"></span>
+                                        </button>
+                                        @if (row.User.Status == UserStatus.Active)
+                                        {
+                                            <button class="icon-button danger icon-only" type="button" title="Disable test user" aria-label="Disable test user" @onclick="() => SetStatusAsync(row.User, UserStatus.Disabled)">
+                                                <span class="action-icon delete-icon" aria-hidden="true"></span>
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button class="icon-button icon-only" type="button" title="Reactivate test user" aria-label="Reactivate test user" @onclick="() => SetStatusAsync(row.User, UserStatus.Active)">
+                                                <span class="action-icon power-icon" aria-hidden="true"></span>
+                                            </button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    </section>
+}
 
 @code {
     private PlatformUserManagementOverview? overview;
+    private IReadOnlyList<Company> companies = [];
+    private HashSet<string> homeOwnerTestUserIds = [];
     private TestUserForm form = new();
+    private bool usersExpanded = true;
+    private bool editorExpanded;
     private string? message;
     private string? errorMessage;
     private IEnumerable<UserManagementRow> TestUsers =>
@@ -110,6 +185,8 @@
 
     protected override async Task OnInitializedAsync()
     {
+        DemoUser.UserId = "sys-admin";
+
         try
         {
             await LoadAsync();
@@ -124,6 +201,9 @@
     {
         await RunAsync(async () =>
         {
+            ValidateForm();
+
+            AppUser user;
             if (form.IsEditing)
             {
                 await PlatformAdminService.UpdateUserAsync(
@@ -134,21 +214,46 @@
                     form.Phone,
                     isTestUser: true,
                     form.EmailNotificationsEnabled);
-                message = $"{form.DisplayName} was updated.";
+                user = (await Store.GetUserAsync(form.UserId))!;
             }
             else
             {
-                var user = await PlatformAdminService.CreateUserAsync(
-                    form.DisplayName,
-                    form.Email,
-                    form.NotificationEmail,
-                    form.Phone,
-                    isTestUser: true,
-                    form.EmailNotificationsEnabled);
-                message = $"{user.DisplayName} was created.";
+                var existing = await Store.GetUserByEmailAsync(form.Email);
+                if (existing is null)
+                {
+                    user = await PlatformAdminService.CreateUserAsync(
+                        form.DisplayName,
+                        form.Email,
+                        form.NotificationEmail,
+                        form.Phone,
+                        isTestUser: true,
+                        form.EmailNotificationsEnabled);
+                }
+                else
+                {
+                    await PlatformAdminService.UpdateUserAsync(
+                        existing.Id,
+                        form.DisplayName,
+                        form.Email,
+                        form.NotificationEmail,
+                        form.Phone,
+                        isTestUser: true,
+                        form.EmailNotificationsEnabled);
+                    user = (await Store.GetUserAsync(existing.Id))!;
+                }
             }
 
+            await PlatformAdminService.ConfigureTestUserAccessAsync(
+                user.Id,
+                form.UserType == TestUserType.SystemAdmin,
+                RequiresCompany(form.UserType) ? form.CompanyId : null,
+                GetCompanyRole(form.UserType),
+                form.ApprovalNeeded,
+                form.UserType == TestUserType.HomeOwner);
+
+            message = $"{form.DisplayName} was saved.";
             ResetForm();
+            editorExpanded = false;
         });
     }
 
@@ -157,8 +262,14 @@
         await RunAsync(async () =>
         {
             await PlatformAdminService.SetUserStatusAsync(user.Id, status);
-            message = $"{user.DisplayName} was {(status == UserStatus.Active ? "reactivated" : "deleted")}.";
+            message = $"{user.DisplayName} is now {status.ToString().ToLowerInvariant()}.";
         });
+    }
+
+    private async Task ToggleUserStatusAsync(AppUser user, ChangeEventArgs args)
+    {
+        var isActive = args.Value is bool value && value;
+        await SetStatusAsync(user, isActive ? UserStatus.Active : UserStatus.Disabled);
     }
 
     private async Task RunAsync(Func<Task> action)
@@ -184,37 +295,149 @@
     private async Task LoadAsync()
     {
         overview = await PlatformAdminService.GetUserManagementOverviewAsync();
+        companies = await PlatformAdminService.GetCompaniesAsync();
+
+        var homeOwnerIds = new HashSet<string>();
+        foreach (var row in overview.Users.Where(row => row.User.IsTestUser))
+        {
+            var profile = await Store.GetIndependentHomeOwnerProfileAsync(row.User.Id);
+            if (profile?.AccessNotes == PlatformAdminService.TestHomeOwnerProfileMarker)
+            {
+                homeOwnerIds.Add(row.User.Id);
+            }
+        }
+
+        homeOwnerTestUserIds = homeOwnerIds;
     }
 
-    private void Edit(AppUser user)
+    private void ShowCreateUser()
     {
-        form = TestUserForm.FromUser(user);
+        ResetForm();
+        editorExpanded = true;
+    }
+
+    private void HideEditor()
+    {
+        ResetForm();
+        editorExpanded = false;
+    }
+
+    private void Edit(UserManagementRow row)
+    {
+        form = TestUserForm.FromRow(row, GetUserType(row), GetPrimaryMapping(row), "");
+        editorExpanded = true;
     }
 
     private void ResetForm()
     {
-        form = new();
+        form = new()
+        {
+            CompanyId = ""
+        };
+    }
+
+    private void ToggleUsers() => usersExpanded = !usersExpanded;
+
+    private void ValidateForm()
+    {
+        if (RequiresCompany(form.UserType) && string.IsNullOrWhiteSpace(form.CompanyId))
+        {
+            throw new InvalidOperationException("Business is required.");
+        }
+    }
+
+    private CompanyAccess? GetPrimaryMapping(UserManagementRow row) =>
+        row.CompanyAccess
+            .Where(access => access.Status != MembershipStatus.Removed)
+            .OrderByDescending(access => access.Status == MembershipStatus.Active)
+            .ThenByDescending(access => access.Status == MembershipStatus.Pending)
+            .FirstOrDefault();
+
+    private TestUserType GetUserType(UserManagementRow row)
+    {
+        if (row.User.IsSystemAdmin)
+        {
+            return TestUserType.SystemAdmin;
+        }
+
+        if (homeOwnerTestUserIds.Contains(row.User.Id))
+        {
+            return TestUserType.HomeOwner;
+        }
+
+        return GetPrimaryMapping(row)?.Role switch
+        {
+            CompanyRole.CompanyAdmin => TestUserType.BusinessOwner,
+            CompanyRole.CompanyUser => TestUserType.BusinessEmployee,
+            CompanyRole.CompanyClientUser => TestUserType.BusinessClient,
+            _ => TestUserType.General
+        };
+    }
+
+    private static bool RequiresCompany(TestUserType userType) =>
+        userType is TestUserType.BusinessOwner or TestUserType.BusinessEmployee or TestUserType.BusinessClient;
+
+    private static CompanyRole GetCompanyRole(TestUserType userType) => userType switch
+    {
+        TestUserType.SystemAdmin => CompanyRole.CompanyAdmin,
+        TestUserType.BusinessOwner => CompanyRole.CompanyAdmin,
+        TestUserType.BusinessEmployee => CompanyRole.CompanyUser,
+        TestUserType.BusinessClient => CompanyRole.CompanyClientUser,
+        TestUserType.HomeOwner => CompanyRole.CompanyClientUser,
+        TestUserType.General => CompanyRole.CompanyUser,
+        _ => CompanyRole.CompanyUser
+    };
+
+    private static string GetTypeLabel(TestUserType userType) => userType switch
+    {
+        TestUserType.SystemAdmin => "System Admin",
+        TestUserType.BusinessOwner => "Business Owner",
+        TestUserType.BusinessEmployee => "Business Employee",
+        TestUserType.BusinessClient => "Business Client",
+        TestUserType.HomeOwner => "Homeowner",
+        TestUserType.General => "General Test User",
+        _ => userType.ToString()
+    };
+
+    private enum TestUserType
+    {
+        General,
+        SystemAdmin,
+        BusinessOwner,
+        BusinessEmployee,
+        BusinessClient,
+        HomeOwner
     }
 
     private sealed class TestUserForm
     {
         public string UserId { get; set; } = "";
+        public TestUserType UserType { get; set; } = TestUserType.BusinessEmployee;
+        public string CompanyId { get; set; } = "";
         public string DisplayName { get; set; } = "";
         public string Email { get; set; } = "";
         public string? NotificationEmail { get; set; }
         public string? Phone { get; set; }
+        public bool ApprovalNeeded { get; set; }
         public bool EmailNotificationsEnabled { get; set; } = true;
         public bool IsEditing { get; set; }
 
-        public static TestUserForm FromUser(AppUser user) => new()
-        {
-            UserId = user.Id,
-            DisplayName = user.DisplayName,
-            Email = user.Email,
-            NotificationEmail = user.NotificationEmail,
-            Phone = user.Phone,
-            EmailNotificationsEnabled = user.EmailNotificationsEnabled ?? true,
-            IsEditing = true
-        };
+        public static TestUserForm FromRow(
+            UserManagementRow row,
+            TestUserType userType,
+            CompanyAccess? mapping,
+            string fallbackCompanyId) => new()
+            {
+                UserId = row.User.Id,
+                UserType = userType,
+                CompanyId = mapping?.Company.Id ?? fallbackCompanyId,
+                DisplayName = row.User.DisplayName,
+                Email = row.User.Email,
+                NotificationEmail = row.User.NotificationEmail,
+                Phone = row.User.Phone,
+                ApprovalNeeded = mapping?.Status == MembershipStatus.Pending,
+                EmailNotificationsEnabled = row.User.EmailNotificationsEnabled ?? true,
+                IsEditing = true
+            };
     }
 }

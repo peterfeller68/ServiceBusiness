@@ -2,7 +2,7 @@
 @rendermode InteractiveServer
 @using ServiceBusiness.Domain
 @inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
-@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+@inject ServiceBusiness.Web.CurrentCompanyContext CurrentCompany
 @inject ServiceBusiness.Web.ApplicationModeService ApplicationMode
 
 <PageTitle>Company Dashboard</PageTitle>
@@ -24,41 +24,119 @@ else
         <div>
             <p class="eyebrow">Company Admin</p>
             <h1>@dashboard.Company.Name</h1>
-            <p class="lede">Today's schedule, assignments, client work, and operating health.</p>
+            <p class="lede">Company setup and approval work that needs attention.</p>
         </div>
         <div class="page-actions">
-            <a class="button" href="approvals">Review Approvals</a>
-            <a class="button primary" href="schedule">Open Schedule</a>
+            <a class="button" href="settings/users">Users</a>
+            <a class="button primary" href="schedule">Schedule</a>
         </div>
     </section>
 
     <div class="metric-grid">
-        <div class="metric">
-            <span>Scheduled Today</span>
-            <strong>@dashboard.TodayScheduled</strong>
-        </div>
-        <div class="metric">
-            <span>Completed</span>
-            <strong>@dashboard.TodayCompleted</strong>
-        </div>
-        <div class="metric">
-            <span>Unassigned</span>
-            <strong>@dashboard.UnassignedVisits</strong>
-        </div>
-        <div class="metric">
-            <span>Active Clients</span>
-            <strong>@dashboard.ActiveClients</strong>
-        </div>
+        <a class="metric metric-link" href="clients">
+            <span>Customers</span>
+            <strong>@dashboard.CustomerCount</strong>
+        </a>
+        <a class="metric metric-link" href="settings/users">
+            <span>Employees</span>
+            <strong>@dashboard.EmployeeCount</strong>
+        </a>
+        @if (appMode.IsPoolMode)
+        {
+            <a class="metric metric-link" href="poolequipment">
+                <span>Pool Equipment</span>
+                <strong>@dashboard.EquipmentCount</strong>
+            </a>
+        }
+        <a class="metric metric-link" href="settings/materials">
+            <span>Materials</span>
+            <strong>@dashboard.MaterialCount</strong>
+        </a>
+        <a class="metric metric-link" href="settings/services">
+            <span>Services</span>
+            <strong>@dashboard.ServiceCount</strong>
+        </a>
     </div>
 
-    <section class="section split">
+    <div class="metric-grid">
+        <button class="metric metric-button" type="button" @onclick="() => ShowPendingPanel(CompanyRole.CompanyUser)">
+            <span>Pending Employee Approvals</span>
+            <strong>@dashboard.PendingEmployeeRequests</strong>
+        </button>
+        <button class="metric metric-button" type="button" @onclick="() => ShowPendingPanel(CompanyRole.CompanyClientUser)">
+            <span>Pending Customer Approvals</span>
+            <strong>@dashboard.PendingCustomerRequests</strong>
+        </button>
+    </div>
+
+    @if (pendingPanelRole is not null)
+    {
+        <section class="management-panel">
+            <div class="management-panel-header">
+                <h2>@GetPendingPanelTitle()</h2>
+                <div class="management-panel-actions">
+                    <button class="icon-button" type="button" title="Close approvals" @onclick="ClosePendingPanel">x</button>
+                </div>
+            </div>
+            <div class="management-panel-body">
+                @if (PendingPanelRequests.Count == 0)
+                {
+                    <p class="empty-state">No pending approvals for this group.</p>
+                }
+                else
+                {
+                    <div class="management-table-wrap">
+                        <table class="management-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Role</th>
+                                    <th>Requested</th>
+                                    <th class="actions">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var request in PendingPanelRequests)
+                                {
+                                    <tr>
+                                        <td>@request.User.DisplayName</td>
+                                        <td>@request.User.Email</td>
+                                        <td>@request.Role.DisplayName</td>
+                                        <td>@request.Membership.RequestedUtc.LocalDateTime.ToShortDateString()</td>
+                                        <td class="actions">
+                                            <label class="switch-control" title="Approve access request">
+                                                <input type="checkbox" @onchange="args => DecideAsync(request, IsChecked(args) ? MembershipStatus.Active : MembershipStatus.Rejected)" />
+                                                <span></span>
+                                            </label>
+                                            <button class="icon-button danger icon-only" type="button" title="Reject request" aria-label="Reject request" @onclick="() => DecideAsync(request, MembershipStatus.Rejected)">
+                                                <span class="action-icon delete-icon" aria-hidden="true"></span>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </section>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <div class="notice success">@message</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="notice error">@errorMessage</div>
+    }
+
+    <section class="section">
         <div>
-            <h2>Setup</h2>
-            <p>Configure clients, services, materials, and visits from the navigation. This MVP is seeded with demo data for the Clearwater tenant.</p>
-        </div>
-        <div class="callout">
-            <strong>@dashboard.PendingEmployeeRequests pending employee request</strong>
-            <p>Review pending business user and client portal requests before they can access company features.</p>
+            <h2>Workspace</h2>
+            <p>Use the tiles above to manage company setup and approval work.</p>
         </div>
     </section>
 }
@@ -66,11 +144,71 @@ else
 @code {
     private CompanyDashboard? dashboard;
     private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
+    private CompanyRole? pendingPanelRole;
+    private string? message;
+    private string? errorMessage;
+    private string companyId = "";
+
+    private IReadOnlyList<AccessRequest> PendingPanelRequests =>
+        dashboard?.PendingAccessRequests
+            .Where(r => r.Membership.Role == pendingPanelRole)
+            .ToList() ?? [];
 
     protected override async Task OnInitializedAsync()
     {
-        DemoUser.UserId = "clearwater-owner-1";
         appMode = await ApplicationMode.GetCurrentAsync();
-        dashboard = await CompanyAdminService.GetDashboardAsync("clearwater", DateOnly.FromDateTime(DateTime.Today));
+        companyId = await CurrentCompany.GetRequiredCompanyIdAsync([CompanyRole.CompanyAdmin]);
+        await LoadAsync();
     }
+
+    private async Task LoadAsync()
+    {
+        dashboard = await CompanyAdminService.GetDashboardAsync(companyId, DateOnly.FromDateTime(DateTime.Today));
+    }
+
+    private void ShowPendingPanel(CompanyRole role)
+    {
+        pendingPanelRole = pendingPanelRole == role ? null : role;
+        message = null;
+        errorMessage = null;
+    }
+
+    private void ClosePendingPanel()
+    {
+        pendingPanelRole = null;
+    }
+
+    private async Task DecideAsync(AccessRequest request, MembershipStatus decision)
+    {
+        message = null;
+        errorMessage = null;
+
+        try
+        {
+            await CompanyAdminService.DecideAccessRequestAsync(
+                request.Company.Id,
+                request.User.Id,
+                request.Membership.Role,
+                decision);
+            message = $"{request.User.DisplayName} was {decision.ToString().ToLowerInvariant()} for {request.Company.Name}.";
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private string GetPendingPanelTitle() => pendingPanelRole switch
+    {
+        CompanyRole.CompanyUser => "Pending Employee Approvals",
+        CompanyRole.CompanyClientUser => "Pending Customer Approvals",
+        _ => "Pending Approvals"
+    };
+
+    private static bool IsChecked(ChangeEventArgs args) => args.Value is bool value && value;
 }

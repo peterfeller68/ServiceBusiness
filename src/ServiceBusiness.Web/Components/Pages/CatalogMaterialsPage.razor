@@ -5,6 +5,7 @@
 @using ServiceBusiness.Domain
 @inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
 @inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+@inject ServiceBusiness.Web.CurrentCompanyContext CurrentCompany
 @inject NavigationManager Navigation
 
 <PageTitle>Materials</PageTitle>
@@ -34,10 +35,22 @@
 }
 else
 {
-    <section class="section split">
-        <EditForm Model="categoryForm" OnValidSubmit="SaveCategoryAsync" FormName="material-category-editor">
-            <div class="form-panel">
-                <h2>@(categoryForm.IsEditing ? "Edit Category" : "Create Category")</h2>
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>Material Categories</h2>
+            <div class="management-panel-actions">
+                <button class="button primary" type="button" @onclick="ShowCreateCategory">Create</button>
+                <button class="icon-button" type="button" title="Toggle material categories" @onclick="ToggleCategoryList">@(categoryListExpanded ? "^" : "v")</button>
+            </div>
+        </div>
+        @if (categoryListExpanded)
+        {
+            <div class="management-panel-body">
+                @if (categoryEditorExpanded)
+                {
+                    <EditForm Model="categoryForm" OnValidSubmit="SaveCategoryAsync" FormName="material-category-editor">
+                        <div class="editor-panel">
+                            <h3>@(categoryForm.IsEditing ? "Edit Category" : "Create Category")</h3>
                 <label>
                     Category ID
                     <InputText class="form-control" @bind-Value="categoryForm.Id" disabled="@categoryForm.IsEditing" />
@@ -56,14 +69,70 @@ else
                 </label>
                 <div class="form-actions">
                     <button class="button primary" type="submit">Save Category</button>
-                    <button class="button" type="button" @onclick="ResetCategoryForm">New Category</button>
+                                    <button class="button" type="button" @onclick="HideCategoryEditor">Cancel</button>
+                </div>
+                        </div>
+                    </EditForm>
+                }
+                <div class="management-table-wrap">
+                    <table class="management-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Active</th>
+                                <th>Name</th>
+                                <th>Description</th>
+                                <th class="actions">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var group in catalog.MaterialGroups)
+                            {
+                                <tr>
+                                    <td>@group.Category.Id</td>
+                                    <td>@(group.Category.IsActive ? "Yes" : "No")</td>
+                                    <td>@group.Category.Name</td>
+                                    <td>@group.Category.Description</td>
+                                    <td class="actions">
+                                        <button class="icon-button" type="button" title="Edit category" @onclick="() => EditCategory(group.Category)">Edit</button>
+                                        @if (group.Category.IsSystemManaged)
+                                        {
+                                            <button class="icon-button" type="button" title="Copy as custom category" @onclick="() => CopyCategoryAsync(group.Category)">Copy</button>
+                                        }
+                                        @if (group.Category.IsActive)
+                                        {
+                                            <button class="icon-button danger" type="button" title="Archive category" @onclick="() => SetCategoryActiveAsync(group.Category, false)">Del</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="icon-button" type="button" title="Reactivate category" @onclick="() => SetCategoryActiveAsync(group.Category, true)">On</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
                 </div>
             </div>
-        </EditForm>
+        }
+    </section>
 
-        <EditForm Model="materialForm" OnValidSubmit="SaveMaterialAsync" FormName="material-item-editor">
-            <div class="form-panel">
-                <h2>@(materialForm.IsEditing ? "Edit Material" : "Create Material")</h2>
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>Materials</h2>
+            <div class="management-panel-actions">
+                <button class="button primary" type="button" @onclick="ShowCreateMaterial">Create</button>
+                <button class="icon-button" type="button" title="Toggle materials" @onclick="ToggleMaterialList">@(materialListExpanded ? "^" : "v")</button>
+            </div>
+        </div>
+        @if (materialListExpanded)
+        {
+            <div class="management-panel-body">
+                @if (materialEditorExpanded)
+                {
+                    <EditForm Model="materialForm" OnValidSubmit="SaveMaterialAsync" FormName="material-item-editor">
+                        <div class="editor-panel">
+                            <h3>@(materialForm.IsEditing ? "Edit Material" : "Create Material")</h3>
                 <div class="form-grid">
                     <label>
                         Material ID
@@ -106,93 +175,71 @@ else
                 </div>
                 <div class="form-actions">
                     <button class="button primary" type="submit">Save Material</button>
-                    <button class="button" type="button" @onclick="ResetMaterialForm">New Material</button>
+                                    <button class="button" type="button" @onclick="HideMaterialEditor">Cancel</button>
+                </div>
+                        </div>
+                    </EditForm>
+                }
+                <div class="management-table-wrap">
+                    <table class="management-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Active</th>
+                                <th>Name</th>
+                                <th>Category</th>
+                                <th>Unit</th>
+                                <th>Price</th>
+                                <th class="actions">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var group in catalog.MaterialGroups)
+                            {
+                                @foreach (var material in group.Materials)
+                                {
+                                    <tr>
+                                        <td>@material.Id</td>
+                                        <td>@(material.IsActive ? "Yes" : "No")</td>
+                                        <td>@material.Name</td>
+                                        <td>@group.Category.Name</td>
+                                        <td>@material.UnitOfMeasure</td>
+                                        <td>@material.DefaultBillableUnitPrice.ToString("C")</td>
+                                        <td class="actions">
+                                            <button class="icon-button" type="button" title="Edit material" @onclick="() => EditMaterial(material)">Edit</button>
+                                            @if (group.Category.IsSystemManaged)
+                                            {
+                                                <button class="icon-button" type="button" title="Copy material" @onclick="() => CopyMaterialAsync(material)">Copy</button>
+                                            }
+                                            @if (material.IsActive)
+                                            {
+                                                <button class="icon-button danger" type="button" title="Archive material" @onclick="() => SetMaterialActiveAsync(material, false)">Del</button>
+                                            }
+                                            else
+                                            {
+                                                <button class="icon-button" type="button" title="Reactivate material" @onclick="() => SetMaterialActiveAsync(material, true)">On</button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
                 </div>
             </div>
-        </EditForm>
-    </section>
-
-    <section class="section">
-        <h2>Material Categories</h2>
-        <div class="category-grid">
-            @foreach (var group in catalog.MaterialGroups)
-            {
-                <article class="form-panel">
-                    <div class="category-heading">
-                        <div>
-                            <strong>@group.Category.Name</strong>
-                            <p>@group.Category.Description</p>
-                        </div>
-                        <div class="row-actions">
-                            @if (group.Category.IsSystemManaged)
-                            {
-                                <span class="status-pill">Starter</span>
-                            }
-                            <span class="status-pill">@(group.Category.IsActive ? "Active" : "Archived")</span>
-                        </div>
-                    </div>
-                    <div class="form-actions">
-                        <button class="button" type="button" @onclick="() => EditCategory(group.Category)">Edit Category</button>
-                        @if (group.Category.IsSystemManaged)
-                        {
-                            <button class="button" type="button" @onclick="() => CopyCategoryAsync(group.Category)">Copy as Custom</button>
-                        }
-                        @if (group.Category.IsActive)
-                        {
-                            <button class="button danger" type="button" @onclick="() => SetCategoryActiveAsync(group.Category, false)">Archive Category</button>
-                        }
-                        else
-                        {
-                            <button class="button primary" type="button" @onclick="() => SetCategoryActiveAsync(group.Category, true)">Reactivate Category</button>
-                        }
-                    </div>
-
-                    @if (group.Materials.Count == 0)
-                    {
-                        <p class="form-note">No materials in this category yet.</p>
-                    }
-                    else
-                    {
-                        <div class="data-list">
-                            @foreach (var material in group.Materials)
-                            {
-                                <article class="row-card compact">
-                                    <div>
-                                        <strong>@material.Name</strong>
-                                        <p>@material.UnitOfMeasure &middot; Cost @material.DefaultUnitCost.ToString("C")</p>
-                                        <small>@(material.IsTaxable ? "Taxable" : "Non-taxable") &middot; @(material.IsActive ? "Active" : "Archived")</small>
-                                    </div>
-                                    <div class="row-actions">
-                                        <span class="price">@material.DefaultBillableUnitPrice.ToString("C")</span>
-                                        <button class="button" type="button" @onclick="() => EditMaterial(material)">Edit</button>
-                                        @if (group.Category.IsSystemManaged)
-                                        {
-                                            <button class="button" type="button" @onclick="() => CopyMaterialAsync(material)">Copy</button>
-                                        }
-                                        @if (material.IsActive)
-                                        {
-                                            <button class="button danger" type="button" @onclick="() => SetMaterialActiveAsync(material, false)">Archive</button>
-                                        }
-                                        else
-                                        {
-                                            <button class="button primary" type="button" @onclick="() => SetMaterialActiveAsync(material, true)">Reactivate</button>
-                                        }
-                                    </div>
-                                </article>
-                            }
-                        </div>
-                    }
-                </article>
-            }
-        </div>
+        }
     </section>
 }
 
 @code {
-    private const string CompanyId = "clearwater";
+    private string companyId = "";
     private CatalogOverview? catalog;
     private MaterialCategoryForm categoryForm = new();
     private MaterialForm materialForm = new();
+    private bool categoryListExpanded = true;
+    private bool materialListExpanded = true;
+    private bool categoryEditorExpanded;
+    private bool materialEditorExpanded;
     private string? message;
     private string? errorMessage;
     private bool IsSystemAdminRoute => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("admin/", StringComparison.OrdinalIgnoreCase);
@@ -201,7 +248,16 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        DemoUser.UserId = IsSystemAdminRoute ? "sys-admin" : "clearwater-owner-1";
+        if (IsSystemAdminRoute)
+        {
+            DemoUser.UserId = "sys-admin";
+            companyId = "clearwater";
+        }
+        else
+        {
+            companyId = await CurrentCompany.GetRequiredCompanyIdAsync([CompanyRole.CompanyAdmin]);
+        }
+
         await LoadAsync();
     }
 
@@ -211,13 +267,14 @@ else
         {
             await CompanyAdminService.UpsertMaterialCategoryAsync(new MaterialCategory(
                 categoryForm.Id,
-                CompanyId,
+                companyId,
                 categoryForm.Name,
                 categoryForm.Description,
                 categoryForm.IsSystemManaged,
                 categoryForm.IsActive));
             message = $"{categoryForm.Name} category was saved.";
             ResetCategoryForm();
+            categoryEditorExpanded = false;
         });
     }
 
@@ -227,7 +284,7 @@ else
         {
             await CompanyAdminService.UpsertMaterialAsync(new Material(
                 materialForm.Id,
-                CompanyId,
+                companyId,
                 materialForm.CategoryId,
                 materialForm.Name,
                 materialForm.UnitOfMeasure,
@@ -237,6 +294,7 @@ else
                 materialForm.IsActive));
             message = $"{materialForm.Name} was saved.";
             ResetMaterialForm();
+            materialEditorExpanded = false;
         });
     }
 
@@ -244,7 +302,7 @@ else
     {
         await RunAsync(async () =>
         {
-            await CompanyAdminService.SetMaterialCategoryActiveAsync(CompanyId, category.Id, isActive);
+            await CompanyAdminService.SetMaterialCategoryActiveAsync(companyId, category.Id, isActive);
             message = $"{category.Name} was {(isActive ? "reactivated" : "archived")}.";
         });
     }
@@ -253,7 +311,7 @@ else
     {
         await RunAsync(async () =>
         {
-            var copy = await CompanyAdminService.CopyMaterialCategoryAsync(CompanyId, category.Id);
+            var copy = await CompanyAdminService.CopyMaterialCategoryAsync(companyId, category.Id);
             message = $"{category.Name} was copied to {copy.Name}.";
         });
     }
@@ -262,7 +320,7 @@ else
     {
         await RunAsync(async () =>
         {
-            await CompanyAdminService.SetMaterialActiveAsync(CompanyId, material.Id, isActive);
+            await CompanyAdminService.SetMaterialActiveAsync(companyId, material.Id, isActive);
             message = $"{material.Name} was {(isActive ? "reactivated" : "archived")}.";
         });
     }
@@ -271,7 +329,7 @@ else
     {
         await RunAsync(async () =>
         {
-            var copy = await CompanyAdminService.CopyMaterialAsync(CompanyId, material.Id);
+            var copy = await CompanyAdminService.CopyMaterialAsync(companyId, material.Id);
             message = $"{material.Name} was copied to {copy.Name}.";
         });
     }
@@ -298,22 +356,56 @@ else
 
     private async Task LoadAsync()
     {
-        catalog = await CompanyAdminService.GetCatalogOverviewAsync(CompanyId);
+        catalog = await CompanyAdminService.GetCatalogOverviewAsync(companyId);
     }
 
     private void EditCategory(MaterialCategory category)
     {
         categoryForm = MaterialCategoryForm.FromCategory(category);
+        categoryEditorExpanded = true;
+        categoryListExpanded = true;
     }
 
     private void EditMaterial(Material material)
     {
         materialForm = MaterialForm.FromMaterial(material);
+        materialEditorExpanded = true;
+        materialListExpanded = true;
     }
 
     private void ResetCategoryForm() => categoryForm = new();
 
     private void ResetMaterialForm() => materialForm = new();
+
+    private void ShowCreateCategory()
+    {
+        ResetCategoryForm();
+        categoryEditorExpanded = true;
+        categoryListExpanded = true;
+    }
+
+    private void ShowCreateMaterial()
+    {
+        ResetMaterialForm();
+        materialEditorExpanded = true;
+        materialListExpanded = true;
+    }
+
+    private void HideCategoryEditor()
+    {
+        ResetCategoryForm();
+        categoryEditorExpanded = false;
+    }
+
+    private void HideMaterialEditor()
+    {
+        ResetMaterialForm();
+        materialEditorExpanded = false;
+    }
+
+    private void ToggleCategoryList() => categoryListExpanded = !categoryListExpanded;
+
+    private void ToggleMaterialList() => materialListExpanded = !materialListExpanded;
 
     private sealed class MaterialCategoryForm
     {

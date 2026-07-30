@@ -265,11 +265,14 @@ public sealed record PoolEquipmentCategoryGroup(
 
 public sealed record CompanyDashboard(
     Company Company,
-    int TodayScheduled,
-    int TodayCompleted,
-    int UnassignedVisits,
+    int CustomerCount,
+    int EmployeeCount,
+    int EquipmentCount,
+    int MaterialCount,
+    int ServiceCount,
     int PendingEmployeeRequests,
-    int ActiveClients);
+    int PendingCustomerRequests,
+    IReadOnlyList<AccessRequest> PendingAccessRequests);
 
 public sealed record RegistrationSubmission(
     RegistrationAccountType AccountType,

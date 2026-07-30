@@ -7,6 +7,7 @@
 @inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
 @inject ServiceBusiness.Application.ICurrentUserContext CurrentUser
 @inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+@inject ServiceBusiness.Web.CurrentCompanyContext CurrentCompany
 @inject ServiceBusiness.Web.ApplicationModeService ApplicationMode
 @inject NavigationManager Navigation
 
@@ -39,10 +40,22 @@
     }
     else
     {
-        <section class="section split">
-            <EditForm Model="categoryForm" OnValidSubmit="SaveCategoryAsync" FormName="equipment-category-editor">
-                <div class="form-panel">
-                    <h2>@(categoryForm.IsEditing ? "Edit Category" : "Create Category")</h2>
+        <section class="management-panel">
+            <div class="management-panel-header">
+                <h2>Equipment Categories</h2>
+                <div class="management-panel-actions">
+                    <button class="button primary" type="button" @onclick="ShowCreateCategory">Create</button>
+                    <button class="icon-button" type="button" title="Toggle equipment categories" @onclick="ToggleCategoryList">@(categoryListExpanded ? "^" : "v")</button>
+                </div>
+            </div>
+            @if (categoryListExpanded)
+            {
+                <div class="management-panel-body">
+                    @if (categoryEditorExpanded)
+                    {
+                        <EditForm Model="categoryForm" OnValidSubmit="SaveCategoryAsync" FormName="equipment-category-editor">
+                            <div class="editor-panel">
+                                <h3>@(categoryForm.IsEditing ? "Edit Category" : "Create Category")</h3>
                     <div class="form-grid">
                         <label>
                             Category ID
@@ -71,14 +84,72 @@
                     </div>
                     <div class="form-actions">
                         <button class="button primary" type="submit">Save Category</button>
-                        <button class="button" type="button" @onclick="ResetCategoryForm">New Category</button>
+                                        <button class="button" type="button" @onclick="HideCategoryEditor">Cancel</button>
+                    </div>
+                            </div>
+                        </EditForm>
+                    }
+                    <div class="management-table-wrap">
+                        <table class="management-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Active</th>
+                                    <th>Manufacturer</th>
+                                    <th>Name</th>
+                                    <th>Description</th>
+                                    <th class="actions">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var group in overview.CategoryGroups)
+                                {
+                                    <tr>
+                                        <td>@group.Category.Id</td>
+                                        <td>@(group.Category.IsActive ? "Yes" : "No")</td>
+                                        <td>@group.Category.Manufacturer</td>
+                                        <td>@group.Category.Name</td>
+                                        <td>@group.Category.Description</td>
+                                        <td class="actions">
+                                            <button class="icon-button" type="button" title="Edit category" @onclick="() => EditCategory(group.Category)">Edit</button>
+                                            @if (group.Category.IsSystemManaged)
+                                            {
+                                                <button class="icon-button" type="button" title="Copy category" @onclick="() => CopyCategoryAsync(group.Category)">Copy</button>
+                                            }
+                                            @if (group.Category.IsActive)
+                                            {
+                                                <button class="icon-button danger" type="button" title="Archive category" @onclick="() => SetCategoryActiveAsync(group.Category, false)">Del</button>
+                                            }
+                                            else
+                                            {
+                                                <button class="icon-button" type="button" title="Reactivate category" @onclick="() => SetCategoryActiveAsync(group.Category, true)">On</button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
                     </div>
                 </div>
-            </EditForm>
+            }
+        </section>
 
-            <EditForm Model="itemForm" OnValidSubmit="SaveItemAsync" FormName="equipment-item-editor">
-                <div class="form-panel">
-                    <h2>@(itemForm.IsEditing ? "Edit Equipment" : "Create Equipment")</h2>
+        <section class="management-panel">
+            <div class="management-panel-header">
+                <h2>Equipment</h2>
+                <div class="management-panel-actions">
+                    <button class="button primary" type="button" @onclick="ShowCreateItem">Create</button>
+                    <button class="icon-button" type="button" title="Toggle equipment" @onclick="ToggleItemList">@(itemListExpanded ? "^" : "v")</button>
+                </div>
+            </div>
+            @if (itemListExpanded)
+            {
+                <div class="management-panel-body">
+                    @if (itemEditorExpanded)
+                    {
+                        <EditForm Model="itemForm" OnValidSubmit="SaveItemAsync" FormName="equipment-item-editor">
+                            <div class="editor-panel">
+                                <h3>@(itemForm.IsEditing ? "Edit Equipment" : "Create Equipment")</h3>
                     <div class="form-grid">
                         <label>
                             Equipment ID
@@ -113,89 +184,57 @@
                     </div>
                     <div class="form-actions">
                         <button class="button primary" type="submit">Save Equipment</button>
-                        <button class="button" type="button" @onclick="ResetItemForm">New Equipment</button>
+                                        <button class="button" type="button" @onclick="HideItemEditor">Cancel</button>
+                    </div>
+                            </div>
+                        </EditForm>
+                    }
+                    <div class="management-table-wrap">
+                        <table class="management-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Active</th>
+                                    <th>Name</th>
+                                    <th>Category</th>
+                                    <th>Description</th>
+                                    <th class="actions">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var group in overview.CategoryGroups)
+                                {
+                                    @foreach (var item in group.Items)
+                                    {
+                                        <tr>
+                                            <td>@item.Id</td>
+                                            <td>@(item.IsActive ? "Yes" : "No")</td>
+                                            <td>@item.Name</td>
+                                            <td>@group.Category.Name</td>
+                                            <td>@item.Description</td>
+                                            <td class="actions">
+                                                <button class="icon-button" type="button" title="Edit equipment" @onclick="() => EditItem(item)">Edit</button>
+                                                @if (group.Category.IsSystemManaged)
+                                                {
+                                                    <button class="icon-button" type="button" title="Copy equipment" @onclick="() => CopyItemAsync(item)">Copy</button>
+                                                }
+                                                @if (item.IsActive)
+                                                {
+                                                    <button class="icon-button danger" type="button" title="Archive equipment" @onclick="() => SetItemActiveAsync(item, false)">Del</button>
+                                                }
+                                                else
+                                                {
+                                                    <button class="icon-button" type="button" title="Reactivate equipment" @onclick="() => SetItemActiveAsync(item, true)">On</button>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
                     </div>
                 </div>
-            </EditForm>
-        </section>
-
-        <section class="section">
-            <h2>Equipment Categories</h2>
-            <div class="category-grid">
-                @foreach (var group in overview.CategoryGroups)
-                {
-                    <article class="form-panel">
-                        <div class="category-heading">
-                            <div>
-                                <strong>@group.Category.Manufacturer - @group.Category.Name</strong>
-                                <p>@group.Category.Description</p>
-                            </div>
-                            <div class="row-actions">
-                                @if (group.Category.IsSystemManaged)
-                                {
-                                    <span class="status-pill">Starter</span>
-                                }
-                                <span class="status-pill">@ScopeLabel</span>
-                                <span class="status-pill">@(group.Category.IsActive ? "Active" : "Archived")</span>
-                            </div>
-                        </div>
-                        <div class="form-actions">
-                            <button class="button" type="button" @onclick="() => EditCategory(group.Category)">Edit Category</button>
-                            @if (group.Category.IsSystemManaged)
-                            {
-                                <button class="button" type="button" @onclick="() => CopyCategoryAsync(group.Category)">Copy as Custom</button>
-                            }
-                            @if (group.Category.IsActive)
-                            {
-                                <button class="button danger" type="button" @onclick="() => SetCategoryActiveAsync(group.Category, false)">Archive Category</button>
-                            }
-                            else
-                            {
-                                <button class="button primary" type="button" @onclick="() => SetCategoryActiveAsync(group.Category, true)">Reactivate Category</button>
-                            }
-                        </div>
-
-                        @if (group.Items.Count == 0)
-                        {
-                            <p class="form-note">No equipment in this category yet.</p>
-                        }
-                        else
-                        {
-                            <div class="data-list">
-                                @foreach (var item in group.Items)
-                                {
-                                    <article class="row-card compact">
-                                        @if (!string.IsNullOrWhiteSpace(item.ImageUrl))
-                                        {
-                                            <img class="equipment-thumb" src="@item.ImageUrl" alt="@item.Name" />
-                                        }
-                                        <div>
-                                            <strong>@item.Name</strong>
-                                            <p>@item.Description</p>
-                                            <small>@(item.IsActive ? "Active" : "Archived")</small>
-                                        </div>
-                                        <div class="row-actions">
-                                            <button class="button" type="button" @onclick="() => EditItem(item)">Edit</button>
-                                            @if (group.Category.IsSystemManaged)
-                                            {
-                                                <button class="button" type="button" @onclick="() => CopyItemAsync(item)">Copy</button>
-                                            }
-                                            @if (item.IsActive)
-                                            {
-                                                <button class="button danger" type="button" @onclick="() => SetItemActiveAsync(item, false)">Archive</button>
-                                            }
-                                            else
-                                            {
-                                                <button class="button primary" type="button" @onclick="() => SetItemActiveAsync(item, true)">Reactivate</button>
-                                            }
-                                        </div>
-                                    </article>
-                                }
-                            </div>
-                        }
-                    </article>
-                }
-                        </div>
+            }
         </section>
     }
 }
@@ -204,8 +243,13 @@
     private PoolEquipmentOverview? overview;
     private EquipmentCategoryForm categoryForm = new();
     private EquipmentItemForm itemForm = new();
+    private bool categoryListExpanded = true;
+    private bool itemListExpanded = true;
+    private bool categoryEditorExpanded;
+    private bool itemEditorExpanded;
     private string? message;
     private string? errorMessage;
+    private string companyId = "";
     private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
     private bool IsSystemAdminRoute => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("admin/", StringComparison.OrdinalIgnoreCase);
     private bool IsHomeOwnerRoute => string.Equals(Navigation.ToBaseRelativePath(Navigation.Uri).Trim('/'), "poolequipment", StringComparison.OrdinalIgnoreCase);
@@ -214,7 +258,7 @@
     {
         EquipmentScope.Global => "global",
         EquipmentScope.HomeOwner => CurrentUser.UserId,
-        _ => "clearwater"
+        _ => companyId
     };
     private string PageScope => Scope switch
     {
@@ -239,12 +283,15 @@
             return;
         }
 
-        DemoUser.UserId = Scope switch
+        if (Scope == EquipmentScope.Global)
         {
-            EquipmentScope.Global => "sys-admin",
-            EquipmentScope.HomeOwner => CurrentUser.UserId,
-            _ => "clearwater-owner-1"
-        };
+            DemoUser.UserId = "sys-admin";
+        }
+        else if (Scope == EquipmentScope.Company)
+        {
+            companyId = await CurrentCompany.GetRequiredCompanyIdAsync([CompanyRole.CompanyAdmin]);
+        }
+
         await LoadAsync();
     }
 
@@ -263,6 +310,7 @@
                 categoryForm.IsActive));
             message = $"{categoryForm.Name} category was saved.";
             ResetCategoryForm();
+            categoryEditorExpanded = false;
         });
     }
 
@@ -281,6 +329,7 @@
                 itemForm.IsActive));
             message = $"{itemForm.Name} was saved.";
             ResetItemForm();
+            itemEditorExpanded = false;
         });
     }
 
@@ -348,16 +397,50 @@
     private void EditCategory(PoolEquipmentCategory category)
     {
         categoryForm = EquipmentCategoryForm.FromCategory(category);
+        categoryEditorExpanded = true;
+        categoryListExpanded = true;
     }
 
     private void EditItem(PoolEquipmentItem item)
     {
         itemForm = EquipmentItemForm.FromItem(item);
+        itemEditorExpanded = true;
+        itemListExpanded = true;
     }
 
     private void ResetCategoryForm() => categoryForm = new();
 
     private void ResetItemForm() => itemForm = new();
+
+    private void ShowCreateCategory()
+    {
+        ResetCategoryForm();
+        categoryEditorExpanded = true;
+        categoryListExpanded = true;
+    }
+
+    private void ShowCreateItem()
+    {
+        ResetItemForm();
+        itemEditorExpanded = true;
+        itemListExpanded = true;
+    }
+
+    private void HideCategoryEditor()
+    {
+        ResetCategoryForm();
+        categoryEditorExpanded = false;
+    }
+
+    private void HideItemEditor()
+    {
+        ResetItemForm();
+        itemEditorExpanded = false;
+    }
+
+    private void ToggleCategoryList() => categoryListExpanded = !categoryListExpanded;
+
+    private void ToggleItemList() => itemListExpanded = !itemListExpanded;
 
     private sealed class EquipmentCategoryForm
     {

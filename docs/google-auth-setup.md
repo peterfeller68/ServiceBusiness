@@ -37,10 +37,10 @@ Seeded users marked with `IsTestUser` can skip Google authentication through `/a
 Current seeded test accounts:
 
 ```text
-owner@clearwater.example
-morgan@clearwater.example
+owner-1@demo.example
+user-1@demo.example
 homeowner-1@independent.com
-pending.tech@gmail.com
+pending-user-1@demo.example
 ```
 
 Only users marked as test users can use the bypass endpoint. Non-test users must authenticate through Google.

@@ -84,6 +84,8 @@ public sealed class TenantAuthorizationService(IServiceBusinessStore store, ICur
 
 public sealed class PlatformAdminService(IServiceBusinessStore store, TenantAuthorizationService authorization)
 {
+    public const string TestHomeOwnerProfileMarker = "[TestUserType:HomeOwner]";
+
     public async Task<SystemSettings> GetSystemSettingsAsync(CancellationToken cancellationToken = default)
     {
         await authorization.RequireSystemAdminAsync(cancellationToken);
@@ -399,6 +401,94 @@ public sealed class PlatformAdminService(IServiceBusinessStore store, TenantAuth
         return user;
     }
 
+    public async Task ConfigureTestUserAccessAsync(
+        string userId,
+        bool isSystemAdmin,
+        string? companyId,
+        CompanyRole role,
+        bool approvalNeeded,
+        bool isHomeOwner,
+        CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireSystemAdminAsync(cancellationToken);
+
+        var user = await store.GetUserAsync(userId, cancellationToken)
+            ?? throw new InvalidOperationException("User was not found.");
+        var company = string.IsNullOrWhiteSpace(companyId)
+            ? null
+            : await store.GetCompanyAsync(companyId, cancellationToken)
+                ?? throw new InvalidOperationException("Business was not found.");
+
+        if (user.Id == "sys-admin" && !isSystemAdmin)
+        {
+            throw new InvalidOperationException("The seeded system administrator must remain a system admin.");
+        }
+
+        await store.UpsertUserAsync(user with
+        {
+            IsSystemAdmin = isSystemAdmin,
+            IsTestUser = true
+        }, cancellationToken);
+
+        var status = approvalNeeded ? MembershipStatus.Pending : MembershipStatus.Active;
+        var existingMemberships = await store.GetMembershipsForUserAsync(user.Id, cancellationToken);
+        foreach (var existing in existingMemberships.Where(m =>
+            company is null ||
+            m.CompanyId != company.Id ||
+            m.Role != role ||
+            m.Status is MembershipStatus.Active or MembershipStatus.Pending or MembershipStatus.Inactive))
+        {
+            await store.UpsertMembershipAsync(existing with
+            {
+                Status = MembershipStatus.Removed,
+                DecidedUtc = DateTimeOffset.UtcNow,
+                DecidedByUserId = "sys-admin"
+            }, cancellationToken);
+        }
+
+        if (company is not null)
+        {
+            var matchingMembership = existingMemberships.FirstOrDefault(m => m.CompanyId == company.Id && m.Role == role);
+            await store.UpsertMembershipAsync((matchingMembership ?? new CompanyMembership(
+                company.Id,
+                user.Id,
+                role,
+                status,
+                DateTimeOffset.UtcNow,
+                approvalNeeded ? null : DateTimeOffset.UtcNow,
+                approvalNeeded ? null : "sys-admin")) with
+            {
+                Status = status,
+                DecidedUtc = approvalNeeded ? null : DateTimeOffset.UtcNow,
+                DecidedByUserId = approvalNeeded ? null : "sys-admin"
+            }, cancellationToken);
+        }
+
+        var existingProfile = await store.GetIndependentHomeOwnerProfileAsync(user.Id, cancellationToken);
+        if (isHomeOwner)
+        {
+            var now = DateTimeOffset.UtcNow;
+            await store.UpsertIndependentHomeOwnerProfileAsync((existingProfile ?? new IndependentHomeOwnerProfile(
+                user.Id,
+                "Test homeowner address",
+                "",
+                now,
+                now)) with
+            {
+                AccessNotes = TestHomeOwnerProfileMarker,
+                UpdatedUtc = now
+            }, cancellationToken);
+        }
+        else if (existingProfile?.AccessNotes == TestHomeOwnerProfileMarker)
+        {
+            await store.UpsertIndependentHomeOwnerProfileAsync(existingProfile with
+            {
+                AccessNotes = "",
+                UpdatedUtc = DateTimeOffset.UtcNow
+            }, cancellationToken);
+        }
+    }
+
     private async Task EnsureAnotherActiveSystemAdminExistsAsync(string excludedUserId, CancellationToken cancellationToken)
     {
         var users = await store.GetUsersAsync(cancellationToken);
@@ -510,17 +600,27 @@ public sealed class CompanyAdminService(
 
         var company = await store.GetCompanyAsync(companyId, cancellationToken)
             ?? throw new InvalidOperationException("Company was not found.");
-        var visits = await store.GetVisitsByDateAsync(companyId, date, cancellationToken);
         var memberships = await store.GetMembershipsForCompanyAsync(companyId, cancellationToken);
         var clients = await store.GetClientsAsync(companyId, cancellationToken);
+        var users = await store.GetUsersAsync(cancellationToken);
+        var roles = (await store.GetRoleDefinitionsAsync(cancellationToken))
+            .Select(NormalizeCompanyRoleDefinition)
+            .ToList();
+        var equipmentItems = await store.GetPoolEquipmentItemsAsync(EquipmentScope.Company, companyId, cancellationToken);
+        var materials = await store.GetMaterialsAsync(companyId, cancellationToken);
+        var services = await store.GetServicesAsync(companyId, cancellationToken);
+        var pendingAccessRequests = BuildAccessRequests(company, users, roles, memberships);
 
         return new CompanyDashboard(
             company,
-            TodayScheduled: visits.Count,
-            TodayCompleted: visits.Count(v => v.Status == VisitStatus.Completed),
-            UnassignedVisits: visits.Count(v => string.IsNullOrWhiteSpace(v.AssignedUserId)),
-            PendingEmployeeRequests: memberships.Count(m => m.Status == MembershipStatus.Pending),
-            ActiveClients: clients.Count(c => c.IsActive));
+            CustomerCount: clients.Count(c => c.IsActive),
+            EmployeeCount: memberships.Count(m => m.Role == CompanyRole.CompanyUser && m.Status == MembershipStatus.Active),
+            EquipmentCount: equipmentItems.Count(i => i.IsActive),
+            MaterialCount: materials.Count(m => m.IsActive),
+            ServiceCount: services.Count(s => s.IsActive),
+            PendingEmployeeRequests: pendingAccessRequests.Count(r => r.Membership.Role == CompanyRole.CompanyUser),
+            PendingCustomerRequests: pendingAccessRequests.Count(r => r.Membership.Role == CompanyRole.CompanyClientUser),
+            PendingAccessRequests: pendingAccessRequests);
     }
 
     public async Task<IReadOnlyList<CompanyClient>> GetClientsAsync(string companyId, CancellationToken cancellationToken = default)

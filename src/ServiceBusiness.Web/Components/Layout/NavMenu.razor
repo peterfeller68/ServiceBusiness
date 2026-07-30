@@ -14,7 +14,7 @@
 
 <input type="checkbox" title="Navigation menu" class="navbar-toggler" />
 
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+<div class="nav-scrollable" onclick="if (event.target.closest('a.nav-link')) document.querySelector('.navbar-toggler').checked = false">
     <nav class="nav flex-column">
         @if (!isAuthenticated)
         {
@@ -69,7 +69,7 @@
                     {
                         <div class="nav-item px-3">
                             <NavLink class="nav-link nested" href="clients">
-                                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Customers
+                                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Customers
                             </NavLink>
                         </div>
                         <div class="nav-item px-3">
@@ -160,18 +160,30 @@
                 }
             }
 
+            <button class="nav-section-toggle px-3" type="button" @onclick="ToggleReports" @onclick:stopPropagation="true" aria-expanded="@reportsExpanded">
+                <span>@(reportsExpanded ? "v" : ">")</span> Reports
+            </button>
+            @if (reportsExpanded)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link nested" href="reports">
+                        <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Reports
+                    </NavLink>
+                </div>
+            }
+        }
+
+        <button class="nav-section-toggle px-3" type="button" @onclick="ToggleHelp" @onclick:stopPropagation="true" aria-expanded="@helpExpanded">
+            <span>@(helpExpanded ? "v" : ">")</span> Help
+        </button>
+        @if (helpExpanded)
+        {
             <div class="nav-item px-3">
-                <NavLink class="nav-link" href="reports">
-                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Reports
+                <NavLink class="nav-link nested" href="help">
+                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Help
                 </NavLink>
             </div>
         }
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="help">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Help
-            </NavLink>
-        </div>
 
         <button class="nav-section-toggle px-3" type="button" @onclick="ToggleTest" @onclick:stopPropagation="true" aria-expanded="@testExpanded">
             <span>@(testExpanded ? "v" : ">")</span> Test
@@ -199,6 +211,8 @@
     private bool isIndependentHomeOwner;
     private bool settingsExpanded = true;
     private bool logExpanded = true;
+    private bool reportsExpanded = true;
+    private bool helpExpanded = true;
     private bool testExpanded;
     private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
 
@@ -240,6 +254,10 @@
     private void ToggleSettings() => settingsExpanded = !settingsExpanded;
 
     private void ToggleLog() => logExpanded = !logExpanded;
+
+    private void ToggleReports() => reportsExpanded = !reportsExpanded;
+
+    private void ToggleHelp() => helpExpanded = !helpExpanded;
 
     private void ToggleTest() => testExpanded = !testExpanded;
 }

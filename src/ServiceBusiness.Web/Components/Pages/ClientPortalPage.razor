@@ -43,7 +43,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        DemoUser.UserId = "clearwater-client-1";
+        DemoUser.UserId = "demo-client-1";
         history = await ClientPortalService.GetServiceHistoryAsync("clearwater", "client-1");
     }
 }

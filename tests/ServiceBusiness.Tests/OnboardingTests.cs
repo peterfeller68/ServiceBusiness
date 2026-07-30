@@ -97,7 +97,7 @@ public sealed class OnboardingTests
     public async Task Business_owner_can_approve_pending_access_request()
     {
         var store = new InMemoryServiceBusinessStore();
-        var currentUser = new TestCurrentUser("clearwater-owner-1");
+        var currentUser = new TestCurrentUser("demo-owner-1");
         var authorization = new TenantAuthorizationService(store, currentUser);
         var notificationQueue = new TestNotificationQueue();
         var service = new CompanyAdminService(store, authorization, currentUser, notificationQueue);
@@ -115,7 +115,7 @@ public sealed class OnboardingTests
         var approved = Assert.Single(memberships, m => m.CompanyId == "clearwater");
 
         Assert.Equal(MembershipStatus.Active, approved.Status);
-        Assert.Equal("clearwater-owner-1", approved.DecidedByUserId);
+        Assert.Equal("demo-owner-1", approved.DecidedByUserId);
         Assert.Single(notificationQueue.Decisions);
     }
 
@@ -125,7 +125,7 @@ public sealed class OnboardingTests
         var store = new InMemoryServiceBusinessStore();
         var service = new OnboardingService(store);
 
-        var result = await service.SignInAsync("owner@clearwater.example");
+        var result = await service.SignInAsync("owner-1@demo.example");
 
         Assert.NotNull(result);
         Assert.True(result.AuthenticationSkipped);
@@ -135,7 +135,7 @@ public sealed class OnboardingTests
     public async Task Current_user_can_update_profile_contact_details()
     {
         var store = new InMemoryServiceBusinessStore();
-        var currentUser = new TestCurrentUser("clearwater-user-1");
+        var currentUser = new TestCurrentUser("demo-user-1");
         var authorization = new TenantAuthorizationService(store, currentUser);
         var service = new UserProfileService(store, authorization);
 
@@ -150,7 +150,7 @@ public sealed class OnboardingTests
         Assert.Equal("555-0200", updated.Phone);
         Assert.False(updated.EmailNotificationsEnabled);
 
-        var persisted = await store.GetUserAsync("clearwater-user-1");
+        var persisted = await store.GetUserAsync("demo-user-1");
         Assert.Equal("Morgan Route", persisted!.DisplayName);
         Assert.False(persisted.EmailNotificationsEnabled);
     }

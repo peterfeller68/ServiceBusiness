@@ -234,13 +234,23 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
 
         users.AddRange([
             new("sys-admin", null, "system@example.com", "system.test@example.com", "Sam System", "555-0101", null, true, true, true, UserStatus.Active),
-            new("clearwater-owner-1", null, "owner@clearwater.example", "owner.test@example.com", "Avery Owner", "555-0102", null, false, true, true, UserStatus.Active),
-            new("clearwater-user-1", null, "morgan@clearwater.example", "morgan.test@example.com", "Morgan Tech", "555-0103", null, false, true, true, UserStatus.Active),
-            new("clearwater-client-1", null, "client@clearwater.example", "client.test@example.com", "Jordan Client", "555-0104", null, false, true, true, UserStatus.Active),
-            new("clearwater-pending-user-1", null, "pending.tech@gmail.com", "pending.tech.test@example.com", "Parker Pending", "555-0105", null, false, true, true, UserStatus.Active),
+            new("demo-owner-1", null, "owner-1@demo.example", "owner-1.notify@demo.example", "Avery Owner", "555-0102", null, false, true, true, UserStatus.Active),
+            new("demo-user-1", null, "user-1@demo.example", "user-1.notify@demo.example", "Morgan Tech", "555-0103", null, false, true, true, UserStatus.Active),
+            new("demo-client-1", null, "client-1@demo.example", "client-1.notify@demo.example", "Jordan Client", "555-0104", null, false, true, true, UserStatus.Active),
+            new("demo-pending-user-1", null, "pending-user-1@demo.example", "pending-user-1.notify@demo.example", "Parker Pending", "555-0105", null, false, true, true, UserStatus.Active),
             new("independent-homeowner-1", null, "homeowner-1@independent.com", "homeowner-1.notify@independent.com", "Jordan Homeowner", "555-0106", null, false, true, true, UserStatus.Active),
             new("independent-homeowner-2", null, "homeowner-2@independent.com", "homeowner-2.notify@independent.com", "Harper Homeowner", "555-0107", null, false, true, true, UserStatus.Active),
-            new("independent-homeowner-3", null, "homeowner-3@independent.com", "homeowner-3.notify@independent.com", "Riley Homeowner", "555-0108", null, false, true, true, UserStatus.Active)
+            new("independent-homeowner-3", null, "homeowner-3@independent.com", "homeowner-3.notify@independent.com", "Riley Homeowner", "555-0108", null, false, true, true, UserStatus.Active),
+            new("other-1", null, "other-1@gmail.com", "other-1.notify@gmail.com", "Other Test User 1", "555-0301", null, false, true, true, UserStatus.Active),
+            new("other-2", null, "other-2@gmail.com", "other-2.notify@gmail.com", "Other Test User 2", "555-0302", null, false, true, true, UserStatus.Active),
+            new("other-3", null, "other-3@gmail.com", "other-3.notify@gmail.com", "Other Test User 3", "555-0303", null, false, true, true, UserStatus.Active),
+            new("other-4", null, "other-4@gmail.com", "other-4.notify@gmail.com", "Other Test User 4", "555-0304", null, false, true, true, UserStatus.Active),
+            new("other-5", null, "other-5@gmail.com", "other-5.notify@gmail.com", "Other Test User 5", "555-0305", null, false, true, true, UserStatus.Active),
+            new("other-6", null, "other-6@gmail.com", "other-6.notify@gmail.com", "Other Test User 6", "555-0306", null, false, true, true, UserStatus.Active),
+            new("other-7", null, "other-7@gmail.com", "other-7.notify@gmail.com", "Other Test User 7", "555-0307", null, false, true, true, UserStatus.Active),
+            new("other-8", null, "other-8@gmail.com", "other-8.notify@gmail.com", "Other Test User 8", "555-0308", null, false, true, true, UserStatus.Active),
+            new("other-9", null, "other-9@gmail.com", "other-9.notify@gmail.com", "Other Test User 9", "555-0309", null, false, true, true, UserStatus.Active),
+            new("other-10", null, "other-10@gmail.com", "other-10.notify@gmail.com", "Other Test User 10", "555-0310", null, false, true, true, UserStatus.Active)
         ]);
 
         roles.AddRange([
@@ -267,10 +277,10 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
             CompanyStatus.Active));
 
         memberships.AddRange([
-            new("clearwater", "clearwater-owner-1", CompanyRole.CompanyAdmin, MembershipStatus.Active, DateTimeOffset.UtcNow.AddDays(-30), DateTimeOffset.UtcNow.AddDays(-30), "sys-admin"),
-            new("clearwater", "clearwater-user-1", CompanyRole.CompanyUser, MembershipStatus.Active, DateTimeOffset.UtcNow.AddDays(-25), DateTimeOffset.UtcNow.AddDays(-25), "clearwater-owner-1"),
-            new("clearwater", "clearwater-client-1", CompanyRole.CompanyClientUser, MembershipStatus.Active, DateTimeOffset.UtcNow.AddDays(-12), DateTimeOffset.UtcNow.AddDays(-12), "clearwater-owner-1"),
-            new("clearwater", "clearwater-pending-user-1", CompanyRole.CompanyUser, MembershipStatus.Pending, DateTimeOffset.UtcNow.AddHours(-8), null, null)
+            new("clearwater", "demo-owner-1", CompanyRole.CompanyAdmin, MembershipStatus.Active, DateTimeOffset.UtcNow.AddDays(-30), DateTimeOffset.UtcNow.AddDays(-30), "sys-admin"),
+            new("clearwater", "demo-user-1", CompanyRole.CompanyUser, MembershipStatus.Active, DateTimeOffset.UtcNow.AddDays(-25), DateTimeOffset.UtcNow.AddDays(-25), "demo-owner-1"),
+            new("clearwater", "demo-client-1", CompanyRole.CompanyClientUser, MembershipStatus.Active, DateTimeOffset.UtcNow.AddDays(-12), DateTimeOffset.UtcNow.AddDays(-12), "demo-owner-1"),
+            new("clearwater", "demo-pending-user-1", CompanyRole.CompanyUser, MembershipStatus.Pending, DateTimeOffset.UtcNow.AddHours(-8), null, null)
         ]);
 
         clientTypes.AddRange([
@@ -436,16 +446,16 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
             ]);
 
         visits.AddRange([
-            new("visit-1", "clearwater", "client-1", "clearwater-user-1", today, new TimeOnly(8, 0), new TimeOnly(10, 0), VisitStatus.Assigned, ["svc-basic", "svc-chem"], 1, "Check chlorine levels closely.", null, null),
-            new("visit-2", "clearwater", "client-2", "clearwater-user-1", today, new TimeOnly(10, 0), new TimeOnly(12, 0), VisitStatus.Assigned, ["svc-basic"], 2, "Customer requested photo after service in future phase.", null, null),
+            new("visit-1", "clearwater", "client-1", "demo-user-1", today, new TimeOnly(8, 0), new TimeOnly(10, 0), VisitStatus.Assigned, ["svc-basic", "svc-chem"], 1, "Check chlorine levels closely.", null, null),
+            new("visit-2", "clearwater", "client-2", "demo-user-1", today, new TimeOnly(10, 0), new TimeOnly(12, 0), VisitStatus.Assigned, ["svc-basic"], 2, "Customer requested photo after service in future phase.", null, null),
             new("visit-3", "clearwater", "client-3", null, today, new TimeOnly(13, 0), new TimeOnly(15, 0), VisitStatus.Scheduled, ["svc-filter"], 0, "Needs assignment.", null, null),
-            new("visit-4", "clearwater", "client-1", "clearwater-user-1", today.AddDays(-7), new TimeOnly(8, 0), new TimeOnly(10, 0), VisitStatus.Completed, ["svc-basic", "svc-chem"], 1, "", new DateTimeOffset(today.AddDays(-7).ToDateTime(new TimeOnly(8, 15), DateTimeKind.Local)), new DateTimeOffset(today.AddDays(-7).ToDateTime(new TimeOnly(9, 0), DateTimeKind.Local)))
+            new("visit-4", "clearwater", "client-1", "demo-user-1", today.AddDays(-7), new TimeOnly(8, 0), new TimeOnly(10, 0), VisitStatus.Completed, ["svc-basic", "svc-chem"], 1, "", new DateTimeOffset(today.AddDays(-7).ToDateTime(new TimeOnly(8, 15), DateTimeKind.Local)), new DateTimeOffset(today.AddDays(-7).ToDateTime(new TimeOnly(9, 0), DateTimeKind.Local)))
         ]);
 
         completions.Add(new(
             "visit-4",
             "clearwater",
-            "clearwater-user-1",
+            "demo-user-1",
             ["svc-basic", "svc-chem"],
             [new("mat-chlorine", 2)],
             "Pool cleaned and chemicals balanced.",

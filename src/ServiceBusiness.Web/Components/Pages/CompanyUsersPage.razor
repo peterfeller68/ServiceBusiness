@@ -3,7 +3,7 @@
 @using ServiceBusiness.Application
 @using ServiceBusiness.Domain
 @inject CompanyAdminService CompanyAdminService
-@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+@inject ServiceBusiness.Web.CurrentCompanyContext CurrentCompany
 
 <PageTitle>Users</PageTitle>
 
@@ -47,86 +47,130 @@ else
         </div>
     </div>
 
-    <section class="section">
-        <h2>Pending Access</h2>
-        @if (overview.PendingAccessRequests.Count == 0)
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>Pending Access</h2>
+            <button class="icon-button" type="button" title="Toggle pending access" @onclick="TogglePendingAccess">@(pendingAccessExpanded ? "^" : "v")</button>
+        </div>
+        @if (pendingAccessExpanded)
         {
-            <div class="callout">
-                <strong>No pending requests</strong>
-                <p>New business user and business client registrations will appear here for owner review.</p>
-            </div>
-        }
-        else
-        {
-            <div class="data-list">
-                @foreach (var request in overview.PendingAccessRequests)
+            <div class="management-panel-body">
+                @if (overview.PendingAccessRequests.Count == 0)
                 {
-                    <article class="row-card">
-                        <div>
-                            <strong>@request.User.DisplayName</strong>
-                            <p>@request.User.Email</p>
-                            <small>@request.Role.DisplayName &middot; requested @request.Membership.RequestedUtc.LocalDateTime.ToString("g")</small>
-                        </div>
-                        <div class="row-actions">
-                            <span class="status-pill">@request.Membership.Status</span>
-                            <button class="button primary" type="button" @onclick="() => DecideAsync(request, MembershipStatus.Active)">Approve</button>
-                            <button class="button danger" type="button" @onclick="() => DecideAsync(request, MembershipStatus.Rejected)">Reject</button>
-                        </div>
-                    </article>
+                    <div class="callout">
+                        <strong>No pending requests</strong>
+                        <p>New business user and business client registrations will appear here for owner review.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="management-table-wrap">
+                        <table class="management-table">
+                            <thead>
+                                <tr>
+                                    <th>User ID</th>
+                                    <th>Status</th>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Role</th>
+                                    <th>Requested</th>
+                                    <th class="actions">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var request in overview.PendingAccessRequests)
+                                {
+                                    <tr>
+                                        <td>@request.User.Id</td>
+                                        <td>@request.Membership.Status</td>
+                                        <td>@request.User.DisplayName</td>
+                                        <td>@request.User.Email</td>
+                                        <td>@request.Role.DisplayName</td>
+                                        <td>@request.Membership.RequestedUtc.LocalDateTime.ToString("g")</td>
+                                        <td class="actions">
+                                            <button class="icon-button" type="button" title="Approve request" @onclick="() => DecideAsync(request, MembershipStatus.Active)">Ok</button>
+                                            <button class="icon-button danger" type="button" title="Reject request" @onclick="() => DecideAsync(request, MembershipStatus.Rejected)">Del</button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
                 }
             </div>
         }
     </section>
 
-    <section class="section">
-        <h2>Company Access</h2>
-        <div class="data-list">
-            @foreach (var row in overview.Users)
-            {
-                var key = RoleEditKey(row);
-                <article class="row-card">
-                    <div>
-                        <strong>@row.User.DisplayName</strong>
-                        <p>@row.User.Email</p>
-                        <small>@row.Role.DisplayName &middot; @row.Membership.Status</small>
-                    </div>
-                    <div class="row-actions role-actions">
-                        <span class="status-pill">@row.Membership.Status</span>
-                        <label>
-                            Role
-                            <select class="form-control compact-select" @bind="roleEdits[key]">
-                                @foreach (var role in overview.Roles)
-                                {
-                                    <option value="@role.Role">@role.DisplayName</option>
-                                }
-                            </select>
-                        </label>
-                        <button class="button" type="button" @onclick="() => UpdateRoleAsync(row)">Update Role</button>
-                        @if (row.Membership.Status == MembershipStatus.Active)
-                        {
-                            <button class="button danger" type="button" @onclick="() => SetAccessStatusAsync(row, MembershipStatus.Inactive)">Deactivate Access</button>
-                        }
-                        else
-                        {
-                            <button class="button primary" type="button" @onclick="() => SetAccessStatusAsync(row, MembershipStatus.Active)">Reactivate Access</button>
-                        }
-                    </div>
-                </article>
-            }
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>Company Access</h2>
+            <button class="icon-button" type="button" title="Toggle company access" @onclick="ToggleCompanyAccess">@(companyAccessExpanded ? "^" : "v")</button>
         </div>
+        @if (companyAccessExpanded)
+        {
+            <div class="management-panel-body">
+                <div class="management-table-wrap">
+                    <table class="management-table">
+                        <thead>
+                            <tr>
+                                <th>User ID</th>
+                                <th>Status</th>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Role</th>
+                                <th class="actions">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in overview.Users)
+                            {
+                                var key = RoleEditKey(row);
+                                <tr>
+                                    <td>@row.User.Id</td>
+                                    <td>@row.Membership.Status</td>
+                                    <td>@row.User.DisplayName</td>
+                                    <td>@row.User.Email</td>
+                                    <td>
+                                        <select class="form-control compact-select" @bind="roleEdits[key]">
+                                            @foreach (var role in overview.Roles)
+                                            {
+                                                <option value="@role.Role">@role.DisplayName</option>
+                                            }
+                                        </select>
+                                    </td>
+                                    <td class="actions">
+                                        <button class="icon-button" type="button" title="Update role" @onclick="() => UpdateRoleAsync(row)">Save</button>
+                                        @if (row.Membership.Status == MembershipStatus.Active)
+                                        {
+                                            <button class="icon-button danger" type="button" title="Deactivate access" @onclick="() => SetAccessStatusAsync(row, MembershipStatus.Inactive)">Del</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="icon-button" type="button" title="Reactivate access" @onclick="() => SetAccessStatusAsync(row, MembershipStatus.Active)">On</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
     </section>
 }
 
 @code {
-    private const string CompanyId = "clearwater";
+    private string companyId = "";
     private CompanyUserManagementOverview? overview;
     private readonly Dictionary<string, CompanyRole> roleEdits = [];
+    private bool pendingAccessExpanded = true;
+    private bool companyAccessExpanded = true;
     private string? message;
     private string? errorMessage;
 
     protected override async Task OnInitializedAsync()
     {
-        DemoUser.UserId = "clearwater-owner-1";
+        companyId = await CurrentCompany.GetRequiredCompanyIdAsync([CompanyRole.CompanyAdmin]);
         await LoadAsync();
     }
 
@@ -193,7 +237,7 @@ else
 
     private async Task LoadAsync()
     {
-        overview = await CompanyAdminService.GetCompanyUserManagementOverviewAsync(CompanyId);
+        overview = await CompanyAdminService.GetCompanyUserManagementOverviewAsync(companyId);
         roleEdits.Clear();
         foreach (var row in overview.Users)
         {
@@ -202,4 +246,8 @@ else
     }
 
     private static string RoleEditKey(CompanyUserManagementRow row) => $"{row.User.Id}|{row.Membership.Role}";
+
+    private void TogglePendingAccess() => pendingAccessExpanded = !pendingAccessExpanded;
+
+    private void ToggleCompanyAccess() => companyAccessExpanded = !companyAccessExpanded;
 }

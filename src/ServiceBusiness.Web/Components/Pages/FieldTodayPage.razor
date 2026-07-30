@@ -94,7 +94,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        DemoUser.UserId = "clearwater-user-1";
+        DemoUser.UserId = "demo-user-1";
         services = await CompanyAdminService.GetServicesAsync("clearwater");
         materials = await CompanyAdminService.GetMaterialsAsync("clearwater");
         selectedServiceId = services.FirstOrDefault()?.Id;
