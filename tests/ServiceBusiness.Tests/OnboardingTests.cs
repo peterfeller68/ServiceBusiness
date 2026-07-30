@@ -132,6 +132,19 @@ public sealed class OnboardingTests
     }
 
     [Fact]
+    public async Task Seeded_test_users_can_skip_gmail_authentication_by_user_id()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var service = new OnboardingService(store);
+
+        var result = await service.SignInAsync("demo-owner-1");
+
+        Assert.NotNull(result);
+        Assert.Equal("demo-owner-1", result.User.Id);
+        Assert.True(result.AuthenticationSkipped);
+    }
+
+    [Fact]
     public async Task Current_user_can_update_profile_contact_details()
     {
         var store = new InMemoryServiceBusinessStore();

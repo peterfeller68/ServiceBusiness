@@ -2,7 +2,6 @@
 @rendermode InteractiveServer
 @using ServiceBusiness.Domain
 @inject ServiceBusiness.Application.ClientPortalService ClientPortalService
-@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
 
 <PageTitle>Client Portal</PageTitle>
 
@@ -43,7 +42,6 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        DemoUser.UserId = "demo-client-1";
-        history = await ClientPortalService.GetServiceHistoryAsync("clearwater", "client-1");
+        history = await ClientPortalService.GetCurrentUserServiceHistoryAsync();
     }
 }

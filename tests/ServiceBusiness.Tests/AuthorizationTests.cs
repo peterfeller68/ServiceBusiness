@@ -231,6 +231,80 @@ public sealed class AuthorizationTests
     }
 
     [Fact]
+    public async Task Company_admin_can_seed_materials_from_catalog_rows()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var currentUser = new TestCurrentUser("demo-owner-1");
+        var authorization = new TenantAuthorizationService(store, currentUser);
+        var service = new CompanyAdminService(store, authorization, currentUser, new TestNotificationQueue());
+
+        var result = await service.SeedMaterialsAsync(
+            "clearwater",
+            [
+                new("BioGuard", "Chlorine", "3-in Trichlor Tablets 50 lb", "TAB-50"),
+                new("HTH", "Chlorine", "1-in Chlorine Tablets 25 lb", "CL-125")
+            ]);
+
+        var categories = await store.GetMaterialCategoriesAsync("clearwater");
+        var materials = await store.GetMaterialsAsync("clearwater");
+
+        Assert.Equal(1, result.CategoriesSeeded);
+        Assert.Equal(2, result.MaterialsSeeded);
+        Assert.Contains(categories, c => c.Id == "chlorine" && c.Name == "Chlorine");
+        Assert.Contains(materials, m => m.Id == "bioguard-3-in-trichlor-tablets-50-lb-tab-50" && m.CategoryId == "chlorine" && m.Brand == "BioGuard" && m.ModelNo == "TAB-50");
+        Assert.Contains(materials, m => m.Id == "hth-1-in-chlorine-tablets-25-lb-cl-125" && m.CategoryId == "chlorine" && m.Brand == "HTH" && m.ModelNo == "CL-125");
+    }
+
+    [Fact]
+    public async Task System_admin_can_seed_global_materials_from_catalog_rows()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var currentUser = new TestCurrentUser("sys-admin");
+        var authorization = new TenantAuthorizationService(store, currentUser);
+        var service = new CompanyAdminService(store, authorization, currentUser, new TestNotificationQueue());
+
+        var result = await service.SeedMaterialsAsync(
+            "global",
+            [
+                new("BioGuard", "Chlorine", "3-in Trichlor Tablets 50 lb", "TAB-50")
+            ]);
+
+        var categories = await store.GetMaterialCategoriesAsync("global");
+        var materials = await store.GetMaterialsAsync("global");
+
+        Assert.Equal(1, result.CategoriesSeeded);
+        Assert.Equal(1, result.MaterialsSeeded);
+        Assert.Contains(categories, c => c.CompanyId == "global" && c.Id == "chlorine");
+        Assert.Contains(materials, m => m.CompanyId == "global" && m.Id == "bioguard-3-in-trichlor-tablets-50-lb-tab-50");
+    }
+
+    [Fact]
+    public async Task Company_admin_can_seed_services_from_catalog_rows()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var currentUser = new TestCurrentUser("demo-owner-1");
+        var authorization = new TenantAuthorizationService(store, currentUser);
+        var service = new CompanyAdminService(store, authorization, currentUser, new TestNotificationQueue());
+
+        var result = await service.SeedServicesAsync(
+            "clearwater",
+            [
+                new("Pool Cleaning", "Standard Service", "Skim pool surface, empty baskets, brush walls, test water, and inspect equipment."),
+                new("Pool Cleaning", "Chemical Only Service", "Test and balance water chemistry without physical cleaning."),
+                new("Pool Cleaning", "Vacation Service", "Temporary scheduled maintenance while homeowner is away.")
+            ]);
+
+        var categories = await store.GetServiceCategoriesAsync("clearwater");
+        var services = await store.GetServicesAsync("clearwater");
+
+        Assert.Equal(1, result.CategoriesSeeded);
+        Assert.Equal(3, result.ServicesSeeded);
+        Assert.Contains(categories, c => c.Id == "pool-cleaning" && c.Name == "Pool Cleaning");
+        Assert.Contains(services, s => s.Id == "pool-cleaning-standard-service" && s.CategoryId == "pool-cleaning" && s.DefaultDurationMinutes == 45 && s.DefaultPrice == 0m);
+        Assert.Contains(services, s => s.Id == "pool-cleaning-vacation-service" && s.Description == "Temporary scheduled maintenance while homeowner is away.");
+    }
+
+    [Fact]
     public async Task Company_admin_can_copy_starter_catalog_items_to_custom_records()
     {
         var store = new InMemoryServiceBusinessStore();
@@ -284,6 +358,34 @@ public sealed class AuthorizationTests
 
         var item = (await store.GetPoolEquipmentItemsAsync(EquipmentScope.Global, "global")).Single(i => i.Id == "test-variable-pump");
         Assert.False(item.IsActive);
+    }
+
+    [Fact]
+    public async Task System_admin_can_seed_global_equipment_from_catalog_rows()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var currentUser = new TestCurrentUser("sys-admin");
+        var authorization = new TenantAuthorizationService(store, currentUser);
+        var service = new CompanyAdminService(store, authorization, currentUser, new TestNotificationQueue());
+
+        var result = await service.SeedPoolEquipmentAsync(
+            EquipmentScope.Global,
+            "global",
+            [
+                new("Pentair", "Pool Pump", "WhisperFlo VST", "011533"),
+                new("Pentair", "Pool Pump", "SuperFlo VS", "342002"),
+                new("Hayward", "Pool Pump", "TriStar VS", "SP32950VSP"),
+                new("Pentair", "Pool Filter", "Clean & Clear Plus 420", "160301")
+            ]);
+
+        var categories = await store.GetPoolEquipmentCategoriesAsync(EquipmentScope.Global, "global");
+        var items = await store.GetPoolEquipmentItemsAsync(EquipmentScope.Global, "global");
+
+        Assert.Equal(2, result.CategoriesSeeded);
+        Assert.Equal(4, result.EquipmentSeeded);
+        Assert.Contains(categories, c => c.Id == "pool-pump" && c.Manufacturer == "" && c.Name == "Pool Pump");
+        Assert.Contains(items, i => i.Id == "pentair-whisperflo-vst-011533" && i.CategoryId == "pool-pump" && i.Manufacturer == "Pentair" && i.ModelNo == "011533");
+        Assert.Contains(items, i => i.Id == "hayward-tristar-vs-sp32950vsp" && i.CategoryId == "pool-pump" && i.Manufacturer == "Hayward" && i.ModelNo == "SP32950VSP");
     }
 
     [Fact]
@@ -466,6 +568,59 @@ public sealed class AuthorizationTests
             r.User.Id == "demo-pending-user-1" &&
             r.Membership.Role == CompanyRole.CompanyUser &&
             r.Membership.Status == MembershipStatus.Pending);
+    }
+
+    [Fact]
+    public async Task Company_admin_can_create_customer()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var currentUser = new TestCurrentUser("demo-owner-1");
+        var authorization = new TenantAuthorizationService(store, currentUser);
+        var service = new CompanyAdminService(store, authorization, currentUser, new TestNotificationQueue());
+
+        await service.UpsertClientAsync(new CompanyClient(
+            "client-new",
+            "clearwater",
+            "New Residence",
+            "Nina New",
+            "nina@example.com",
+            "555-0199",
+            "99 New Way",
+            "Gate code 9090.",
+            "weekly",
+            175m,
+            true));
+
+        var clients = await service.GetClientsAsync("clearwater");
+        var client = Assert.Single(clients, c => c.Id == "client-new");
+        Assert.Equal("New Residence", client.DisplayName);
+        Assert.Equal(175m, client.RateOverride);
+    }
+
+    [Fact]
+    public async Task Client_portal_uses_current_client_user_membership()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var currentUser = new TestCurrentUser("demo-client-1");
+        var authorization = new TenantAuthorizationService(store, currentUser);
+        var service = new ClientPortalService(store, authorization, currentUser);
+
+        var history = await service.GetCurrentUserServiceHistoryAsync();
+
+        Assert.Contains(history, item => item.Client.Id == "client-1");
+    }
+
+    [Fact]
+    public async Task Client_portal_resolves_generated_seed_client_user_to_customer()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var currentUser = new TestCurrentUser("pool1clean1-client-1");
+        var authorization = new TenantAuthorizationService(store, currentUser);
+        var service = new ClientPortalService(store, authorization, currentUser);
+
+        var history = await service.GetCurrentUserServiceHistoryAsync();
+
+        Assert.Empty(history);
     }
 
     private sealed class TestCurrentUser(string userId) : ICurrentUserContext

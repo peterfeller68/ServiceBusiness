@@ -2,7 +2,7 @@
 @rendermode InteractiveServer
 @using ServiceBusiness.Domain
 @inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
-@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+@inject ServiceBusiness.Web.CurrentCompanyContext CurrentCompany
 
 <PageTitle>Schedule</PageTitle>
 
@@ -37,9 +37,9 @@ else
                 </div>
                 <div class="row-actions">
                     <span class="status-pill">@visit.Status</span>
-                    @if (string.IsNullOrWhiteSpace(visit.AssignedUserId))
+                    @if (string.IsNullOrWhiteSpace(visit.AssignedUserId) && defaultAssignee is not null)
                     {
-                        <button class="button" @onclick="() => AssignVisit(visit.Id)">Assign to Morgan</button>
+                        <button class="button" @onclick="() => AssignVisit(visit.Id)">Assign to @defaultAssignee.User.DisplayName</button>
                     }
                 </div>
             </article>
@@ -51,24 +51,39 @@ else
     private DateOnly selectedDate = DateOnly.FromDateTime(DateTime.Today);
     private IReadOnlyList<ServiceVisit>? visits;
     private IReadOnlyList<CompanyClient>? clients;
+    private CompanyUserManagementRow? defaultAssignee;
+    private string companyId = "";
     private string? message;
 
     protected override async Task OnInitializedAsync()
     {
-        DemoUser.UserId = "demo-owner-1";
+        companyId = await CurrentCompany.GetRequiredCompanyIdAsync([CompanyRole.CompanyAdmin]);
         await LoadAsync();
     }
 
     private async Task AssignVisit(string visitId)
     {
-        await CompanyAdminService.AssignVisitAsync("clearwater", visitId, "demo-user-1");
-        message = "Visit assigned to Morgan Tech.";
+        if (defaultAssignee is null)
+        {
+            message = "No active company user is available for assignment.";
+            return;
+        }
+
+        await CompanyAdminService.AssignVisitAsync(companyId, visitId, defaultAssignee.User.Id);
+        message = $"Visit assigned to {defaultAssignee.User.DisplayName}.";
         await LoadAsync();
     }
 
     private async Task LoadAsync()
     {
-        visits = await CompanyAdminService.GetScheduleAsync("clearwater", selectedDate);
-        clients = await CompanyAdminService.GetClientsAsync("clearwater");
+        visits = await CompanyAdminService.GetScheduleAsync(companyId, selectedDate);
+        clients = await CompanyAdminService.GetClientsAsync(companyId);
+        var usersOverview = await CompanyAdminService.GetCompanyUserManagementOverviewAsync(companyId);
+        defaultAssignee = usersOverview.Users
+            .Where(row =>
+                row.Membership.Role == CompanyRole.CompanyUser &&
+                row.Membership.Status == MembershipStatus.Active)
+            .OrderBy(row => row.User.DisplayName)
+            .FirstOrDefault();
     }
 }

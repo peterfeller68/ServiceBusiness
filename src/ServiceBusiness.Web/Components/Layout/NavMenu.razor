@@ -1,6 +1,9 @@
 @using ServiceBusiness.Application
 @using ServiceBusiness.Domain
 @using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using ServiceBusiness.Web
+@implements IDisposable
 @inject OnboardingService OnboardingService
 @inject ICurrentUserContext CurrentUser
 @inject AuthenticationStateProvider AuthenticationStateProvider
@@ -40,11 +43,14 @@
                 </button>
                 @if (settingsExpanded)
                 {
-                    <div class="nav-item px-3">
-                        <NavLink class="nav-link nested" href="settings">
-                            <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> General
-                        </NavLink>
-                    </div>
+                    @if (!isIndependentHomeOwner)
+                    {
+                        <div class="nav-item px-3">
+                            <NavLink class="nav-link nested" href="settings">
+                                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> General
+                            </NavLink>
+                        </div>
+                    }
 
                     @if (isSystemAdmin)
                     {
@@ -141,6 +147,11 @@
                                 <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Pool Equipment
                             </NavLink>
                         </div>
+                        <div class="nav-item px-3">
+                            <NavLink class="nav-link nested" href="settings/services">
+                                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Services
+                            </NavLink>
+                        </div>
                     }
                 }
             }
@@ -185,21 +196,24 @@
             </div>
         }
 
-        <button class="nav-section-toggle px-3" type="button" @onclick="ToggleTest" @onclick:stopPropagation="true" aria-expanded="@testExpanded">
-            <span>@(testExpanded ? "v" : ">")</span> Test
-        </button>
-        @if (testExpanded)
+        @if (appMode.DevTest)
         {
-            <div class="nav-item px-3">
-                <NavLink class="nav-link nested" href="test">
-                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Test Page
-                </NavLink>
-            </div>
-            <div class="nav-item px-3">
-                <NavLink class="nav-link nested" href="test/users">
-                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Test Users
-                </NavLink>
-            </div>
+            <button class="nav-section-toggle px-3" type="button" @onclick="ToggleTest" @onclick:stopPropagation="true" aria-expanded="@testExpanded">
+                <span>@(testExpanded ? "v" : ">")</span> Test
+            </button>
+            @if (testExpanded)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link nested" href="test">
+                        <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Test Page
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link nested" href="test/users">
+                        <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Test Users
+                    </NavLink>
+                </div>
+            }
         }
     </nav>
 </div>
@@ -219,28 +233,67 @@
     protected override async Task OnInitializedAsync()
     {
         appMode = await ApplicationMode.GetCurrentAsync();
+        AuthenticationStateProvider.AuthenticationStateChanged += OnAuthenticationStateChanged;
 
+        await LoadMenuStateAsync(await AuthenticationStateProvider.GetAuthenticationStateAsync());
+    }
+
+    private async void OnAuthenticationStateChanged(Task<AuthenticationState> authenticationStateTask)
+    {
         try
         {
-            var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
-            isAuthenticated = authenticationState.User.Identity?.IsAuthenticated == true;
-            if (isAuthenticated)
+            var authenticationState = await authenticationStateTask;
+            await InvokeAsync(async () =>
             {
-                var overview = await OnboardingService.GetAccessOverviewAsync(CurrentUser.UserId);
-                isSystemAdmin = overview.User.IsSystemAdmin;
-                activeAccess = overview.Companies
-                    .Where(c => c.Status == MembershipStatus.Active)
-                    .ToList();
-                isIndependentHomeOwner = !isSystemAdmin && overview.Companies.Count == 0;
-            }
+                await LoadMenuStateAsync(authenticationState);
+                StateHasChanged();
+            });
         }
         catch
         {
-            activeAccess = [];
-            isAuthenticated = false;
-            isSystemAdmin = false;
-            isIndependentHomeOwner = false;
+            await InvokeAsync(() =>
+            {
+                ResetMenuState();
+                StateHasChanged();
+            });
         }
+    }
+
+    private async Task LoadMenuStateAsync(AuthenticationState authenticationState)
+    {
+        ResetMenuState();
+        isAuthenticated = authenticationState.User.Identity?.IsAuthenticated == true;
+        if (!isAuthenticated)
+        {
+            return;
+        }
+
+        var userId = authenticationState.User.FindFirstValue(ServiceBusinessClaimTypes.AppUserId)
+            ?? CurrentUser.UserId;
+        var overview = await OnboardingService.GetAccessOverviewAsync(userId);
+        isSystemAdmin = overview.User.IsSystemAdmin;
+        activeAccess = overview.Companies
+            .Where(c => c.Status == MembershipStatus.Active)
+            .ToList();
+        isIndependentHomeOwner = !isSystemAdmin && overview.Companies.Count == 0;
+    }
+
+    private void ResetMenuState()
+    {
+        activeAccess = [];
+        isAuthenticated = false;
+        isSystemAdmin = false;
+        isIndependentHomeOwner = false;
+        settingsExpanded = true;
+        logExpanded = true;
+        reportsExpanded = true;
+        helpExpanded = true;
+        testExpanded = false;
+    }
+
+    public void Dispose()
+    {
+        AuthenticationStateProvider.AuthenticationStateChanged -= OnAuthenticationStateChanged;
     }
 
     private bool HasRole(CompanyRole role) => activeAccess.Any(a => a.Role == role);

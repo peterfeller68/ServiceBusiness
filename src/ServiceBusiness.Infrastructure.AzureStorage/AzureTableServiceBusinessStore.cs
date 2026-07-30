@@ -10,6 +10,7 @@ namespace ServiceBusiness.Infrastructure.AzureStorage;
 public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private const int PhotoChunkSize = 32_000;
     private readonly TableServiceClient tableServiceClient;
     private readonly SystemSettings configuredDefaultSystemSettings;
     private readonly SemaphoreSlim initializationLock = new(1, 1);
@@ -118,19 +119,72 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
     public async Task<IndependentHomeOwnerProfile?> GetIndependentHomeOwnerProfileAsync(string userId, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
-        return await GetAsync<IndependentHomeOwnerProfile>("IndependentHomeOwnerProfiles", "HOMEOWNER_PROFILE", userId, cancellationToken);
+        var profile = await GetAsync<IndependentHomeOwnerProfile>("IndependentHomeOwnerProfiles", "HOMEOWNER_PROFILE", userId, cancellationToken);
+        if (profile is null)
+        {
+            return null;
+        }
+
+        var photos = await GetHomeOwnerPoolEquipmentPhotosAsync(userId, cancellationToken);
+        return profile with { PoolEquipmentPhotos = photos };
+    }
+
+    public async Task<IReadOnlyList<HomeOwnerPoolEquipmentPhoto>> GetHomeOwnerPoolEquipmentPhotosAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        var table = tableServiceClient.GetTableClient("HomeOwnerPoolEquipmentPhotos");
+        var partitionKey = AzureTableKey.ToStorageKey(HomeOwnerPhotoPartition(userId));
+        var entities = new List<TableEntity>();
+
+        await foreach (var entity in table.QueryAsync<TableEntity>(e => e.PartitionKey == partitionKey, cancellationToken: cancellationToken))
+        {
+            entities.Add(entity);
+        }
+
+        var photos = new List<HomeOwnerPoolEquipmentPhoto>();
+        foreach (var metadata in entities.Where(entity => entity.RowKey.EndsWith("_meta", StringComparison.Ordinal)))
+        {
+            var photoId = metadata.RowKey[..^5];
+            var chunkCount = metadata.GetInt32("ChunkCount") ?? 0;
+            var chunks = entities
+                .Where(entity => entity.RowKey.StartsWith($"{photoId}_chunk_", StringComparison.Ordinal))
+                .OrderBy(entity => entity.RowKey, StringComparer.Ordinal)
+                .Select(entity => entity.GetString("Data") ?? "")
+                .ToList();
+
+            if (chunkCount != chunks.Count)
+            {
+                continue;
+            }
+
+            photos.Add(new HomeOwnerPoolEquipmentPhoto(
+                photoId,
+                metadata.GetString("FileName") ?? "",
+                metadata.GetString("ContentType") ?? "application/octet-stream",
+                string.Concat(chunks),
+                metadata.GetDateTimeOffset("UploadedUtc") ?? DateTimeOffset.UtcNow));
+        }
+
+        return photos.OrderByDescending(photo => photo.UploadedUtc).ToList();
+    }
+
+    public async Task<IReadOnlyList<IndependentHomeOwnerServiceHistoryItem>> GetIndependentHomeOwnerServiceHistoryAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        var history = await GetPartitionAsync<IndependentHomeOwnerServiceHistoryItem>("IndependentHomeOwnerServiceHistory", UserPartition(userId), cancellationToken);
+        return history.OrderByDescending(h => h.ServiceDateTime).ToList();
     }
 
     public async Task<IReadOnlyList<ServiceCategory>> GetServiceCategoriesAsync(string companyId, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
-        return await GetPartitionAsync<ServiceCategory>("ServiceCategories", CompanyPartition(companyId), cancellationToken);
+        return await GetPartitionAsync<ServiceCategory>("ServiceCategories", ServicePartition(companyId), cancellationToken);
     }
 
     public async Task<IReadOnlyList<MaterialCategory>> GetMaterialCategoriesAsync(string companyId, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
-        return await GetPartitionAsync<MaterialCategory>("MaterialCategories", CompanyPartition(companyId), cancellationToken);
+        return await GetPartitionAsync<MaterialCategory>("MaterialCategories", MaterialPartition(companyId), cancellationToken);
     }
 
     public async Task<IReadOnlyList<PoolEquipmentCategory>> GetPoolEquipmentCategoriesAsync(EquipmentScope scope, string scopeOwnerId, CancellationToken cancellationToken = default)
@@ -142,13 +196,13 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
     public async Task<IReadOnlyList<ServiceOffering>> GetServicesAsync(string companyId, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
-        return await GetPartitionAsync<ServiceOffering>("Services", CompanyPartition(companyId), cancellationToken);
+        return await GetPartitionAsync<ServiceOffering>("Services", ServicePartition(companyId), cancellationToken);
     }
 
     public async Task<IReadOnlyList<Material>> GetMaterialsAsync(string companyId, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
-        return await GetPartitionAsync<Material>("Materials", CompanyPartition(companyId), cancellationToken);
+        return await GetPartitionAsync<Material>("Materials", MaterialPartition(companyId), cancellationToken);
     }
 
     public async Task<IReadOnlyList<PoolEquipmentItem>> GetPoolEquipmentItemsAsync(EquipmentScope scope, string scopeOwnerId, CancellationToken cancellationToken = default)
@@ -236,19 +290,64 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
     public async Task UpsertIndependentHomeOwnerProfileAsync(IndependentHomeOwnerProfile profile, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
-        await UpsertAsync("IndependentHomeOwnerProfiles", "HOMEOWNER_PROFILE", profile.UserId, profile, cancellationToken);
+        await UpsertAsync("IndependentHomeOwnerProfiles", "HOMEOWNER_PROFILE", profile.UserId, profile with { PoolEquipmentPhotos = null }, cancellationToken);
+        foreach (var photo in profile.PoolEquipmentPhotos ?? [])
+        {
+            await UpsertHomeOwnerPoolEquipmentPhotoAsync(profile.UserId, photo, cancellationToken);
+        }
+    }
+
+    public async Task UpsertHomeOwnerPoolEquipmentPhotoAsync(string userId, HomeOwnerPoolEquipmentPhoto photo, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        var table = tableServiceClient.GetTableClient("HomeOwnerPoolEquipmentPhotos");
+        var partitionKey = AzureTableKey.ToStorageKey(HomeOwnerPhotoPartition(userId));
+
+        await DeleteHomeOwnerPoolEquipmentPhotoRowsAsync(table, partitionKey, photo.Id, cancellationToken);
+
+        var chunks = Chunk(photo.DataUrl, PhotoChunkSize).ToList();
+        var metadata = new TableEntity(partitionKey, $"{photo.Id}_meta")
+        {
+            ["FileName"] = photo.FileName,
+            ["ContentType"] = photo.ContentType,
+            ["UploadedUtc"] = photo.UploadedUtc,
+            ["ChunkCount"] = chunks.Count
+        };
+        await table.UpsertEntityAsync(metadata, TableUpdateMode.Replace, cancellationToken);
+
+        for (var index = 0; index < chunks.Count; index++)
+        {
+            var chunk = new TableEntity(partitionKey, $"{photo.Id}_chunk_{index:D4}")
+            {
+                ["Data"] = chunks[index]
+            };
+            await table.UpsertEntityAsync(chunk, TableUpdateMode.Replace, cancellationToken);
+        }
+    }
+
+    public async Task DeleteHomeOwnerPoolEquipmentPhotoAsync(string userId, string photoId, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        var table = tableServiceClient.GetTableClient("HomeOwnerPoolEquipmentPhotos");
+        await DeleteHomeOwnerPoolEquipmentPhotoRowsAsync(table, AzureTableKey.ToStorageKey(HomeOwnerPhotoPartition(userId)), photoId, cancellationToken);
+    }
+
+    public async Task UpsertIndependentHomeOwnerServiceHistoryItemAsync(IndependentHomeOwnerServiceHistoryItem item, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        await UpsertAsync("IndependentHomeOwnerServiceHistory", UserPartition(item.UserId), item.Id, item, cancellationToken);
     }
 
     public async Task UpsertServiceCategoryAsync(ServiceCategory category, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
-        await UpsertAsync("ServiceCategories", CompanyPartition(category.CompanyId), category.Id, category, cancellationToken);
+        await UpsertAsync("ServiceCategories", ServicePartition(category.CompanyId), category.Id, category, cancellationToken);
     }
 
     public async Task UpsertMaterialCategoryAsync(MaterialCategory category, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
-        await UpsertAsync("MaterialCategories", CompanyPartition(category.CompanyId), category.Id, category, cancellationToken);
+        await UpsertAsync("MaterialCategories", MaterialPartition(category.CompanyId), category.Id, category, cancellationToken);
     }
 
     public async Task UpsertPoolEquipmentCategoryAsync(PoolEquipmentCategory category, CancellationToken cancellationToken = default)
@@ -260,19 +359,41 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
     public async Task UpsertServiceAsync(ServiceOffering service, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
-        await UpsertAsync("Services", CompanyPartition(service.CompanyId), service.Id, service, cancellationToken);
+        await UpsertAsync("Services", ServicePartition(service.CompanyId), service.Id, service, cancellationToken);
     }
 
     public async Task UpsertMaterialAsync(Material material, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
-        await UpsertAsync("Materials", CompanyPartition(material.CompanyId), material.Id, material, cancellationToken);
+        await UpsertAsync("Materials", MaterialPartition(material.CompanyId), material.Id, material, cancellationToken);
     }
 
     public async Task UpsertPoolEquipmentItemAsync(PoolEquipmentItem item, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
         await UpsertAsync("PoolEquipmentItems", EquipmentPartition(item.Scope, item.ScopeOwnerId), item.Id, item, cancellationToken);
+    }
+
+    public async Task DeleteServiceAsync(string companyId, string serviceId, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        var table = tableServiceClient.GetTableClient("Services");
+        await table.DeleteEntityAsync(
+            AzureTableKey.ToStorageKey(ServicePartition(companyId)),
+            AzureTableKey.ToStorageKey(serviceId),
+            ETag.All,
+            cancellationToken);
+    }
+
+    public async Task DeletePoolEquipmentItemAsync(EquipmentScope scope, string scopeOwnerId, string itemId, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        var table = tableServiceClient.GetTableClient("PoolEquipmentItems");
+        await table.DeleteEntityAsync(
+            AzureTableKey.ToStorageKey(EquipmentPartition(scope, scopeOwnerId)),
+            AzureTableKey.ToStorageKey(itemId),
+            ETag.All,
+            cancellationToken);
     }
 
     public async Task UpsertVisitAsync(ServiceVisit visit, CancellationToken cancellationToken = default)
@@ -406,22 +527,22 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
 
             foreach (var category in await seed.GetServiceCategoriesAsync(company.Id, cancellationToken))
             {
-                await UpsertWithoutInitializationAsync("ServiceCategories", CompanyPartition(category.CompanyId), category.Id, category, cancellationToken);
+                await UpsertWithoutInitializationAsync("ServiceCategories", ServicePartition(category.CompanyId), category.Id, category, cancellationToken);
             }
 
             foreach (var category in await seed.GetMaterialCategoriesAsync(company.Id, cancellationToken))
             {
-                await UpsertWithoutInitializationAsync("MaterialCategories", CompanyPartition(category.CompanyId), category.Id, category, cancellationToken);
+                await UpsertWithoutInitializationAsync("MaterialCategories", MaterialPartition(category.CompanyId), category.Id, category, cancellationToken);
             }
 
             foreach (var service in await seed.GetServicesAsync(company.Id, cancellationToken))
             {
-                await UpsertWithoutInitializationAsync("Services", CompanyPartition(service.CompanyId), service.Id, service, cancellationToken);
+                await UpsertWithoutInitializationAsync("Services", ServicePartition(service.CompanyId), service.Id, service, cancellationToken);
             }
 
             foreach (var material in await seed.GetMaterialsAsync(company.Id, cancellationToken))
             {
-                await UpsertWithoutInitializationAsync("Materials", CompanyPartition(material.CompanyId), material.Id, material, cancellationToken);
+                await UpsertWithoutInitializationAsync("Materials", MaterialPartition(material.CompanyId), material.Id, material, cancellationToken);
             }
 
             foreach (var category in await seed.GetPoolEquipmentCategoriesAsync(EquipmentScope.Company, company.Id, cancellationToken))
@@ -526,6 +647,36 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
             cancellationToken);
     }
 
+    private static async Task DeleteHomeOwnerPoolEquipmentPhotoRowsAsync(
+        TableClient table,
+        string partitionKey,
+        string photoId,
+        CancellationToken cancellationToken)
+    {
+        var rows = new List<string>();
+        await foreach (var entity in table.QueryAsync<TableEntity>(e => e.PartitionKey == partitionKey, cancellationToken: cancellationToken))
+        {
+            if (entity.RowKey == $"{photoId}_meta" ||
+                entity.RowKey.StartsWith($"{photoId}_chunk_", StringComparison.Ordinal))
+            {
+                rows.Add(entity.RowKey);
+            }
+        }
+
+        foreach (var rowKey in rows)
+        {
+            await table.DeleteEntityAsync(partitionKey, rowKey, ETag.All, cancellationToken);
+        }
+    }
+
+    private static IEnumerable<string> Chunk(string value, int size)
+    {
+        for (var index = 0; index < value.Length; index += size)
+        {
+            yield return value.Substring(index, Math.Min(size, value.Length - index));
+        }
+    }
+
     private async Task HydrateUserMembershipLookupIfMissingAsync(CancellationToken cancellationToken)
     {
         var userMemberships = await GetAllAsync<CompanyMembership>("UserCompanyMemberships", cancellationToken);
@@ -559,6 +710,18 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
 
     private static string EquipmentPartition(EquipmentScope scope, string scopeOwnerId) => $"EQUIPMENT_{scope}_{scopeOwnerId}";
 
+    private static string HomeOwnerPhotoPartition(string userId) => $"HOMEOWNER_PHOTOS_{userId}";
+
+    internal static string ServicePartition(string companyId) =>
+        string.Equals(companyId, "global", StringComparison.OrdinalIgnoreCase)
+            ? "SERVICES_Global_global"
+            : $"SERVICES_Company_{companyId}";
+
+    internal static string MaterialPartition(string companyId) =>
+        string.Equals(companyId, "global", StringComparison.OrdinalIgnoreCase)
+            ? "MATERIALS_GLOBAL_global"
+            : CompanyPartition(companyId);
+
     private static string MembershipRow(string userId, CompanyRole role) => $"USER_{userId}_ROLE_{role}";
 
     private static string UserMembershipRow(string companyId, CompanyRole role) => $"COMPANY#{companyId}#ROLE#{role}";
@@ -569,7 +732,8 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
         var mode = Enum.TryParse<SystemMode>(configuredMode, ignoreCase: true, out var parsedMode)
             ? parsedMode
             : SystemMode.Pool;
-        return new SystemSettings(mode);
+        var devTest = bool.TryParse(configuration["SystemSettings:DevTest"], out var parsedDevTest) && parsedDevTest;
+        return new SystemSettings(mode, devTest);
     }
 
     private sealed record UserLookup(string UserId, string Email);

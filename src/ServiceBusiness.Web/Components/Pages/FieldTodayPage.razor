@@ -3,7 +3,7 @@
 @using ServiceBusiness.Domain
 @inject ServiceBusiness.Application.FieldWorkService FieldWorkService
 @inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
-@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+@inject ServiceBusiness.Web.CurrentCompanyContext CurrentCompany
 
 <PageTitle>Field Work</PageTitle>
 
@@ -90,13 +90,14 @@ else
     private string? selectedMaterialId;
     private decimal materialQuantity = 1;
     private string customerNotes = "Service completed and property left secure.";
+    private string companyId = "";
     private string? message;
 
     protected override async Task OnInitializedAsync()
     {
-        DemoUser.UserId = "demo-user-1";
-        services = await CompanyAdminService.GetServicesAsync("clearwater");
-        materials = await CompanyAdminService.GetMaterialsAsync("clearwater");
+        companyId = await CurrentCompany.GetRequiredCompanyIdAsync([CompanyRole.CompanyUser]);
+        services = await CompanyAdminService.GetServicesAsync(companyId);
+        materials = await CompanyAdminService.GetMaterialsAsync(companyId);
         selectedServiceId = services.FirstOrDefault()?.Id;
         selectedMaterialId = materials.FirstOrDefault()?.Id;
         await LoadAsync();
@@ -109,7 +110,7 @@ else
             : new List<MaterialUsage> { new(selectedMaterialId, materialQuantity) };
 
         await FieldWorkService.CompleteVisitAsync(
-            "clearwater",
+            companyId,
             visitId,
             selectedServiceId is null ? [] : [selectedServiceId],
             materialUsage,
@@ -122,6 +123,6 @@ else
 
     private async Task LoadAsync()
     {
-        items = await FieldWorkService.GetAssignedVisitsAsync("clearwater", selectedDate);
+        items = await FieldWorkService.GetAssignedVisitsAsync(companyId, selectedDate);
     }
 }

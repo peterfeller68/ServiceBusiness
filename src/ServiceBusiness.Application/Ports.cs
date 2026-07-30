@@ -19,6 +19,8 @@ public interface IServiceBusinessStore
     Task<IReadOnlyList<CompanyClient>> GetClientsAsync(string companyId, CancellationToken cancellationToken = default);
     Task<CompanyClient?> GetClientAsync(string companyId, string clientId, CancellationToken cancellationToken = default);
     Task<IndependentHomeOwnerProfile?> GetIndependentHomeOwnerProfileAsync(string userId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<HomeOwnerPoolEquipmentPhoto>> GetHomeOwnerPoolEquipmentPhotosAsync(string userId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<IndependentHomeOwnerServiceHistoryItem>> GetIndependentHomeOwnerServiceHistoryAsync(string userId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ServiceCategory>> GetServiceCategoriesAsync(string companyId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MaterialCategory>> GetMaterialCategoriesAsync(string companyId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<PoolEquipmentCategory>> GetPoolEquipmentCategoriesAsync(EquipmentScope scope, string scopeOwnerId, CancellationToken cancellationToken = default);
@@ -37,12 +39,17 @@ public interface IServiceBusinessStore
     Task UpsertMembershipAsync(CompanyMembership membership, CancellationToken cancellationToken = default);
     Task UpsertClientAsync(CompanyClient client, CancellationToken cancellationToken = default);
     Task UpsertIndependentHomeOwnerProfileAsync(IndependentHomeOwnerProfile profile, CancellationToken cancellationToken = default);
+    Task UpsertHomeOwnerPoolEquipmentPhotoAsync(string userId, HomeOwnerPoolEquipmentPhoto photo, CancellationToken cancellationToken = default);
+    Task DeleteHomeOwnerPoolEquipmentPhotoAsync(string userId, string photoId, CancellationToken cancellationToken = default);
+    Task UpsertIndependentHomeOwnerServiceHistoryItemAsync(IndependentHomeOwnerServiceHistoryItem item, CancellationToken cancellationToken = default);
     Task UpsertServiceCategoryAsync(ServiceCategory category, CancellationToken cancellationToken = default);
     Task UpsertMaterialCategoryAsync(MaterialCategory category, CancellationToken cancellationToken = default);
     Task UpsertPoolEquipmentCategoryAsync(PoolEquipmentCategory category, CancellationToken cancellationToken = default);
     Task UpsertServiceAsync(ServiceOffering service, CancellationToken cancellationToken = default);
     Task UpsertMaterialAsync(Material material, CancellationToken cancellationToken = default);
     Task UpsertPoolEquipmentItemAsync(PoolEquipmentItem item, CancellationToken cancellationToken = default);
+    Task DeleteServiceAsync(string companyId, string serviceId, CancellationToken cancellationToken = default);
+    Task DeletePoolEquipmentItemAsync(EquipmentScope scope, string scopeOwnerId, string itemId, CancellationToken cancellationToken = default);
     Task UpsertVisitAsync(ServiceVisit visit, CancellationToken cancellationToken = default);
     Task UpsertVisitCompletionAsync(VisitCompletion completion, CancellationToken cancellationToken = default);
     Task UpsertEmailLogAsync(EmailLogEntry emailLog, CancellationToken cancellationToken = default);

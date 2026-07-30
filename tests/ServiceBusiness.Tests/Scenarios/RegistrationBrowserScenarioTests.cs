@@ -30,8 +30,8 @@ public sealed class RegistrationBrowserScenarioTests
         await Expect(page.GetByText("Your homeowner account is ready")).ToBeVisibleAsync();
         await page.GetByRole(AriaRole.Link, new() { Name = "Manage Pool Equipment" }).ClickAsync();
 
-        await Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Pool Equipment" })).ToBeVisibleAsync();
-        await page.GetByRole(AriaRole.Button, new() { Name = "Create" }).Nth(1).ClickAsync();
+        await Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Pool Equipment", Exact = true })).ToBeVisibleAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Create" }).ClickAsync();
         await Expect(page.GetByRole(AriaRole.Button, new() { Name = "Save Equipment" })).ToBeVisibleAsync();
     }
 

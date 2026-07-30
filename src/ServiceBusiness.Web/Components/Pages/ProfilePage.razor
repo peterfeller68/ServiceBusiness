@@ -3,6 +3,8 @@
 @using ServiceBusiness.Application
 @using ServiceBusiness.Domain
 @inject UserProfileService ProfileService
+@inject OnboardingService OnboardingService
+@inject IndependentHomeOwnerService HomeOwnerService
 
 <PageTitle>Profile</PageTitle>
 
@@ -12,7 +14,7 @@
         <h1>@(form?.DisplayName ?? "Profile")</h1>
         <p class="lede">Manage contact details used for notifications and account display.</p>
     </div>
-    <a class="button" href="auth/signout">Logout</a>
+    <a class="button" href="auth/signout" data-enhance-nav="false">Logout</a>
 </section>
 
 @if (!string.IsNullOrWhiteSpace(message))
@@ -55,9 +57,23 @@ else
                     Phone
                     <InputText class="form-control" @bind-Value="form.Phone" />
                 </label>
+                @if (isIndependentHomeOwner)
+                {
+                    <label class="wide">
+                        Address
+                        <InputText class="form-control" @bind-Value="form.HomeAddress" />
+                    </label>
+                    <label class="wide">
+                        Access notes
+                        <InputTextArea class="form-control" @bind-Value="form.AccessNotes" />
+                    </label>
+                    <label class="wide">
+                        General Notes
+                        <InputTextArea class="form-control" @bind-Value="form.GeneralNotes" />
+                    </label>
+                }
                 <div class="form-actions">
                     <button class="button primary" type="submit">Save Profile</button>
-                    <a class="button" href="dashboard">Dashboard</a>
                 </div>
             </div>
         </EditForm>
@@ -76,6 +92,7 @@ else
 
 @code {
     private ProfileForm? form;
+    private bool isIndependentHomeOwner;
     private string? message;
     private string? errorMessage;
 
@@ -83,6 +100,15 @@ else
     {
         var user = await ProfileService.GetCurrentProfileAsync();
         form = ProfileForm.FromUser(user);
+        var overview = await OnboardingService.GetAccessOverviewAsync(user.Id);
+        isIndependentHomeOwner = !overview.User.IsSystemAdmin && overview.Companies.Count == 0;
+        if (isIndependentHomeOwner)
+        {
+            var profile = await HomeOwnerService.GetProfileAsync();
+            form.HomeAddress = profile.HomeAddress;
+            form.AccessNotes = profile.AccessNotes;
+            form.GeneralNotes = profile.GeneralNotes;
+        }
     }
 
     private async Task SaveAsync()
@@ -97,12 +123,36 @@ else
 
         try
         {
+            if (isIndependentHomeOwner && string.IsNullOrWhiteSpace(form.HomeAddress))
+            {
+                throw new InvalidOperationException("Home address is required.");
+            }
+
             var updated = await ProfileService.UpdateCurrentProfileAsync(
                 form.DisplayName,
                 form.NotificationEmail,
                 form.Phone,
                 form.EmailNotificationsEnabled);
+
+            if (isIndependentHomeOwner)
+            {
+                await HomeOwnerService.UpdateGeneralSettingsAsync(
+                    form.DisplayName,
+                    form.Phone,
+                    form.HomeAddress,
+                    form.AccessNotes,
+                    form.GeneralNotes);
+            }
+
             form = ProfileForm.FromUser(updated);
+            if (isIndependentHomeOwner)
+            {
+                var profile = await HomeOwnerService.GetProfileAsync();
+                form.HomeAddress = profile.HomeAddress;
+                form.AccessNotes = profile.AccessNotes;
+                form.GeneralNotes = profile.GeneralNotes;
+            }
+
             message = "Profile saved.";
         }
         catch (InvalidOperationException ex)
@@ -122,6 +172,9 @@ else
         public string? NotificationEmail { get; set; }
         public bool EmailNotificationsEnabled { get; set; } = true;
         public string? Phone { get; set; }
+        public string HomeAddress { get; set; } = "";
+        public string AccessNotes { get; set; } = "";
+        public string GeneralNotes { get; set; } = "";
         public string? ProfileImageUrl { get; init; }
         public UserStatus Status { get; init; }
 

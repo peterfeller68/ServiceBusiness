@@ -143,7 +143,7 @@ a, .btn-link {
 .landing-feature-grid {
     display: grid;
     gap: .85rem;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .landing-feature-grid article,
@@ -328,6 +328,10 @@ a, .btn-link {
     text-transform: uppercase;
 }
 
+.management-table tr.selected-row {
+    background: #e8f2ef;
+}
+
 .management-table .actions {
     text-align: right;
     white-space: nowrap;
@@ -371,6 +375,25 @@ a, .btn-link {
 
 .delete-icon {
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 21h10l1-13H6l1 13zM9 4l1-1h4l1 1h4v2H5V4h4z'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+
+.copy-icon {
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 7h11v14H8V7zm-3 10H3V3h11v2H5v12z'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+
+.table-sort-button {
+    background: transparent;
+    border: 0;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 700;
+    padding: 0;
+    text-align: left;
+}
+
+.table-sort-button:hover {
+    text-decoration: underline;
 }
 
 .power-icon {
@@ -493,6 +516,57 @@ a, .btn-link {
 .row-card p, .row-card small, .visit-card p, .visit-card small {
     color: #60706f;
     margin: .25rem 0 0;
+}
+
+.photo-thumb-button {
+    background: transparent;
+    border: 0;
+    cursor: zoom-in;
+    padding: 0;
+    text-align: left;
+}
+
+.photo-thumb-button img {
+    border-radius: 8px;
+    display: block;
+    max-height: 160px;
+    max-width: 220px;
+    object-fit: cover;
+}
+
+.photo-modal-backdrop {
+    align-items: center;
+    background: rgba(7, 20, 17, .76);
+    display: flex;
+    inset: 0;
+    justify-content: center;
+    padding: 1.5rem;
+    position: fixed;
+    z-index: 1000;
+}
+
+.photo-modal {
+    background: #f8fbfa;
+    border-radius: 8px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, .32);
+    max-height: 92vh;
+    max-width: min(980px, 94vw);
+    overflow: hidden;
+}
+
+.photo-modal-header {
+    align-items: center;
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+    padding: .8rem 1rem;
+}
+
+.photo-modal img {
+    display: block;
+    max-height: calc(92vh - 4rem);
+    max-width: 100%;
+    object-fit: contain;
 }
 
 .row-actions {

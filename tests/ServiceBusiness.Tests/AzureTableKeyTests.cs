@@ -23,4 +23,36 @@ public sealed class AzureTableKeyTests
 
         Assert.Equal("COMPANY_demo-owner-1", key);
     }
+
+    [Fact]
+    public void Global_material_partition_uses_material_catalog_scope()
+    {
+        var partition = AzureTableServiceBusinessStore.MaterialPartition("global");
+
+        Assert.Equal("MATERIALS_GLOBAL_global", partition);
+    }
+
+    [Fact]
+    public void Company_material_partition_keeps_company_scope()
+    {
+        var partition = AzureTableServiceBusinessStore.MaterialPartition("clearwater");
+
+        Assert.Equal("COMPANY_clearwater", partition);
+    }
+
+    [Fact]
+    public void Global_service_partition_uses_service_catalog_scope()
+    {
+        var partition = AzureTableServiceBusinessStore.ServicePartition("global");
+
+        Assert.Equal("SERVICES_Global_global", partition);
+    }
+
+    [Fact]
+    public void Company_service_partition_uses_service_company_scope()
+    {
+        var partition = AzureTableServiceBusinessStore.ServicePartition("clearwater");
+
+        Assert.Equal("SERVICES_Company_clearwater", partition);
+    }
 }

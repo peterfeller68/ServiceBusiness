@@ -3,6 +3,10 @@ bin/
 obj/
 artifacts/
 TestResults/
+.codex-build-*/
+.codex-test-*/
+**/.codex-test-bin/
+.codex-*.log
 
 # User and IDE state
 .vs/

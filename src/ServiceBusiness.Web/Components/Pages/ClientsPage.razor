@@ -10,37 +10,281 @@
     <div>
         <p class="eyebrow">Company Admin</p>
         <h1>Clients</h1>
+        <p class="lede">Create, edit, archive, and reactivate customer records.</p>
     </div>
 </section>
 
-@if (clients is null)
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="notice success">@message</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="notice error">@errorMessage</div>
+}
+
+@if (clients is null || clientTypes is null)
 {
     <p>Loading clients...</p>
 }
 else
 {
-    <div class="data-list">
-        @foreach (var client in clients)
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>Customers</h2>
+            <div class="management-panel-actions">
+                <button class="button primary" type="button" @onclick="ShowCreateClient">Create</button>
+                <button class="icon-button" type="button" title="Toggle customers" @onclick="ToggleClientList">@(clientListExpanded ? "^" : "v")</button>
+            </div>
+        </div>
+        @if (clientListExpanded)
         {
-            <article class="row-card">
-                <div>
-                    <strong>@client.DisplayName</strong>
-                    <p>@client.PrimaryContactName · @client.ServiceAddress</p>
-                    <small>@client.AccessNotes</small>
+            <div class="management-panel-body">
+                @if (clientEditorExpanded)
+                {
+                    <EditForm Model="clientForm" OnValidSubmit="SaveClientAsync" FormName="client-editor">
+                        <div class="editor-panel">
+                            <h3>@(clientForm.IsEditing ? "Edit Customer" : "Create Customer")</h3>
+                            <div class="form-grid">
+                                <label>
+                                    Customer ID
+                                    <InputText class="form-control" @bind-Value="clientForm.Id" disabled="@clientForm.IsEditing" />
+                                </label>
+                                <label>
+                                    Customer type
+                                    <InputSelect class="form-control" @bind-Value="clientForm.ClientTypeId">
+                                        <option value="">Select a type</option>
+                                        @foreach (var clientType in ActiveClientTypes)
+                                        {
+                                            <option value="@clientType.Id">@clientType.Name</option>
+                                        }
+                                    </InputSelect>
+                                </label>
+                                <label>
+                                    Customer name
+                                    <InputText class="form-control" @bind-Value="clientForm.DisplayName" />
+                                </label>
+                                <label>
+                                    Primary contact
+                                    <InputText class="form-control" @bind-Value="clientForm.PrimaryContactName" />
+                                </label>
+                                <label>
+                                    Email
+                                    <InputText class="form-control" @bind-Value="clientForm.Email" />
+                                </label>
+                                <label>
+                                    Phone
+                                    <InputText class="form-control" @bind-Value="clientForm.Phone" />
+                                </label>
+                                <label class="wide">
+                                    Service address
+                                    <InputText class="form-control" @bind-Value="clientForm.ServiceAddress" />
+                                </label>
+                                <label>
+                                    Rate override
+                                    <InputNumber class="form-control" @bind-Value="clientForm.RateOverride" />
+                                </label>
+                                <label class="wide">
+                                    Access notes
+                                    <InputTextArea class="form-control" @bind-Value="clientForm.AccessNotes" />
+                                </label>
+                                <label class="check-row">
+                                    <InputCheckbox @bind-Value="clientForm.IsActive" />
+                                    <span>Active</span>
+                                </label>
+                            </div>
+                            <div class="form-actions">
+                                <button class="button primary" type="submit">Save Customer</button>
+                                <button class="button" type="button" @onclick="HideClientEditor">Cancel</button>
+                            </div>
+                        </div>
+                    </EditForm>
+                }
+                <div class="management-table-wrap">
+                    <table class="management-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Active</th>
+                                <th>Name</th>
+                                <th>Contact</th>
+                                <th>Type</th>
+                                <th>Address</th>
+                                <th class="actions">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var client in clients)
+                            {
+                                <tr>
+                                    <td>@client.Id</td>
+                                    <td>@(client.IsActive ? "Yes" : "No")</td>
+                                    <td>@client.DisplayName</td>
+                                    <td>
+                                        @client.PrimaryContactName
+                                        <br />
+                                        <small>@client.Email</small>
+                                    </td>
+                                    <td>@GetClientTypeName(client.ClientTypeId)</td>
+                                    <td>
+                                        @client.ServiceAddress
+                                        <br />
+                                        <small>@client.AccessNotes</small>
+                                    </td>
+                                    <td class="actions">
+                                        <button class="icon-button" type="button" title="Edit customer" @onclick="() => EditClient(client)">Edit</button>
+                                        @if (client.IsActive)
+                                        {
+                                            <button class="icon-button danger" type="button" title="Archive customer" @onclick="() => SetClientActiveAsync(client, false)">Del</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="icon-button" type="button" title="Reactivate customer" @onclick="() => SetClientActiveAsync(client, true)">On</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
                 </div>
-                <span class="status-pill">@(client.IsActive ? "Active" : "Inactive")</span>
-            </article>
+            </div>
         }
-    </div>
+    </section>
 }
 
 @code {
     private IReadOnlyList<CompanyClient>? clients;
+    private IReadOnlyList<ClientType>? clientTypes;
+    private ClientForm clientForm = new();
+    private bool clientListExpanded = true;
+    private bool clientEditorExpanded;
     private string companyId = "";
+    private string? message;
+    private string? errorMessage;
+    private IReadOnlyList<ClientType> ActiveClientTypes => clientTypes?.Where(t => t.IsActive).OrderBy(t => t.Name).ToList() ?? [];
 
     protected override async Task OnInitializedAsync()
     {
         companyId = await CurrentCompany.GetRequiredCompanyIdAsync([CompanyRole.CompanyAdmin]);
+        await LoadAsync();
+    }
+
+    private async Task SaveClientAsync()
+    {
+        await RunAsync(async () =>
+        {
+            await CompanyAdminService.UpsertClientAsync(new CompanyClient(
+                clientForm.Id,
+                companyId,
+                clientForm.DisplayName,
+                clientForm.PrimaryContactName,
+                clientForm.Email,
+                clientForm.Phone,
+                clientForm.ServiceAddress,
+                clientForm.AccessNotes,
+                clientForm.ClientTypeId,
+                clientForm.RateOverride,
+                clientForm.IsActive));
+
+            message = $"{clientForm.DisplayName} was saved.";
+            ResetClientForm();
+            clientEditorExpanded = false;
+        });
+    }
+
+    private async Task SetClientActiveAsync(CompanyClient client, bool isActive)
+    {
+        await RunAsync(async () =>
+        {
+            await CompanyAdminService.UpsertClientAsync(client with { IsActive = isActive });
+            message = $"{client.DisplayName} was {(isActive ? "reactivated" : "archived")}.";
+        });
+    }
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        message = null;
+        errorMessage = null;
+
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
         clients = await CompanyAdminService.GetClientsAsync(companyId);
+        clientTypes = await CompanyAdminService.GetClientTypesAsync(companyId);
+    }
+
+    private void EditClient(CompanyClient client)
+    {
+        clientForm = ClientForm.FromClient(client);
+        clientEditorExpanded = true;
+        clientListExpanded = true;
+    }
+
+    private void ShowCreateClient()
+    {
+        ResetClientForm();
+        clientEditorExpanded = true;
+        clientListExpanded = true;
+    }
+
+    private void HideClientEditor()
+    {
+        ResetClientForm();
+        clientEditorExpanded = false;
+    }
+
+    private void ResetClientForm() => clientForm = new()
+    {
+        ClientTypeId = ActiveClientTypes.FirstOrDefault()?.Id ?? ""
+    };
+
+    private void ToggleClientList() => clientListExpanded = !clientListExpanded;
+
+    private string GetClientTypeName(string clientTypeId) =>
+        clientTypes?.FirstOrDefault(t => t.Id == clientTypeId)?.Name ?? clientTypeId;
+
+    private sealed class ClientForm
+    {
+        public string Id { get; set; } = "";
+        public string DisplayName { get; set; } = "";
+        public string PrimaryContactName { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string Phone { get; set; } = "";
+        public string ServiceAddress { get; set; } = "";
+        public string AccessNotes { get; set; } = "";
+        public string ClientTypeId { get; set; } = "";
+        public decimal? RateOverride { get; set; }
+        public bool IsActive { get; set; } = true;
+        public bool IsEditing { get; set; }
+
+        public static ClientForm FromClient(CompanyClient client) => new()
+        {
+            Id = client.Id,
+            DisplayName = client.DisplayName,
+            PrimaryContactName = client.PrimaryContactName,
+            Email = client.Email,
+            Phone = client.Phone,
+            ServiceAddress = client.ServiceAddress,
+            AccessNotes = client.AccessNotes,
+            ClientTypeId = client.ClientTypeId,
+            RateOverride = client.RateOverride,
+            IsActive = client.IsActive,
+            IsEditing = true
+        };
     }
 }

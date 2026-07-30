@@ -96,7 +96,16 @@ public sealed class PlatformAdminService(IServiceBusinessStore store, TenantAuth
     {
         await authorization.RequireSystemAdminAsync(cancellationToken);
 
-        var settings = new SystemSettings(systemMode);
+        var currentSettings = await store.GetSystemSettingsAsync(cancellationToken);
+        var settings = currentSettings with { SystemMode = systemMode };
+        await store.UpsertSystemSettingsAsync(settings, cancellationToken);
+        return settings;
+    }
+
+    public async Task<SystemSettings> UpdateSystemSettingsAsync(SystemSettings settings, CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireSystemAdminAsync(cancellationToken);
+
         await store.UpsertSystemSettingsAsync(settings, cancellationToken);
         return settings;
     }
@@ -588,6 +597,239 @@ public sealed class UserProfileService(IServiceBusinessStore store, TenantAuthor
     }
 }
 
+public sealed class IndependentHomeOwnerService(IServiceBusinessStore store, ICurrentUserContext currentUser)
+{
+    public async Task<IndependentHomeOwnerDashboard> GetDashboardAsync(CancellationToken cancellationToken = default)
+    {
+        var user = await RequireIndependentHomeOwnerAsync(cancellationToken);
+        var profile = await GetOrCreateProfileAsync(user.Id, cancellationToken);
+        var categories = await store.GetPoolEquipmentCategoriesAsync(EquipmentScope.HomeOwner, user.Id, cancellationToken);
+        var items = await store.GetPoolEquipmentItemsAsync(EquipmentScope.HomeOwner, user.Id, cancellationToken);
+        var history = (await store.GetIndependentHomeOwnerServiceHistoryAsync(user.Id, cancellationToken))
+            .Where(item => !item.IsDeleted)
+            .ToList();
+
+        return new IndependentHomeOwnerDashboard(
+            user,
+            profile,
+            BuildPoolEquipmentGroups(EquipmentScope.HomeOwner, user.Id, categories, items),
+            history);
+    }
+
+    public async Task<IndependentHomeOwnerProfile> GetProfileAsync(CancellationToken cancellationToken = default)
+    {
+        var user = await RequireIndependentHomeOwnerAsync(cancellationToken);
+        return await GetOrCreateProfileAsync(user.Id, cancellationToken);
+    }
+
+    public async Task<IndependentHomeOwnerProfile> UpdateGeneralSettingsAsync(
+        string displayName,
+        string? phone,
+        string homeAddress,
+        string? accessNotes,
+        string? generalNotes = null,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await RequireIndependentHomeOwnerAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            throw new InvalidOperationException("Display name is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(homeAddress))
+        {
+            throw new InvalidOperationException("Home address is required.");
+        }
+
+        await store.UpsertUserAsync(user with
+        {
+            DisplayName = displayName.Trim(),
+            Phone = string.IsNullOrWhiteSpace(phone) ? null : phone.Trim()
+        }, cancellationToken);
+
+        var profile = await GetOrCreateProfileAsync(user.Id, cancellationToken);
+        var updated = profile with
+        {
+            HomeAddress = homeAddress.Trim(),
+            AccessNotes = string.IsNullOrWhiteSpace(accessNotes) ? "" : accessNotes.Trim(),
+            GeneralNotes = string.IsNullOrWhiteSpace(generalNotes) ? "" : generalNotes.Trim(),
+            UpdatedUtc = DateTimeOffset.UtcNow
+        };
+
+        await store.UpsertIndependentHomeOwnerProfileAsync(updated, cancellationToken);
+        return updated;
+    }
+
+    public async Task<IndependentHomeOwnerServiceHistoryItem> AddServiceHistoryItemAsync(
+        string serviceId,
+        DateOnly serviceDate,
+        string? notes,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await RequireIndependentHomeOwnerAsync(cancellationToken);
+        var service = await GetRequiredHomeOwnerServiceAsync(user.Id, serviceId, cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        var item = new IndependentHomeOwnerServiceHistoryItem(
+            $"home-service-{now:yyyyMMddHHmmssfff}",
+            user.Id,
+            new DateTimeOffset(serviceDate.ToDateTime(TimeOnly.MinValue)),
+            string.IsNullOrWhiteSpace(notes) ? "" : notes.Trim(),
+            now,
+            service.Id,
+            service.Name);
+
+        await store.UpsertIndependentHomeOwnerServiceHistoryItemAsync(item, cancellationToken);
+        return item;
+    }
+
+    public async Task<IndependentHomeOwnerServiceHistoryItem> UpdateServiceHistoryItemAsync(
+        string itemId,
+        string serviceId,
+        DateOnly serviceDate,
+        string? notes,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await RequireIndependentHomeOwnerAsync(cancellationToken);
+        var service = await GetRequiredHomeOwnerServiceAsync(user.Id, serviceId, cancellationToken);
+        var existing = (await store.GetIndependentHomeOwnerServiceHistoryAsync(user.Id, cancellationToken))
+            .FirstOrDefault(item => item.Id == itemId)
+            ?? throw new InvalidOperationException("Service history item was not found.");
+
+        var updated = existing with
+        {
+            ServiceDateTime = new DateTimeOffset(serviceDate.ToDateTime(TimeOnly.MinValue)),
+            Notes = string.IsNullOrWhiteSpace(notes) ? "" : notes.Trim(),
+            ServiceId = service.Id,
+            ServiceName = service.Name
+        };
+
+        await store.UpsertIndependentHomeOwnerServiceHistoryItemAsync(updated, cancellationToken);
+        return updated;
+    }
+
+    public async Task DeleteServiceHistoryItemAsync(string itemId, CancellationToken cancellationToken = default)
+    {
+        var user = await RequireIndependentHomeOwnerAsync(cancellationToken);
+        var item = (await store.GetIndependentHomeOwnerServiceHistoryAsync(user.Id, cancellationToken))
+            .FirstOrDefault(item => item.Id == itemId && !item.IsDeleted)
+            ?? throw new InvalidOperationException("Service history item was not found.");
+
+        await store.UpsertIndependentHomeOwnerServiceHistoryItemAsync(item with { IsDeleted = true }, cancellationToken);
+    }
+
+    public async Task<IndependentHomeOwnerProfile> AddPoolEquipmentPhotosAsync(
+        IReadOnlyList<HomeOwnerPoolEquipmentPhoto> photos,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await RequireIndependentHomeOwnerAsync(cancellationToken);
+        var profile = await GetOrCreateProfileAsync(user.Id, cancellationToken);
+        foreach (var photo in photos)
+        {
+            await store.UpsertHomeOwnerPoolEquipmentPhotoAsync(user.Id, photo, cancellationToken);
+        }
+
+        var updated = profile with { UpdatedUtc = DateTimeOffset.UtcNow };
+        await store.UpsertIndependentHomeOwnerProfileAsync(updated, cancellationToken);
+        return await GetOrCreateProfileAsync(user.Id, cancellationToken);
+    }
+
+    public async Task<IndependentHomeOwnerProfile> DeletePoolEquipmentPhotoAsync(
+        string photoId,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await RequireIndependentHomeOwnerAsync(cancellationToken);
+        var profile = await GetOrCreateProfileAsync(user.Id, cancellationToken);
+        await store.DeleteHomeOwnerPoolEquipmentPhotoAsync(user.Id, photoId, cancellationToken);
+
+        var updated = profile with { UpdatedUtc = DateTimeOffset.UtcNow };
+        await store.UpsertIndependentHomeOwnerProfileAsync(updated, cancellationToken);
+        return await GetOrCreateProfileAsync(user.Id, cancellationToken);
+    }
+
+    private async Task<AppUser> RequireIndependentHomeOwnerAsync(CancellationToken cancellationToken)
+    {
+        var user = await store.GetUserAsync(currentUser.UserId, cancellationToken)
+            ?? throw new UnauthorizedAccessException("The current user profile was not found.");
+        if (user.Status == UserStatus.Disabled)
+        {
+            throw new UnauthorizedAccessException("The current user account is disabled.");
+        }
+
+        var memberships = await store.GetMembershipsForUserAsync(user.Id, cancellationToken);
+        if (memberships.Any(m => m.Status == MembershipStatus.Active || m.Status == MembershipStatus.Pending))
+        {
+            throw new UnauthorizedAccessException("Independent homeowner access is required.");
+        }
+
+        return user;
+    }
+
+    private async Task<IndependentHomeOwnerProfile> GetOrCreateProfileAsync(string userId, CancellationToken cancellationToken)
+    {
+        var profile = await store.GetIndependentHomeOwnerProfileAsync(userId, cancellationToken);
+        if (profile is not null)
+        {
+            var photos = await store.GetHomeOwnerPoolEquipmentPhotosAsync(userId, cancellationToken);
+            return profile with { PoolEquipmentPhotos = photos };
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        profile = new IndependentHomeOwnerProfile(userId, "", "", now, now);
+        await store.UpsertIndependentHomeOwnerProfileAsync(profile, cancellationToken);
+        return profile with { PoolEquipmentPhotos = [] };
+    }
+
+    private async Task<ServiceOffering> GetRequiredHomeOwnerServiceAsync(
+        string userId,
+        string serviceId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(serviceId))
+        {
+            throw new InvalidOperationException("Choose a service before saving the service history item.");
+        }
+
+        return (await store.GetServicesAsync(userId, cancellationToken))
+            .FirstOrDefault(service => string.Equals(service.Id, serviceId, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException("Service was not found.");
+    }
+
+    private static PoolEquipmentOverview BuildPoolEquipmentGroups(
+        EquipmentScope scope,
+        string scopeOwnerId,
+        IReadOnlyList<PoolEquipmentCategory> categories,
+        IReadOnlyList<PoolEquipmentItem> items)
+    {
+        var knownCategories = categories
+            .OrderByDescending(c => c.IsActive)
+            .ThenBy(c => c.Name)
+            .ToList();
+        var categoryIds = knownCategories.Select(c => c.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var groups = knownCategories
+            .Select(category => new PoolEquipmentCategoryGroup(
+                category,
+                items
+                    .Where(item => string.Equals(item.CategoryId, category.Id, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(item => item.Name)
+                    .ToList()))
+            .ToList();
+
+        var uncategorized = items
+            .Where(item => string.IsNullOrWhiteSpace(item.CategoryId) || !categoryIds.Contains(item.CategoryId))
+            .OrderBy(item => item.Name)
+            .ToList();
+
+        if (uncategorized.Count > 0)
+        {
+            groups.Add(new PoolEquipmentCategoryGroup(
+                new PoolEquipmentCategory("uncategorized-equipment", scope, scopeOwnerId, "", "Uncategorized Equipment", "Equipment without an assigned category.", false, true),
+                uncategorized));
+        }
+
+        return new PoolEquipmentOverview(groups);
+    }
+}
+
 public sealed class CompanyAdminService(
     IServiceBusinessStore store,
     TenantAuthorizationService authorization,
@@ -629,6 +871,50 @@ public sealed class CompanyAdminService(
         return await store.GetClientsAsync(companyId, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<ClientType>> GetClientTypesAsync(string companyId, CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireCompanyRoleAsync(companyId, CompanyRole.CompanyAdmin, cancellationToken);
+        return await store.GetClientTypesAsync(companyId, cancellationToken);
+    }
+
+    public async Task UpsertClientAsync(CompanyClient client, CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireCompanyRoleAsync(client.CompanyId, CompanyRole.CompanyAdmin, cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(client.Id))
+        {
+            throw new InvalidOperationException("Customer ID is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(client.DisplayName))
+        {
+            throw new InvalidOperationException("Customer name is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(client.PrimaryContactName))
+        {
+            throw new InvalidOperationException("Primary contact is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(client.Email) || !client.Email.Contains('@', StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Customer email must be valid.");
+        }
+
+        if (string.IsNullOrWhiteSpace(client.ServiceAddress))
+        {
+            throw new InvalidOperationException("Service address is required.");
+        }
+
+        var clientTypes = await store.GetClientTypesAsync(client.CompanyId, cancellationToken);
+        if (!clientTypes.Any(t => t.Id == client.ClientTypeId && t.IsActive))
+        {
+            throw new InvalidOperationException("An active customer type is required.");
+        }
+
+        await store.UpsertClientAsync(client, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<ServiceOffering>> GetServicesAsync(string companyId, CancellationToken cancellationToken = default)
     {
         await authorization.RequireAnyCompanyRoleAsync(companyId, [CompanyRole.CompanyAdmin, CompanyRole.CompanyUser], cancellationToken);
@@ -643,7 +929,7 @@ public sealed class CompanyAdminService(
 
     public async Task<CatalogOverview> GetCatalogOverviewAsync(string companyId, CancellationToken cancellationToken = default)
     {
-        await authorization.RequireSystemAdminOrAnyCompanyRoleAsync(companyId, [CompanyRole.CompanyAdmin, CompanyRole.CompanyUser], cancellationToken);
+        await RequireCatalogReadAsync(companyId, cancellationToken);
 
         var serviceCategories = await store.GetServiceCategoriesAsync(companyId, cancellationToken);
         var materialCategories = await store.GetMaterialCategoriesAsync(companyId, cancellationToken);
@@ -670,16 +956,11 @@ public sealed class CompanyAdminService(
         await RequireEquipmentAccessAsync(category.Scope, category.ScopeOwnerId, manage: true, cancellationToken);
         ValidateCategory(category.Id, category.Name);
 
-        if (string.IsNullOrWhiteSpace(category.Manufacturer))
-        {
-            throw new InvalidOperationException("Manufacturer is required.");
-        }
-
         await store.UpsertPoolEquipmentCategoryAsync(category with
         {
             Id = CreateSlug(category.Id),
             ScopeOwnerId = category.ScopeOwnerId.Trim(),
-            Manufacturer = category.Manufacturer.Trim(),
+            Manufacturer = string.IsNullOrWhiteSpace(category.Manufacturer) ? "" : category.Manufacturer.Trim(),
             Name = category.Name.Trim(),
             Description = string.IsNullOrWhiteSpace(category.Description) ? "" : category.Description.Trim()
         }, cancellationToken);
@@ -725,26 +1006,97 @@ public sealed class CompanyAdminService(
             throw new InvalidOperationException("Equipment item ID is required.");
         }
 
-        if (string.IsNullOrWhiteSpace(item.CategoryId))
-        {
-            throw new InvalidOperationException("Equipment category is required.");
-        }
-
         if (string.IsNullOrWhiteSpace(item.Name))
         {
             throw new InvalidOperationException("Equipment item name is required.");
         }
 
-        await EnsureEquipmentCategoryExistsAsync(item.Scope, item.ScopeOwnerId, item.CategoryId, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(item.CategoryId))
+        {
+            await EnsureEquipmentCategoryExistsAsync(item.Scope, item.ScopeOwnerId, item.CategoryId, cancellationToken);
+        }
+
         await store.UpsertPoolEquipmentItemAsync(item with
         {
             Id = CreateSlug(item.Id),
             ScopeOwnerId = item.ScopeOwnerId.Trim(),
-            CategoryId = item.CategoryId.Trim(),
+            CategoryId = string.IsNullOrWhiteSpace(item.CategoryId) ? "" : item.CategoryId.Trim(),
             Name = item.Name.Trim(),
             Description = string.IsNullOrWhiteSpace(item.Description) ? "" : item.Description.Trim(),
-            ImageUrl = string.IsNullOrWhiteSpace(item.ImageUrl) ? null : item.ImageUrl.Trim()
+            ImageUrl = string.IsNullOrWhiteSpace(item.ImageUrl) ? null : item.ImageUrl.Trim(),
+            ModelNo = string.IsNullOrWhiteSpace(item.ModelNo) ? "" : item.ModelNo.Trim(),
+            Manufacturer = string.IsNullOrWhiteSpace(item.Manufacturer) ? "" : item.Manufacturer.Trim()
         }, cancellationToken);
+    }
+
+    public async Task<PoolEquipmentSeedResult> SeedPoolEquipmentAsync(
+        EquipmentScope scope,
+        string scopeOwnerId,
+        IReadOnlyList<PoolEquipmentSeedRow> rows,
+        CancellationToken cancellationToken = default)
+    {
+        await RequireEquipmentAccessAsync(scope, scopeOwnerId, manage: true, cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            throw new InvalidOperationException("Seed file did not include any equipment rows.");
+        }
+
+        var categoriesByKey = new Dictionary<string, PoolEquipmentCategory>(StringComparer.OrdinalIgnoreCase);
+        var itemsById = new Dictionary<string, PoolEquipmentItem>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in rows)
+        {
+            if (string.IsNullOrWhiteSpace(row.Manufacturer) ||
+                string.IsNullOrWhiteSpace(row.Category) ||
+                string.IsNullOrWhiteSpace(row.Name))
+            {
+                throw new InvalidOperationException("Manufacturer, Category, and Name are required for every seed row.");
+            }
+
+            var manufacturer = row.Manufacturer.Trim();
+            var categoryName = row.Category.Trim();
+            var equipmentName = row.Name.Trim();
+            var modelNo = string.IsNullOrWhiteSpace(row.ModelNo) ? "" : row.ModelNo.Trim();
+            var categoryId = CreateSlug(categoryName);
+            var itemId = CreateSlug(string.IsNullOrWhiteSpace(modelNo)
+                ? $"{manufacturer}-{equipmentName}"
+                : $"{manufacturer}-{equipmentName}-{modelNo}");
+
+            categoriesByKey[categoryId] = new PoolEquipmentCategory(
+                categoryId,
+                scope,
+                scopeOwnerId,
+                "",
+                categoryName,
+                $"{categoryName} seeded from equipment catalog.",
+                scope == EquipmentScope.Global,
+                true);
+
+            itemsById[itemId] = new PoolEquipmentItem(
+                itemId,
+                scope,
+                scopeOwnerId,
+                categoryId,
+                equipmentName,
+                "",
+                null,
+                true,
+                modelNo,
+                manufacturer);
+        }
+
+        foreach (var category in categoriesByKey.Values)
+        {
+            await UpsertPoolEquipmentCategoryAsync(category, cancellationToken);
+        }
+
+        foreach (var item in itemsById.Values)
+        {
+            await UpsertPoolEquipmentItemAsync(item, cancellationToken);
+        }
+
+        return new PoolEquipmentSeedResult(categoriesByKey.Count, itemsById.Count);
     }
 
     public async Task<PoolEquipmentItem> CopyPoolEquipmentItemAsync(
@@ -775,6 +1127,19 @@ public sealed class CompanyAdminService(
             ?? throw new InvalidOperationException("Equipment item was not found.");
 
         await store.UpsertPoolEquipmentItemAsync(item with { IsActive = isActive }, cancellationToken);
+    }
+
+    public async Task DeletePoolEquipmentItemAsync(EquipmentScope scope, string scopeOwnerId, string itemId, CancellationToken cancellationToken = default)
+    {
+        await RequireEquipmentAccessAsync(scope, scopeOwnerId, manage: true, cancellationToken);
+        var exists = (await store.GetPoolEquipmentItemsAsync(scope, scopeOwnerId, cancellationToken))
+            .Any(i => i.Id == itemId);
+        if (!exists)
+        {
+            throw new InvalidOperationException("Equipment item was not found.");
+        }
+
+        await store.DeletePoolEquipmentItemAsync(scope, scopeOwnerId, itemId, cancellationToken);
     }
 
     public async Task UpsertMaterialCategoryAsync(MaterialCategory category, CancellationToken cancellationToken = default)
@@ -849,8 +1214,78 @@ public sealed class CompanyAdminService(
             CompanyId = material.CompanyId.Trim(),
             CategoryId = string.IsNullOrWhiteSpace(material.CategoryId) ? null : material.CategoryId.Trim(),
             Name = material.Name.Trim(),
-            UnitOfMeasure = material.UnitOfMeasure.Trim()
+            UnitOfMeasure = material.UnitOfMeasure.Trim(),
+            Brand = string.IsNullOrWhiteSpace(material.Brand) ? "" : material.Brand.Trim(),
+            ModelNo = string.IsNullOrWhiteSpace(material.ModelNo) ? "" : material.ModelNo.Trim()
         }, cancellationToken);
+    }
+
+    public async Task<MaterialSeedResult> SeedMaterialsAsync(
+        string companyId,
+        IReadOnlyList<MaterialSeedRow> rows,
+        CancellationToken cancellationToken = default)
+    {
+        await RequireCatalogManagementAsync(companyId, cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            throw new InvalidOperationException("Seed file did not include any material rows.");
+        }
+
+        var categoriesByKey = new Dictionary<string, MaterialCategory>(StringComparer.OrdinalIgnoreCase);
+        var materialsById = new Dictionary<string, Material>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in rows)
+        {
+            if (string.IsNullOrWhiteSpace(row.Brand) ||
+                string.IsNullOrWhiteSpace(row.Category) ||
+                string.IsNullOrWhiteSpace(row.Name))
+            {
+                throw new InvalidOperationException("Brand, Category, and Name are required for every seed row.");
+            }
+
+            var brand = row.Brand.Trim();
+            var categoryName = row.Category.Trim();
+            var materialName = row.Name.Trim();
+            var modelNo = string.IsNullOrWhiteSpace(row.ModelNo) ? "" : row.ModelNo.Trim();
+            var categoryId = CreateSlug(categoryName);
+            var materialId = CreateSlug(string.IsNullOrWhiteSpace(modelNo)
+                ? $"{brand}-{materialName}"
+                : $"{brand}-{materialName}-{modelNo}");
+
+            categoriesByKey[categoryId] = new MaterialCategory(
+                categoryId,
+                companyId,
+                categoryName,
+                $"{categoryName} seeded from material catalog.",
+                true,
+                true);
+
+            materialsById[materialId] = new Material(
+                materialId,
+                companyId,
+                categoryId,
+                materialName,
+                "Each",
+                0m,
+                0m,
+                true,
+                true,
+                brand,
+                modelNo);
+        }
+
+        foreach (var category in categoriesByKey.Values)
+        {
+            await UpsertMaterialCategoryAsync(category, cancellationToken);
+        }
+
+        foreach (var material in materialsById.Values)
+        {
+            await UpsertMaterialAsync(material, cancellationToken);
+        }
+
+        return new MaterialSeedResult(categoriesByKey.Count, materialsById.Count);
     }
 
     public async Task<Material> CopyMaterialAsync(string companyId, string materialId, CancellationToken cancellationToken = default)
@@ -920,6 +1355,68 @@ public sealed class CompanyAdminService(
         await store.UpsertServiceCategoryAsync(category with { IsActive = isActive }, cancellationToken);
     }
 
+    public async Task<ServiceSeedResult> SeedServicesAsync(
+        string companyId,
+        IReadOnlyList<ServiceSeedRow> rows,
+        CancellationToken cancellationToken = default)
+    {
+        await RequireCatalogManagementAsync(companyId, cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            throw new InvalidOperationException("Seed file did not include any service rows.");
+        }
+
+        var categoriesByKey = new Dictionary<string, ServiceCategory>(StringComparer.OrdinalIgnoreCase);
+        var servicesById = new Dictionary<string, ServiceOffering>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in rows)
+        {
+            if (string.IsNullOrWhiteSpace(row.Category) ||
+                string.IsNullOrWhiteSpace(row.Name))
+            {
+                throw new InvalidOperationException("Category and Name are required for every seed row.");
+            }
+
+            var categoryName = row.Category.Trim();
+            var serviceName = row.Name.Trim();
+            var description = string.IsNullOrWhiteSpace(row.Description) ? "" : row.Description.Trim();
+            var categoryId = CreateSlug(categoryName);
+            var serviceId = CreateSlug($"{categoryName}-{serviceName}");
+
+            categoriesByKey[categoryId] = new ServiceCategory(
+                categoryId,
+                companyId,
+                categoryName,
+                $"{categoryName} seeded from service catalog.",
+                true,
+                true);
+
+            servicesById[serviceId] = new ServiceOffering(
+                serviceId,
+                companyId,
+                categoryId,
+                serviceName,
+                description,
+                45,
+                0m,
+                true,
+                true);
+        }
+
+        foreach (var category in categoriesByKey.Values)
+        {
+            await UpsertServiceCategoryAsync(category, cancellationToken);
+        }
+
+        foreach (var service in servicesById.Values)
+        {
+            await UpsertServiceAsync(service, cancellationToken);
+        }
+
+        return new ServiceSeedResult(categoriesByKey.Count, servicesById.Count);
+    }
+
     public async Task UpsertServiceAsync(ServiceOffering service, CancellationToken cancellationToken = default)
     {
         await RequireCatalogManagementAsync(service.CompanyId, cancellationToken);
@@ -979,6 +1476,19 @@ public sealed class CompanyAdminService(
             ?? throw new InvalidOperationException("Service was not found.");
 
         await store.UpsertServiceAsync(service with { IsActive = isActive }, cancellationToken);
+    }
+
+    public async Task DeleteServiceAsync(string companyId, string serviceId, CancellationToken cancellationToken = default)
+    {
+        await RequireCatalogManagementAsync(companyId, cancellationToken);
+        var exists = (await store.GetServicesAsync(companyId, cancellationToken))
+            .Any(s => s.Id == serviceId);
+        if (!exists)
+        {
+            throw new InvalidOperationException("Service was not found.");
+        }
+
+        await store.DeleteServiceAsync(companyId, serviceId, cancellationToken);
     }
 
     public async Task<IReadOnlyList<ServiceVisit>> GetScheduleAsync(string companyId, DateOnly date, CancellationToken cancellationToken = default)
@@ -1270,7 +1780,40 @@ public sealed class CompanyAdminService(
 
     private async Task RequireCatalogManagementAsync(string companyId, CancellationToken cancellationToken)
     {
+        if (await IsIndependentHomeOwnerCatalogAsync(companyId, cancellationToken))
+        {
+            return;
+        }
+
         await authorization.RequireSystemAdminOrAnyCompanyRoleAsync(companyId, [CompanyRole.CompanyAdmin], cancellationToken);
+    }
+
+    private async Task RequireCatalogReadAsync(string companyId, CancellationToken cancellationToken)
+    {
+        if (string.Equals(companyId, "global", StringComparison.OrdinalIgnoreCase))
+        {
+            await authorization.RequireCurrentUserAsync(cancellationToken);
+            return;
+        }
+
+        if (await IsIndependentHomeOwnerCatalogAsync(companyId, cancellationToken))
+        {
+            return;
+        }
+
+        await authorization.RequireSystemAdminOrAnyCompanyRoleAsync(companyId, [CompanyRole.CompanyAdmin, CompanyRole.CompanyUser], cancellationToken);
+    }
+
+    private async Task<bool> IsIndependentHomeOwnerCatalogAsync(string ownerId, CancellationToken cancellationToken)
+    {
+        var user = await authorization.RequireCurrentUserAsync(cancellationToken);
+        if (!string.Equals(user.Id, ownerId, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var memberships = await store.GetMembershipsForUserAsync(user.Id, cancellationToken);
+        return !user.IsSystemAdmin && !memberships.Any(m => m.Status is MembershipStatus.Active or MembershipStatus.Pending);
     }
 
     private async Task RequireEquipmentAccessAsync(
@@ -1287,7 +1830,14 @@ public sealed class CompanyAdminService(
         switch (scope)
         {
             case EquipmentScope.Global:
-                await authorization.RequireSystemAdminAsync(cancellationToken);
+                if (manage)
+                {
+                    await authorization.RequireSystemAdminAsync(cancellationToken);
+                }
+                else
+                {
+                    await authorization.RequireCurrentUserAsync(cancellationToken);
+                }
                 break;
             case EquipmentScope.Company:
                 await authorization.RequireSystemAdminOrAnyCompanyRoleAsync(
@@ -1463,7 +2013,6 @@ public sealed class CompanyAdminService(
     {
         var knownCategories = categories
             .OrderByDescending(c => c.IsActive)
-            .ThenBy(c => c.Manufacturer)
             .ThenBy(c => c.Name)
             .ToList();
         var categoryIds = knownCategories.Select(c => c.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -1484,7 +2033,7 @@ public sealed class CompanyAdminService(
         if (uncategorized.Count > 0)
         {
             groups.Add(new PoolEquipmentCategoryGroup(
-                new PoolEquipmentCategory("uncategorized-equipment", scope, scopeOwnerId, "Unknown", "Uncategorized Equipment", "Equipment without an assigned category.", false, true),
+                new PoolEquipmentCategory("uncategorized-equipment", scope, scopeOwnerId, "", "Uncategorized Equipment", "Equipment without an assigned category.", false, true),
                 uncategorized));
         }
 
@@ -1599,8 +2148,32 @@ public sealed class FieldWorkService(
     }
 }
 
-public sealed class ClientPortalService(IServiceBusinessStore store, TenantAuthorizationService authorization)
+public sealed class ClientPortalService(
+    IServiceBusinessStore store,
+    TenantAuthorizationService authorization,
+    ICurrentUserContext currentUser)
 {
+    public async Task<IReadOnlyList<ServiceHistoryItem>> GetCurrentUserServiceHistoryAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var memberships = await store.GetMembershipsForUserAsync(currentUser.UserId, cancellationToken);
+        var membership = memberships
+            .Where(m =>
+                m.Role == CompanyRole.CompanyClientUser &&
+                m.Status == MembershipStatus.Active)
+            .OrderBy(m => m.CompanyId)
+            .FirstOrDefault()
+            ?? throw new UnauthorizedAccessException("An active company client membership is required.");
+
+        var user = await store.GetUserAsync(currentUser.UserId, cancellationToken)
+            ?? throw new UnauthorizedAccessException("The current user profile was not found.");
+        var clients = await store.GetClientsAsync(membership.CompanyId, cancellationToken);
+        var client = ResolveClientForUser(membership.CompanyId, user, clients)
+            ?? throw new InvalidOperationException("A customer record was not found for the current client user.");
+
+        return await GetServiceHistoryAsync(membership.CompanyId, client.Id, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<ServiceHistoryItem>> GetServiceHistoryAsync(
         string companyId,
         string clientId,
@@ -1623,6 +2196,42 @@ public sealed class ClientPortalService(IServiceBusinessStore store, TenantAutho
                 users.FirstOrDefault(u => u.Id == visit.AssignedUserId),
                 completions[index]))
             .ToList();
+    }
+
+    private static CompanyClient? ResolveClientForUser(
+        string companyId,
+        AppUser user,
+        IReadOnlyList<CompanyClient> clients)
+    {
+        var exact = clients.FirstOrDefault(c => c.Id == user.Id);
+        if (exact is not null)
+        {
+            return exact;
+        }
+
+        var generatedClientPrefix = $"{companyId}-client-";
+        if (user.Id.StartsWith(generatedClientPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var suffix = user.Id[generatedClientPrefix.Length..];
+            var generatedClient = clients.FirstOrDefault(c => c.Id == $"{companyId}-home-{suffix}");
+            if (generatedClient is not null)
+            {
+                return generatedClient;
+            }
+        }
+
+        var demoClientPrefix = "demo-client-";
+        if (user.Id.StartsWith(demoClientPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var suffix = user.Id[demoClientPrefix.Length..];
+            var demoClient = clients.FirstOrDefault(c => c.Id == $"client-{suffix}");
+            if (demoClient is not null)
+            {
+                return demoClient;
+            }
+        }
+
+        return clients.FirstOrDefault(c => string.Equals(c.Email, user.Email, StringComparison.OrdinalIgnoreCase));
     }
 }
 
@@ -1678,14 +2287,16 @@ public sealed class OnboardingService(IServiceBusinessStore store)
         };
     }
 
-    public async Task<UserAccessOverview?> SignInAsync(string email, CancellationToken cancellationToken = default)
+    public async Task<UserAccessOverview?> SignInAsync(string userIdentifier, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(email))
+        if (string.IsNullOrWhiteSpace(userIdentifier))
         {
             return null;
         }
 
-        var user = await store.GetUserByEmailAsync(email, cancellationToken);
+        var trimmedIdentifier = userIdentifier.Trim();
+        var user = await store.GetUserByEmailAsync(trimmedIdentifier, cancellationToken)
+            ?? await store.GetUserAsync(trimmedIdentifier, cancellationToken);
         if (user is null)
         {
             return null;

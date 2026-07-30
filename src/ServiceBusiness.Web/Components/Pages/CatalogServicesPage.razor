@@ -1,9 +1,12 @@
 @page "/catalog/services"
+@page "/settings/services"
 @page "/admin/catalog/services"
 @rendermode InteractiveServer
 @using Microsoft.AspNetCore.Components
+@using System.Text
 @using ServiceBusiness.Domain
 @inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
+@inject ServiceBusiness.Application.ICurrentUserContext CurrentUser
 @inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
 @inject ServiceBusiness.Web.CurrentCompanyContext CurrentCompany
 @inject NavigationManager Navigation
@@ -16,7 +19,6 @@
         <h1>Services</h1>
         <p class="lede">Create, edit, archive, and reactivate service categories and service items.</p>
     </div>
-    <a class="button" href="catalog">Catalog Overview</a>
 </section>
 
 @if (!string.IsNullOrWhiteSpace(message))
@@ -35,6 +37,32 @@
 }
 else
 {
+    @if (!IsHomeOwnerRoute)
+    {
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>Seed Services</h2>
+        </div>
+        <div class="management-panel-body">
+            <div class="form-grid">
+                <label class="wide">
+                    Services CSV
+                    <InputFile OnChange="OnSeedFileSelected" accept=".csv,text/csv" />
+                </label>
+            </div>
+            <div class="form-actions">
+                <button class="button primary" type="button" @onclick="SeedServicesAsync" disabled="@(seedFile is null)">Seed Table</button>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(seedFileName))
+            {
+                <p class="form-note">@seedFileName selected.</p>
+            }
+        </div>
+    </section>
+    }
+
+    @if (!IsHomeOwnerRoute)
+    {
     <section class="management-panel">
         <div class="management-panel-header">
             <h2>Service Categories</h2>
@@ -51,61 +79,148 @@ else
                     <EditForm Model="categoryForm" OnValidSubmit="SaveCategoryAsync" FormName="service-category-editor">
                         <div class="editor-panel">
                             <h3>@(categoryForm.IsEditing ? "Edit Category" : "Create Category")</h3>
-                <label>
-                    Category ID
-                    <InputText class="form-control" @bind-Value="categoryForm.Id" disabled="@categoryForm.IsEditing" />
-                </label>
-                <label>
-                    Name
-                    <InputText class="form-control" @bind-Value="categoryForm.Name" />
-                </label>
-                <label>
-                    Description
-                    <InputTextArea class="form-control" @bind-Value="categoryForm.Description" />
-                </label>
-                <label class="check-row">
-                    <InputCheckbox @bind-Value="categoryForm.IsActive" />
-                    <span>Active</span>
-                </label>
-                <div class="form-actions">
-                    <button class="button primary" type="submit">Save Category</button>
-                                    <button class="button" type="button" @onclick="HideCategoryEditor">Cancel</button>
-                </div>
+                            <label>
+                                Name
+                                <InputText class="form-control" @bind-Value="categoryForm.Name" />
+                            </label>
+                            <label>
+                                Description
+                                <InputTextArea class="form-control" @bind-Value="categoryForm.Description" />
+                            </label>
+                            <label class="switch-control" title="Toggle active state">
+                                <input type="checkbox" checked="@categoryForm.IsActive" @onchange="args => categoryForm.IsActive = GetChecked(args)" />
+                                <span></span>
+                                <small>Active</small>
+                            </label>
+                            <div class="form-actions">
+                                <button class="button primary" type="submit">Save Category</button>
+                                <button class="button" type="button" @onclick="HideCategoryEditor">Cancel</button>
+                            </div>
                         </div>
                     </EditForm>
                 }
+                <div class="form-grid">
+                    <label class="wide">
+                        Filter categories
+                        <input class="form-control" @bind="categoryFilter" @bind:event="oninput" placeholder="Filter by active state, category, or description" />
+                    </label>
+                </div>
                 <div class="management-table-wrap">
                     <table class="management-table">
                         <thead>
                             <tr>
-                                <th>ID</th>
-                                <th>Active</th>
-                                <th>Name</th>
-                                <th>Description</th>
+                                <th><button class="table-sort-button" type="button" @onclick="() => SortCategories(CategorySortColumn.Active)">Active @GetCategorySortIndicator(CategorySortColumn.Active)</button></th>
+                                <th><button class="table-sort-button" type="button" @onclick="() => SortCategories(CategorySortColumn.Category)">Category @GetCategorySortIndicator(CategorySortColumn.Category)</button></th>
+                                <th><button class="table-sort-button" type="button" @onclick="() => SortCategories(CategorySortColumn.Description)">Description @GetCategorySortIndicator(CategorySortColumn.Description)</button></th>
                                 <th class="actions">Action</th>
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var group in catalog.ServiceGroups)
+                            @foreach (var group in FilteredCategoryGroups)
                             {
                                 <tr>
-                                    <td>@group.Category.Id</td>
-                                    <td>@(group.Category.IsActive ? "Yes" : "No")</td>
+                                    <td>
+                                        <label class="switch-control" title="Toggle active state">
+                                            <input type="checkbox" checked="@group.Category.IsActive" @onchange="args => ToggleCategoryActiveAsync(group.Category, args)" />
+                                            <span></span>
+                                        </label>
+                                    </td>
                                     <td>@group.Category.Name</td>
                                     <td>@group.Category.Description</td>
                                     <td class="actions">
-                                        <button class="icon-button" type="button" title="Edit category" @onclick="() => EditCategory(group.Category)">Edit</button>
+                                        <button class="icon-button icon-only" type="button" title="Edit category" aria-label="Edit category" @onclick="() => EditCategory(group.Category)">
+                                            <span class="action-icon edit-icon" aria-hidden="true"></span>
+                                        </button>
                                         @if (group.Category.IsSystemManaged)
                                         {
-                                            <button class="icon-button" type="button" title="Copy as custom category" @onclick="() => CopyCategoryAsync(group.Category)">Copy</button>
+                                            <button class="icon-button icon-only" type="button" title="Copy as custom category" aria-label="Copy as custom category" @onclick="() => CopyCategoryAsync(group.Category)">
+                                                <span class="action-icon copy-icon" aria-hidden="true"></span>
+                                            </button>
                                         }
-                                        @if (group.Category.IsActive)
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    </section>
+    }
+
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>@(IsHomeOwnerRoute ? "Configured Services" : "Services")</h2>
+            <div class="management-panel-actions">
+                @if (!IsHomeOwnerRoute)
+                {
+                    <button class="button primary" type="button" @onclick="ShowCreateService">Create</button>
+                }
+                <button class="icon-button" type="button" title="Toggle services" @onclick="ToggleServiceList">@(serviceListExpanded ? "^" : "v")</button>
+            </div>
+        </div>
+        @if (serviceListExpanded)
+        {
+            <div class="management-panel-body">
+                @if (serviceEditorExpanded && !IsHomeOwnerRoute)
+                {
+                    @ServiceEditor()
+                }
+                <div class="form-grid">
+                    <label class="wide">
+                        Filter services
+                        <input class="form-control" @bind="serviceFilter" @bind:event="oninput" placeholder="@ServiceFilterPlaceholder" />
+                    </label>
+                </div>
+                <div class="management-table-wrap">
+                    <table class="management-table">
+                        <thead>
+                            <tr>
+                                <th><button class="table-sort-button" type="button" @onclick="() => SortServices(ServiceSortColumn.Active)">Active @GetServiceSortIndicator(ServiceSortColumn.Active)</button></th>
+                                <th><button class="table-sort-button" type="button" @onclick="() => SortServices(ServiceSortColumn.Name)">Name @GetServiceSortIndicator(ServiceSortColumn.Name)</button></th>
+                                <th><button class="table-sort-button" type="button" @onclick="() => SortServices(ServiceSortColumn.Category)">Category @GetServiceSortIndicator(ServiceSortColumn.Category)</button></th>
+                                @if (!IsHomeOwnerRoute)
+                                {
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortServices(ServiceSortColumn.Duration)">Duration @GetServiceSortIndicator(ServiceSortColumn.Duration)</button></th>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortServices(ServiceSortColumn.Price)">Price @GetServiceSortIndicator(ServiceSortColumn.Price)</button></th>
+                                }
+                                <th><button class="table-sort-button" type="button" @onclick="() => SortServices(ServiceSortColumn.Description)">Description @GetServiceSortIndicator(ServiceSortColumn.Description)</button></th>
+                                <th class="actions">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in FilteredServiceRows)
+                            {
+                                <tr>
+                                    <td>
+                                        <label class="switch-control" title="Toggle active state">
+                                            <input type="checkbox" checked="@row.Service.IsActive" @onchange="args => ToggleServiceActiveAsync(row.Service, args)" />
+                                            <span></span>
+                                        </label>
+                                    </td>
+                                    <td>@row.Service.Name</td>
+                                    <td>@row.Category.Name</td>
+                                    @if (!IsHomeOwnerRoute)
+                                    {
+                                        <td>@row.Service.DefaultDurationMinutes min</td>
+                                        <td>@row.Service.DefaultPrice.ToString("C")</td>
+                                    }
+                                    <td>@row.Service.Description</td>
+                                    <td class="actions">
+                                        <button class="icon-button icon-only" type="button" title="Edit service" aria-label="Edit service" @onclick="() => EditService(row.Service)">
+                                            <span class="action-icon edit-icon" aria-hidden="true"></span>
+                                        </button>
+                                        @if (row.Category.IsSystemManaged)
                                         {
-                                            <button class="icon-button danger" type="button" title="Archive category" @onclick="() => SetCategoryActiveAsync(group.Category, false)">Del</button>
+                                            <button class="icon-button icon-only" type="button" title="Copy service" aria-label="Copy service" @onclick="() => CopyServiceAsync(row.Service)">
+                                                <span class="action-icon copy-icon" aria-hidden="true"></span>
+                                            </button>
                                         }
-                                        else
+                                        @if (IsHomeOwnerRoute)
                                         {
-                                            <button class="icon-button" type="button" title="Reactivate category" @onclick="() => SetCategoryActiveAsync(group.Category, true)">On</button>
+                                            <button class="icon-button icon-only danger" type="button" title="Delete service" aria-label="Delete service" @onclick="() => DeleteServiceAsync(row.Service)">
+                                                <span class="action-icon delete-icon" aria-hidden="true"></span>
+                                            </button>
                                         }
                                     </td>
                                 </tr>
@@ -117,139 +232,125 @@ else
         }
     </section>
 
-    <section class="management-panel">
-        <div class="management-panel-header">
-            <h2>Services</h2>
-            <div class="management-panel-actions">
-                <button class="button primary" type="button" @onclick="ShowCreateService">Create</button>
-                <button class="icon-button" type="button" title="Toggle services" @onclick="ToggleServiceList">@(serviceListExpanded ? "^" : "v")</button>
+    @if (IsHomeOwnerRoute)
+    {
+        <section class="management-panel">
+            <div class="management-panel-header">
+                <h2>Add Services</h2>
+                <div class="management-panel-actions">
+                    <button class="button primary" type="button" @onclick="ShowCreateService">Create</button>
+                    <button class="icon-button" type="button" title="Toggle add services" @onclick="ToggleAddServicePanel">@(addServiceExpanded ? "^" : "v")</button>
+                </div>
             </div>
-        </div>
-        @if (serviceListExpanded)
-        {
-            <div class="management-panel-body">
-                @if (serviceEditorExpanded)
-                {
-                    <EditForm Model="serviceForm" OnValidSubmit="SaveServiceAsync" FormName="service-item-editor">
-                        <div class="editor-panel">
-                            <h3>@(serviceForm.IsEditing ? "Edit Service" : "Create Service")</h3>
-                <div class="form-grid">
-                    <label>
-                        Service ID
-                        <InputText class="form-control" @bind-Value="serviceForm.Id" disabled="@serviceForm.IsEditing" />
-                    </label>
-                    <label>
-                        Category
-                        <InputSelect class="form-control" @bind-Value="serviceForm.CategoryId">
-                            <option value="">Uncategorized</option>
-                            @foreach (var category in ServiceCategories)
-                            {
-                                <option value="@category.Id">@category.Name</option>
-                            }
-                        </InputSelect>
-                    </label>
-                    <label>
-                        Name
-                        <InputText class="form-control" @bind-Value="serviceForm.Name" />
-                    </label>
-                    <label>
-                        Duration minutes
-                        <InputNumber class="form-control" @bind-Value="serviceForm.DefaultDurationMinutes" />
-                    </label>
-                    <label>
-                        Default price
-                        <InputNumber class="form-control" @bind-Value="serviceForm.DefaultPrice" />
-                    </label>
-                    <label class="wide">
-                        Description
-                        <InputTextArea class="form-control" @bind-Value="serviceForm.Description" />
-                    </label>
-                    <label class="check-row">
-                        <InputCheckbox @bind-Value="serviceForm.IsTaxable" />
-                        <span>Taxable</span>
-                    </label>
-                    <label class="check-row">
-                        <InputCheckbox @bind-Value="serviceForm.IsActive" />
-                        <span>Active</span>
-                    </label>
-                </div>
-                <div class="form-actions">
-                    <button class="button primary" type="submit">Save Service</button>
-                                    <button class="button" type="button" @onclick="HideServiceEditor">Cancel</button>
-                </div>
-                        </div>
-                    </EditForm>
-                }
-                <div class="management-table-wrap">
-                    <table class="management-table">
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Active</th>
-                                <th>Name</th>
-                                <th>Category</th>
-                                <th>Description</th>
-                                <th class="actions">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var group in catalog.ServiceGroups)
-                            {
-                                @foreach (var service in group.Services)
+            @if (addServiceExpanded)
+            {
+                <div class="management-panel-body">
+                    @if (serviceEditorExpanded)
+                    {
+                        @ServiceEditor()
+                    }
+                    <div class="form-grid">
+                        <label class="wide">
+                            Find global services
+                            <input class="form-control" @bind="globalServiceFilter" @bind:event="oninput" placeholder="Filter by name, category, or description" />
+                        </label>
+                    </div>
+                    <div class="management-table-wrap">
+                        <table class="management-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Category</th>
+                                    <th>Description</th>
+                                    <th class="actions">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in FilteredGlobalServiceRows)
                                 {
                                     <tr>
-                                        <td>@service.Id</td>
-                                        <td>@(service.IsActive ? "Yes" : "No")</td>
-                                        <td>@service.Name</td>
-                                        <td>@group.Category.Name</td>
-                                        <td>@service.Description</td>
+                                        <td>@row.Service.Name</td>
+                                        <td>@row.Category.Name</td>
+                                        <td>@row.Service.Description</td>
                                         <td class="actions">
-                                            <button class="icon-button" type="button" title="Edit service" @onclick="() => EditService(service)">Edit</button>
-                                            @if (group.Category.IsSystemManaged)
-                                            {
-                                                <button class="icon-button" type="button" title="Copy service" @onclick="() => CopyServiceAsync(service)">Copy</button>
-                                            }
-                                            @if (service.IsActive)
-                                            {
-                                                <button class="icon-button danger" type="button" title="Archive service" @onclick="() => SetServiceActiveAsync(service, false)">Del</button>
-                                            }
-                                            else
-                                            {
-                                                <button class="icon-button" type="button" title="Reactivate service" @onclick="() => SetServiceActiveAsync(service, true)">On</button>
-                                            }
+                                            <button class="button" type="button" @onclick="() => AddGlobalServiceAsync(row.Service.Id)">Choose</button>
                                         </td>
                                     </tr>
                                 }
-                            }
-                        </tbody>
-                    </table>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-            </div>
-        }
-    </section>
+            }
+        </section>
+    }
 }
 
 @code {
     private string companyId = "";
     private CatalogOverview? catalog;
+    private CatalogOverview? globalCatalog;
     private ServiceCategoryForm categoryForm = new();
     private ServiceForm serviceForm = new();
     private bool categoryListExpanded = true;
     private bool serviceListExpanded = true;
+    private bool addServiceExpanded = true;
     private bool categoryEditorExpanded;
     private bool serviceEditorExpanded;
+    private IBrowserFile? seedFile;
+    private string? seedFileName;
+    private string globalServiceFilter = "";
+    private string categoryFilter = "";
+    private string serviceFilter = "";
+    private CategorySortColumn categorySortColumn = CategorySortColumn.Category;
+    private ServiceSortColumn serviceSortColumn = ServiceSortColumn.Name;
+    private bool categorySortDescending;
+    private bool serviceSortDescending;
     private string? message;
     private string? errorMessage;
     private bool IsSystemAdminRoute => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("admin/", StringComparison.OrdinalIgnoreCase);
-    private string PageScope => IsSystemAdminRoute ? "System Administrator" : "Company Admin";
+    private bool IsHomeOwnerRoute => string.Equals(Navigation.ToBaseRelativePath(Navigation.Uri).Trim('/'), "settings/services", StringComparison.OrdinalIgnoreCase);
+    private string PageScope => IsSystemAdminRoute ? "System Administrator" : IsHomeOwnerRoute ? "Home Owner" : "Company Admin";
+    private string ServiceFilterPlaceholder => IsHomeOwnerRoute
+        ? "Filter by active state, name, category, or description"
+        : "Filter by active state, name, category, duration, price, or description";
     private IReadOnlyList<ServiceCategory> ServiceCategories => catalog?.ServiceGroups.Select(g => g.Category).ToList() ?? [];
+    private IReadOnlyList<ServiceCategory> GlobalServiceCategories => globalCatalog?.ServiceGroups.Select(g => g.Category).ToList() ?? [];
+    private IReadOnlyList<ServiceCategory> AvailableServiceCategories => IsHomeOwnerRoute
+        ? GlobalServiceCategories
+            .Concat(ServiceCategories)
+            .GroupBy(category => category.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(category => category.Name)
+            .ToList()
+        : ServiceCategories;
+    private HashSet<string> ServiceIds => (catalog?.ServiceGroups ?? [])
+        .SelectMany(group => group.Services)
+        .Select(service => service.Id)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<ServiceGridRow> GlobalServiceRows => globalCatalog?.ServiceGroups
+        .SelectMany(group => group.Services.Select(service => new ServiceGridRow(group.Category, service)))
+        .Where(row => !ServiceIds.Contains(row.Service.Id))
+        .OrderBy(row => row.Category.Name)
+        .ThenBy(row => row.Service.Name)
+        .ToList() ?? [];
+    private IReadOnlyList<ServiceGridRow> FilteredGlobalServiceRows => GlobalServiceRows
+        .Where(MatchesGlobalServiceFilter)
+        .Take(50)
+        .ToList();
+    private IReadOnlyList<ServiceCategoryGroup> FilteredCategoryGroups => GetFilteredCategoryGroups();
+    private IReadOnlyList<ServiceGridRow> FilteredServiceRows => GetFilteredServiceRows();
 
     protected override async Task OnInitializedAsync()
     {
         if (IsSystemAdminRoute)
         {
             DemoUser.UserId = "sys-admin";
-            companyId = "clearwater";
+            companyId = "global";
+        }
+        else if (IsHomeOwnerRoute)
+        {
+            companyId = CurrentUser.UserId;
         }
         else
         {
@@ -259,12 +360,67 @@ else
         await LoadAsync();
     }
 
+    private RenderFragment ServiceEditor() =>
+        @<EditForm Model="serviceForm" OnValidSubmit="SaveServiceAsync" FormName="service-item-editor">
+            <div class="editor-panel">
+                <h3>@(serviceForm.IsEditing ? "Edit Service" : "Create Service")</h3>
+                <div class="form-grid">
+                    <label>
+                        Category
+                        <InputSelect class="form-control" @bind-Value="serviceForm.CategoryId">
+                            <option value="">Uncategorized</option>
+                            @foreach (var category in AvailableServiceCategories)
+                            {
+                                <option value="@category.Id">@category.Name</option>
+                            }
+                        </InputSelect>
+                    </label>
+                    <label>
+                        Name
+                        <InputText class="form-control" @bind-Value="serviceForm.Name" />
+                    </label>
+                    @if (!IsHomeOwnerRoute)
+                    {
+                        <label>
+                            Duration minutes
+                            <InputNumber class="form-control" @bind-Value="serviceForm.DefaultDurationMinutes" />
+                        </label>
+                        <label>
+                            Default price
+                            <InputNumber class="form-control" @bind-Value="serviceForm.DefaultPrice" />
+                        </label>
+                    }
+                    <label class="wide">
+                        Description
+                        <InputTextArea class="form-control" @bind-Value="serviceForm.Description" />
+                    </label>
+                    @if (!IsHomeOwnerRoute)
+                    {
+                        <label class="switch-control" title="Toggle taxable state">
+                            <input type="checkbox" checked="@serviceForm.IsTaxable" @onchange="args => serviceForm.IsTaxable = GetChecked(args)" />
+                            <span></span>
+                            <small>Taxable</small>
+                        </label>
+                    }
+                    <label class="switch-control" title="Toggle active state">
+                        <input type="checkbox" checked="@serviceForm.IsActive" @onchange="args => serviceForm.IsActive = GetChecked(args)" />
+                        <span></span>
+                        <small>Active</small>
+                    </label>
+                </div>
+                <div class="form-actions">
+                    <button class="button primary" type="submit">Save Service</button>
+                    <button class="button" type="button" @onclick="HideServiceEditor">Cancel</button>
+                </div>
+            </div>
+        </EditForm>;
+
     private async Task SaveCategoryAsync()
     {
         await RunAsync(async () =>
         {
             await CompanyAdminService.UpsertServiceCategoryAsync(new ServiceCategory(
-                categoryForm.Id,
+                GetCategoryRowKey(),
                 companyId,
                 categoryForm.Name,
                 categoryForm.Description,
@@ -280,8 +436,13 @@ else
     {
         await RunAsync(async () =>
         {
+            if (IsHomeOwnerRoute)
+            {
+                await EnsureHomeOwnerServiceCategoryAsync(serviceForm.CategoryId);
+            }
+
             await CompanyAdminService.UpsertServiceAsync(new ServiceOffering(
-                serviceForm.Id,
+                GetServiceRowKey(),
                 companyId,
                 serviceForm.CategoryId,
                 serviceForm.Name,
@@ -296,6 +457,57 @@ else
         });
     }
 
+    private async Task AddGlobalServiceAsync(string serviceId)
+    {
+        if (string.IsNullOrWhiteSpace(serviceId))
+        {
+            errorMessage = "Choose a global service before adding it.";
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            var row = GlobalServiceRows.FirstOrDefault(row => row.Service.Id == serviceId)
+                ?? throw new InvalidOperationException("Global service was not found.");
+
+            await EnsureHomeOwnerServiceCategoryAsync(row.Service.CategoryId);
+            await CompanyAdminService.UpsertServiceAsync(row.Service with
+            {
+                CompanyId = companyId,
+                IsActive = true
+            });
+
+            message = $"{row.Service.Name} was added to your services.";
+            globalServiceFilter = "";
+        });
+    }
+
+    private void OnSeedFileSelected(InputFileChangeEventArgs args)
+    {
+        seedFile = args.File;
+        seedFileName = seedFile.Name;
+        message = null;
+        errorMessage = null;
+    }
+
+    private async Task SeedServicesAsync()
+    {
+        if (seedFile is null)
+        {
+            errorMessage = "Choose a CSV file before seeding services.";
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            var rows = await ReadSeedRowsAsync(seedFile);
+            var result = await CompanyAdminService.SeedServicesAsync(companyId, rows);
+            message = $"Seeded {result.CategoriesSeeded} service categories and {result.ServicesSeeded} services.";
+            seedFile = null;
+            seedFileName = null;
+        });
+    }
+
     private async Task SetCategoryActiveAsync(ServiceCategory category, bool isActive)
     {
         await RunAsync(async () =>
@@ -304,6 +516,9 @@ else
             message = $"{category.Name} was {(isActive ? "reactivated" : "archived")}.";
         });
     }
+
+    private Task ToggleCategoryActiveAsync(ServiceCategory category, ChangeEventArgs args) =>
+        SetCategoryActiveAsync(category, GetChecked(args));
 
     private async Task CopyCategoryAsync(ServiceCategory category)
     {
@@ -323,12 +538,30 @@ else
         });
     }
 
+    private Task ToggleServiceActiveAsync(ServiceOffering service, ChangeEventArgs args) =>
+        SetServiceActiveAsync(service, GetChecked(args));
+
     private async Task CopyServiceAsync(ServiceOffering service)
     {
         await RunAsync(async () =>
         {
             var copy = await CompanyAdminService.CopyServiceAsync(companyId, service.Id);
             message = $"{service.Name} was copied to {copy.Name}.";
+        });
+    }
+
+    private async Task DeleteServiceAsync(ServiceOffering service)
+    {
+        await RunAsync(async () =>
+        {
+            await CompanyAdminService.DeleteServiceAsync(companyId, service.Id);
+            if (string.Equals(serviceForm.Id, service.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                ResetServiceForm();
+                serviceEditorExpanded = false;
+            }
+
+            message = $"{service.Name} was deleted.";
         });
     }
 
@@ -355,6 +588,36 @@ else
     private async Task LoadAsync()
     {
         catalog = await CompanyAdminService.GetCatalogOverviewAsync(companyId);
+        if (IsHomeOwnerRoute)
+        {
+            globalCatalog = await CompanyAdminService.GetCatalogOverviewAsync("global");
+        }
+        else
+        {
+            globalCatalog = null;
+        }
+    }
+
+    private async Task EnsureHomeOwnerServiceCategoryAsync(string? categoryId)
+    {
+        if (!IsHomeOwnerRoute || string.IsNullOrWhiteSpace(categoryId))
+        {
+            return;
+        }
+
+        if (ServiceCategories.Any(category => string.Equals(category.Id, categoryId, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        var sourceCategory = GlobalServiceCategories.FirstOrDefault(category => string.Equals(category.Id, categoryId, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException("Choose a service category from the global catalog.");
+        await CompanyAdminService.UpsertServiceCategoryAsync(sourceCategory with
+        {
+            CompanyId = companyId,
+            IsSystemManaged = false,
+            IsActive = true
+        });
     }
 
     private void EditCategory(ServiceCategory category)
@@ -405,6 +668,177 @@ else
 
     private void ToggleServiceList() => serviceListExpanded = !serviceListExpanded;
 
+    private void ToggleAddServicePanel() => addServiceExpanded = !addServiceExpanded;
+
+    private void SortCategories(CategorySortColumn column)
+    {
+        if (categorySortColumn == column)
+        {
+            categorySortDescending = !categorySortDescending;
+        }
+        else
+        {
+            categorySortColumn = column;
+            categorySortDescending = false;
+        }
+    }
+
+    private void SortServices(ServiceSortColumn column)
+    {
+        if (serviceSortColumn == column)
+        {
+            serviceSortDescending = !serviceSortDescending;
+        }
+        else
+        {
+            serviceSortColumn = column;
+            serviceSortDescending = false;
+        }
+    }
+
+    private string GetCategorySortIndicator(CategorySortColumn column) =>
+        categorySortColumn == column ? (categorySortDescending ? "v" : "^") : "";
+
+    private string GetServiceSortIndicator(ServiceSortColumn column) =>
+        serviceSortColumn == column ? (serviceSortDescending ? "v" : "^") : "";
+
+    private IReadOnlyList<ServiceCategoryGroup> GetFilteredCategoryGroups()
+    {
+        var groups = catalog?.ServiceGroups ?? [];
+        var filtered = groups.Where(group => MatchesCategoryFilter(group.Category));
+        filtered = categorySortColumn switch
+        {
+            CategorySortColumn.Active => ApplyCategorySort(filtered, group => group.Category.IsActive ? "1" : "0"),
+            CategorySortColumn.Category => ApplyCategorySort(filtered, group => group.Category.Name),
+            CategorySortColumn.Description => ApplyCategorySort(filtered, group => group.Category.Description),
+            _ => filtered
+        };
+
+        return filtered.ToList();
+    }
+
+    private IReadOnlyList<ServiceGridRow> GetFilteredServiceRows()
+    {
+        var rows = (catalog?.ServiceGroups ?? [])
+            .SelectMany(group => group.Services.Select(service => new ServiceGridRow(group.Category, service)))
+            .Where(MatchesServiceFilter);
+
+        rows = serviceSortColumn switch
+        {
+            ServiceSortColumn.Active => ApplyServiceSort(rows, row => row.Service.IsActive ? "1" : "0"),
+            ServiceSortColumn.Name => ApplyServiceSort(rows, row => row.Service.Name),
+            ServiceSortColumn.Category => ApplyServiceSort(rows, row => row.Category.Name),
+            ServiceSortColumn.Description => ApplyServiceSort(rows, row => row.Service.Description),
+            ServiceSortColumn.Duration => serviceSortDescending
+                ? rows.OrderByDescending(row => row.Service.DefaultDurationMinutes)
+                : rows.OrderBy(row => row.Service.DefaultDurationMinutes),
+            ServiceSortColumn.Price => serviceSortDescending
+                ? rows.OrderByDescending(row => row.Service.DefaultPrice)
+                : rows.OrderBy(row => row.Service.DefaultPrice),
+            _ => rows
+        };
+
+        return rows.ToList();
+    }
+
+    private IEnumerable<ServiceCategoryGroup> ApplyCategorySort(
+        IEnumerable<ServiceCategoryGroup> groups,
+        Func<ServiceCategoryGroup, string> keySelector) =>
+        categorySortDescending
+            ? groups.OrderByDescending(keySelector, StringComparer.OrdinalIgnoreCase)
+            : groups.OrderBy(keySelector, StringComparer.OrdinalIgnoreCase);
+
+    private IEnumerable<ServiceGridRow> ApplyServiceSort(
+        IEnumerable<ServiceGridRow> rows,
+        Func<ServiceGridRow, string> keySelector) =>
+        serviceSortDescending
+            ? rows.OrderByDescending(keySelector, StringComparer.OrdinalIgnoreCase)
+            : rows.OrderBy(keySelector, StringComparer.OrdinalIgnoreCase);
+
+    private bool MatchesCategoryFilter(ServiceCategory category)
+    {
+        if (string.IsNullOrWhiteSpace(categoryFilter))
+        {
+            return true;
+        }
+
+        return ContainsFilter(category.IsActive ? "active" : "inactive", categoryFilter) ||
+            ContainsFilter(category.Name, categoryFilter) ||
+            ContainsFilter(category.Description, categoryFilter);
+    }
+
+    private bool MatchesServiceFilter(ServiceGridRow row)
+    {
+        if (string.IsNullOrWhiteSpace(serviceFilter))
+        {
+            return true;
+        }
+
+        return ContainsFilter(row.Service.IsActive ? "active" : "inactive", serviceFilter) ||
+            ContainsFilter(row.Service.Name, serviceFilter) ||
+            ContainsFilter(row.Category.Name, serviceFilter) ||
+            ContainsFilter(row.Service.Description, serviceFilter) ||
+            (!IsHomeOwnerRoute && (
+            ContainsFilter($"{row.Service.DefaultDurationMinutes} min", serviceFilter) ||
+            ContainsFilter(row.Service.DefaultPrice.ToString("C"), serviceFilter)));
+    }
+
+    private bool MatchesGlobalServiceFilter(ServiceGridRow row)
+    {
+        if (string.IsNullOrWhiteSpace(globalServiceFilter))
+        {
+            return true;
+        }
+
+        return ContainsFilter(row.Service.Name, globalServiceFilter) ||
+            ContainsFilter(row.Category.Name, globalServiceFilter) ||
+            ContainsFilter(row.Service.Description, globalServiceFilter);
+    }
+
+    private static bool ContainsFilter(string? value, string filter) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        value.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private string GetCategoryRowKey() =>
+        categoryForm.IsEditing
+            ? categoryForm.Id
+            : categoryForm.Name;
+
+    private string GetServiceRowKey()
+    {
+        if (serviceForm.IsEditing)
+        {
+            return serviceForm.Id;
+        }
+
+        var categoryName = AvailableServiceCategories.FirstOrDefault(category => category.Id == serviceForm.CategoryId)?.Name;
+        return string.IsNullOrWhiteSpace(categoryName)
+            ? serviceForm.Name
+            : $"{categoryName} {serviceForm.Name}";
+    }
+
+    private static bool GetChecked(ChangeEventArgs args) =>
+        args.Value is bool value && value;
+
+    private sealed record ServiceGridRow(ServiceCategory Category, ServiceOffering Service);
+
+    private enum CategorySortColumn
+    {
+        Active,
+        Category,
+        Description
+    }
+
+    private enum ServiceSortColumn
+    {
+        Active,
+        Name,
+        Category,
+        Description,
+        Duration,
+        Price
+    }
+
     private sealed class ServiceCategoryForm
     {
         public string Id { get; set; } = "";
@@ -449,5 +883,93 @@ else
             IsActive = service.IsActive,
             IsEditing = true
         };
+    }
+
+    private static async Task<IReadOnlyList<ServiceSeedRow>> ReadSeedRowsAsync(IBrowserFile file)
+    {
+        await using var stream = file.OpenReadStream(maxAllowedSize: 1024 * 1024);
+        using var reader = new StreamReader(stream);
+        var text = await reader.ReadToEndAsync();
+        var records = ParseCsv(text);
+
+        if (records.Count == 0)
+        {
+            return [];
+        }
+
+        var header = records[0];
+        if (header.Count < 3 ||
+            !string.Equals(header[0], "Category", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(header[1], "Name", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(header[2], "Description", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Seed CSV must include Category, Name, and Description columns.");
+        }
+
+        return records
+            .Skip(1)
+            .Where(record => record.Any(value => !string.IsNullOrWhiteSpace(value)))
+            .Select(record => new ServiceSeedRow(
+                GetCsvValue(record, 0),
+                GetCsvValue(record, 1),
+                GetCsvValue(record, 2)))
+            .ToList();
+    }
+
+    private static string GetCsvValue(IReadOnlyList<string> record, int index) =>
+        index < record.Count ? record[index] : "";
+
+    private static IReadOnlyList<IReadOnlyList<string>> ParseCsv(string text)
+    {
+        var records = new List<IReadOnlyList<string>>();
+        var fields = new List<string>();
+        var field = new StringBuilder();
+        var inQuotes = false;
+
+        for (var i = 0; i < text.Length; i++)
+        {
+            var ch = text[i];
+            if (ch == '"')
+            {
+                if (inQuotes && i + 1 < text.Length && text[i + 1] == '"')
+                {
+                    field.Append('"');
+                    i++;
+                }
+                else
+                {
+                    inQuotes = !inQuotes;
+                }
+            }
+            else if (ch == ',' && !inQuotes)
+            {
+                fields.Add(field.ToString().Trim());
+                field.Clear();
+            }
+            else if ((ch == '\r' || ch == '\n') && !inQuotes)
+            {
+                if (ch == '\r' && i + 1 < text.Length && text[i + 1] == '\n')
+                {
+                    i++;
+                }
+
+                fields.Add(field.ToString().Trim());
+                field.Clear();
+                records.Add(fields.ToList());
+                fields.Clear();
+            }
+            else
+            {
+                field.Append(ch);
+            }
+        }
+
+        if (field.Length > 0 || fields.Count > 0)
+        {
+            fields.Add(field.ToString().Trim());
+            records.Add(fields.ToList());
+        }
+
+        return records;
     }
 }

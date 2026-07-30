@@ -20,6 +20,8 @@ public sealed class AzureStorageTableInitializer(IConfiguration configuration, I
         "UserCompanyMemberships",
         "CompanyClients",
         "IndependentHomeOwnerProfiles",
+        "HomeOwnerPoolEquipmentPhotos",
+        "IndependentHomeOwnerServiceHistory",
         "ClientTypes",
         "ServiceCategories",
         "MaterialCategories",

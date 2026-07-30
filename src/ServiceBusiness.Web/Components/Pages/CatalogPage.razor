@@ -2,7 +2,7 @@
 @rendermode InteractiveServer
 @using ServiceBusiness.Domain
 @inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
-@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+@inject ServiceBusiness.Web.CurrentCompanyContext CurrentCompany
 
 <PageTitle>Catalog</PageTitle>
 
@@ -105,10 +105,11 @@ else
 
 @code {
     private CatalogOverview? catalog;
+    private string companyId = "";
 
     protected override async Task OnInitializedAsync()
     {
-        DemoUser.UserId = "demo-owner-1";
-        catalog = await CompanyAdminService.GetCatalogOverviewAsync("clearwater");
+        companyId = await CurrentCompany.GetRequiredCompanyIdAsync([CompanyRole.CompanyAdmin, CompanyRole.CompanyUser]);
+        catalog = await CompanyAdminService.GetCatalogOverviewAsync(companyId);
     }
 }

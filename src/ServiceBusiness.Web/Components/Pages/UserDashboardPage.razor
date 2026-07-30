@@ -3,6 +3,9 @@
 @using ServiceBusiness.Application
 @using ServiceBusiness.Domain
 @inject OnboardingService OnboardingService
+@inject IndependentHomeOwnerService HomeOwnerService
+@inject PlatformAdminService PlatformAdminService
+@inject CompanyAdminService CompanyAdminService
 @inject ICurrentUserContext CurrentUser
 @inject ServiceBusiness.Web.ApplicationModeService ApplicationMode
 
@@ -11,6 +14,364 @@
 @if (overview is null)
 {
     <p>Loading account...</p>
+}
+else if (IsIndependentHomeOwner)
+{
+    <section class="dashboard-hero" style="background-image: linear-gradient(90deg, rgba(13, 30, 26, .68), rgba(13, 30, 26, .22)), url('@appMode.HeroImageUrl');">
+        <div>
+            <p class="eyebrow">Pool Service Operations</p>
+            <h1>PoolShark</h1>
+        </div>
+    </section>
+
+    <section class="page-header">
+        <div>
+            <p class="eyebrow">Dashboard</p>
+            <p class="lede">@homeOwnerDashboard?.Profile.HomeAddress</p>
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <div class="notice success">@message</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="notice error">@errorMessage</div>
+    }
+
+    @if (homeOwnerDashboard is null)
+    {
+        <p>Loading homeowner dashboard...</p>
+    }
+    else
+    {
+        <section class="management-panel">
+            <div class="management-panel-header">
+                <h2>Pool Equipment</h2>
+                <div class="management-panel-actions">
+                    <button class="icon-button" type="button" title="Toggle pool equipment" @onclick="TogglePoolEquipmentPanel">@(poolEquipmentExpanded ? "^" : "v")</button>
+                </div>
+            </div>
+            @if (poolEquipmentExpanded)
+            {
+                <div class="management-panel-body">
+                    <div class="management-table-wrap">
+                        <table class="management-table">
+                            <thead>
+                                <tr>
+                                    <th>Category</th>
+                                    <th>Manufacturer</th>
+                                    <th>Equipment</th>
+                                    <th>Model No</th>
+                                    <th>Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var group in homeOwnerDashboard.PoolEquipment.CategoryGroups)
+                                {
+                                    @foreach (var item in group.Items)
+                                    {
+                                        <tr>
+                                            <td>@group.Category.Name</td>
+                                            <td>@item.Manufacturer</td>
+                                            <td>@item.Name</td>
+                                            <td>@item.ModelNo</td>
+                                            <td>@item.Description</td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+        </section>
+
+        <section class="management-panel">
+            <div class="management-panel-header">
+                <h2>Service History</h2>
+                <div class="management-panel-actions">
+                    <button class="button primary" type="button" @onclick="ShowCreateHomeOwnerServiceItem">Add Service Item</button>
+                    <button class="icon-button" type="button" title="Toggle service history" @onclick="ToggleServiceHistoryPanel">@(serviceHistoryExpanded ? "^" : "v")</button>
+                </div>
+            </div>
+            @if (serviceHistoryExpanded)
+            {
+                <div class="management-panel-body">
+                    @if (serviceHistoryEditorExpanded)
+                    {
+                        <EditForm Model="serviceHistoryForm" OnValidSubmit="SaveHomeOwnerServiceItemAsync" FormName="homeowner-service-history-editor">
+                            <div class="editor-panel">
+                                <h3>@(serviceHistoryForm.IsEditing ? "Edit Service Item" : "Add Service Item")</h3>
+                                <div class="form-grid">
+                                    <label>
+                                        Service
+                                        <InputSelect class="form-control" @bind-Value="serviceHistoryForm.ServiceId">
+                                            <option value="">Choose service</option>
+                                            @foreach (var service in HomeOwnerServices)
+                                            {
+                                                <option value="@service.Id">@service.Name</option>
+                                            }
+                                        </InputSelect>
+                                    </label>
+                                    <label>
+                                        Date
+                                        <InputDate class="form-control" @bind-Value="serviceHistoryForm.ServiceDate" />
+                                    </label>
+                                    <label class="wide">
+                                        Notes
+                                        <InputTextArea class="form-control" @bind-Value="serviceHistoryForm.Notes" />
+                                    </label>
+                                </div>
+                                <div class="form-actions">
+                                    <button class="button primary" type="submit" disabled="@(HomeOwnerServices.Count == 0)">Save Service Item</button>
+                                    <button class="button" type="button" @onclick="HideHomeOwnerServiceItemEditor">Cancel</button>
+                                </div>
+                                @if (HomeOwnerServices.Count == 0)
+                                {
+                                    <p class="form-note">Define services under Settings before adding service history.</p>
+                                }
+                            </div>
+                        </EditForm>
+                    }
+                    @if (homeOwnerDashboard.ServiceHistory.Count == 0)
+                    {
+                        <p>No service history items yet.</p>
+                    }
+                    else
+                    {
+                        <div class="management-table-wrap">
+                            <table class="management-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date/Time</th>
+                                        <th>Service</th>
+                                        <th>Notes</th>
+                                        <th class="actions">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in homeOwnerDashboard.ServiceHistory)
+                                    {
+                                        <tr>
+                                            <td>@item.ServiceDateTime.ToLocalTime().ToString("g")</td>
+                                            <td>@GetServiceHistoryName(item)</td>
+                                            <td>@item.Notes</td>
+                                            <td class="actions">
+                                                <button class="icon-button icon-only" type="button" title="Edit service item" aria-label="Edit service item" @onclick="() => EditHomeOwnerServiceItem(item)">
+                                                    <span class="action-icon edit-icon" aria-hidden="true"></span>
+                                                </button>
+                                                <button class="icon-button icon-only danger" type="button" title="Delete service item" aria-label="Delete service item" @onclick="() => DeleteHomeOwnerServiceItemAsync(item)">
+                                                    <span class="action-icon delete-icon" aria-hidden="true"></span>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+    }
+}
+else if (IsSystemAdmin)
+{
+    <section class="dashboard-hero" style="background-image: linear-gradient(90deg, rgba(13, 30, 26, .68), rgba(13, 30, 26, .22)), url('@appMode.HeroImageUrl');">
+        <div>
+            <p class="eyebrow">System Administrator</p>
+            <h1>@appMode.ProductName Platform</h1>
+        </div>
+    </section>
+
+    <section class="page-header">
+        <div>
+            <p class="eyebrow">System Dashboard</p>
+            <h1>@overview.User.DisplayName</h1>
+            <p class="lede">Platform health, tenant setup, users, access requests, and catalog controls.</p>
+        </div>
+    </section>
+
+    @if (companyTypes is null || companies is null || emailLogs is null || userOverview is null)
+    {
+        <p>Loading system dashboard...</p>
+    }
+    else
+    {
+        <div class="metric-grid">
+            <a class="metric metric-button" href="admin/companies">
+                <span>Companies</span>
+                <strong>@companies.Count</strong>
+            </a>
+            <a class="metric metric-button" href="admin/companies">
+                <span>Company Types</span>
+                <strong>@companyTypes.Count</strong>
+            </a>
+            <a class="metric metric-button" href="admin/users">
+                <span>Active Users</span>
+                <strong>@userOverview.ActiveUsers</strong>
+            </a>
+            <a class="metric metric-button" href="admin/users">
+                <span>Pending Access</span>
+                <strong>@userOverview.PendingMemberships</strong>
+            </a>
+            <a class="metric metric-button" href="admin/users">
+                <span>Disabled Users</span>
+                <strong>@userOverview.DisabledUsers</strong>
+            </a>
+            <a class="metric metric-button" href="admin/email-log">
+                <span>Email Logs</span>
+                <strong>@emailLogs.Count</strong>
+            </a>
+        </div>
+
+        <section class="section">
+            <h2>System workspaces</h2>
+            <div class="quick-link-grid">
+                <a class="row-card quick-link" href="admin/companies">
+                    <strong>Companies</strong>
+                    <p>Tenant companies, company types, and setup state.</p>
+                </a>
+                <a class="row-card quick-link" href="admin/users">
+                    <strong>Users</strong>
+                    <p>User status, system-admin access, and pending memberships.</p>
+                </a>
+                <a class="row-card quick-link" href="admin/roles">
+                    <strong>Roles</strong>
+                    <p>Role definitions and permission labels.</p>
+                </a>
+                @if (appMode.IsPoolMode)
+                {
+                    <a class="row-card quick-link" href="admin/catalog/poolequipment">
+                        <strong>Pool Equipment</strong>
+                        <p>Global equipment categories and equipment models.</p>
+                    </a>
+                }
+                <a class="row-card quick-link" href="admin/catalog/materials">
+                    <strong>Materials</strong>
+                    <p>Global material categories and material catalog items.</p>
+                </a>
+                <a class="row-card quick-link" href="admin/catalog/services">
+                    <strong>Services</strong>
+                    <p>Global service categories and service catalog items.</p>
+                </a>
+            </div>
+        </section>
+    }
+}
+else if (IsBusinessOwner)
+{
+    <section class="dashboard-hero" style="background-image: linear-gradient(90deg, rgba(13, 30, 26, .68), rgba(13, 30, 26, .22)), url('@appMode.HeroImageUrl');">
+        <div>
+            <p class="eyebrow">Business Owner</p>
+            <h1>@BusinessOwnerAccess?.Company.Name</h1>
+        </div>
+    </section>
+
+    <section class="page-header">
+        <div>
+            <p class="eyebrow">Business Dashboard</p>
+            <h1>@BusinessOwnerAccess?.Company.Name</h1>
+            <p class="lede">Customers, staff, schedule, catalog, and pending access requests.</p>
+        </div>
+    </section>
+
+    @if (companyDashboard is null)
+    {
+        <p>Loading business dashboard...</p>
+    }
+    else
+    {
+        <div class="metric-grid">
+            <a class="metric metric-button" href="clients">
+                <span>Customers</span>
+                <strong>@companyDashboard.CustomerCount</strong>
+            </a>
+            <a class="metric metric-button" href="company/users">
+                <span>Employees</span>
+                <strong>@companyDashboard.EmployeeCount</strong>
+            </a>
+            <a class="metric metric-button" href="catalog/poolequipment">
+                <span>Equipment</span>
+                <strong>@companyDashboard.EquipmentCount</strong>
+            </a>
+            <a class="metric metric-button" href="catalog/materials">
+                <span>Materials</span>
+                <strong>@companyDashboard.MaterialCount</strong>
+            </a>
+            <a class="metric metric-button" href="catalog/services">
+                <span>Services</span>
+                <strong>@companyDashboard.ServiceCount</strong>
+            </a>
+            <a class="metric metric-button" href="company/users">
+                <span>Pending Access</span>
+                <strong>@companyDashboard.PendingAccessRequests.Count</strong>
+            </a>
+        </div>
+
+        <section class="section">
+            <h2>Business workspaces</h2>
+            <div class="quick-link-grid">
+                <a class="row-card quick-link" href="clients">
+                    <strong>Customers</strong>
+                    <p>Create and manage customer records.</p>
+                </a>
+                <a class="row-card quick-link" href="schedule">
+                    <strong>Schedule</strong>
+                    <p>Plan service work and assign visits.</p>
+                </a>
+                <a class="row-card quick-link" href="company/users">
+                    <strong>Company Users</strong>
+                    <p>Approve access and maintain team roles.</p>
+                </a>
+                <a class="row-card quick-link" href="catalog">
+                    <strong>Catalog</strong>
+                    <p>Manage service, material, and equipment catalogs.</p>
+                </a>
+            </div>
+        </section>
+    }
+}
+else if (IsBusinessClient)
+{
+    <section class="dashboard-hero" style="background-image: linear-gradient(90deg, rgba(13, 30, 26, .68), rgba(13, 30, 26, .22)), url('@appMode.HeroImageUrl');">
+        <div>
+            <p class="eyebrow">Business Client</p>
+            <h1>@BusinessClientAccess?.Company.Name</h1>
+        </div>
+    </section>
+
+    <section class="page-header">
+        <div>
+            <p class="eyebrow">Client Dashboard</p>
+            <h1>@overview.User.DisplayName</h1>
+            <p class="lede">Your pool equipment, account information, and service history.</p>
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>Client workspaces</h2>
+        <div class="quick-link-grid">
+            @if (appMode.IsPoolMode)
+            {
+                <a class="row-card quick-link" href="poolequipment">
+                    <strong>Pool Equipment</strong>
+                    <p>View equipment connected to your service account.</p>
+                </a>
+            }
+            <a class="row-card quick-link" href="profile">
+                <strong>General Info</strong>
+                <p>Review your profile, contact details, and notification settings.</p>
+            </a>
+            <a class="row-card quick-link" href="client-portal">
+                <strong>Service History</strong>
+                <p>Review completed service visits and customer-facing account details.</p>
+            </a>
+        </div>
+    </section>
 }
 else
 {
@@ -31,7 +392,6 @@ else
                 <p class="form-note">Test user authentication skipped.</p>
             }
         </div>
-        <a class="button" href="signin">Switch account</a>
     </section>
 
     <div class="metric-grid">
@@ -111,17 +471,151 @@ else
 
 @code {
     private UserAccessOverview? overview;
+    private IndependentHomeOwnerDashboard? homeOwnerDashboard;
     private IndependentHomeOwnerProfile? homeOwnerProfile;
+    private CatalogOverview? homeOwnerCatalog;
+    private ServiceHistoryForm serviceHistoryForm = new();
+    private IReadOnlyList<CompanyType>? companyTypes;
+    private IReadOnlyList<Company>? companies;
+    private IReadOnlyList<EmailLogEntry>? emailLogs;
+    private PlatformUserManagementOverview? userOverview;
+    private CompanyDashboard? companyDashboard;
     private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
+    private bool poolEquipmentExpanded = true;
+    private bool serviceHistoryExpanded = true;
+    private bool serviceHistoryEditorExpanded;
+    private string? message;
+    private string? errorMessage;
+    private bool IsSystemAdmin => overview?.User.IsSystemAdmin == true;
+    private bool IsIndependentHomeOwner => overview is not null && !IsSystemAdmin && overview.Companies.Count == 0;
+    private CompanyAccess? BusinessOwnerAccess => overview?.Companies.FirstOrDefault(c => c.Status == MembershipStatus.Active && c.Role == CompanyRole.CompanyAdmin);
+    private CompanyAccess? BusinessClientAccess => overview?.Companies.FirstOrDefault(c => c.Status == MembershipStatus.Active && c.Role == CompanyRole.CompanyClientUser);
+    private bool IsBusinessOwner => BusinessOwnerAccess is not null;
+    private bool IsBusinessClient => BusinessClientAccess is not null;
+    private IReadOnlyList<ServiceOffering> HomeOwnerServices => homeOwnerCatalog?.ServiceGroups
+        .SelectMany(group => group.Services)
+        .Where(service => service.IsActive)
+        .OrderBy(service => service.Name)
+        .ToList() ?? [];
 
     protected override async Task OnInitializedAsync()
     {
         appMode = await ApplicationMode.GetCurrentAsync();
         overview = await OnboardingService.GetAccessOverviewAsync(CurrentUser.UserId);
-        if (overview.Companies.Count == 0)
+        if (IsSystemAdmin)
+        {
+            companyTypes = await PlatformAdminService.GetCompanyTypesAsync();
+            companies = await PlatformAdminService.GetCompaniesAsync();
+            emailLogs = await PlatformAdminService.GetEmailLogsAsync();
+            userOverview = await PlatformAdminService.GetUserManagementOverviewAsync();
+        }
+        else if (IsIndependentHomeOwner)
         {
             homeOwnerProfile = await OnboardingService.GetIndependentHomeOwnerProfileAsync(CurrentUser.UserId);
+            homeOwnerDashboard = await HomeOwnerService.GetDashboardAsync();
+            homeOwnerCatalog = await CompanyAdminService.GetCatalogOverviewAsync(CurrentUser.UserId);
         }
+        else if (BusinessOwnerAccess is not null)
+        {
+            companyDashboard = await CompanyAdminService.GetDashboardAsync(BusinessOwnerAccess.Company.Id, DateOnly.FromDateTime(DateTime.Today));
+        }
+    }
+
+    private async Task SaveHomeOwnerServiceItemAsync()
+    {
+        await RunHomeOwnerActionAsync(async () =>
+        {
+            var item = serviceHistoryForm.IsEditing
+                ? await HomeOwnerService.UpdateServiceHistoryItemAsync(
+                    serviceHistoryForm.Id,
+                    serviceHistoryForm.ServiceId,
+                    DateOnly.FromDateTime(serviceHistoryForm.ServiceDate),
+                    serviceHistoryForm.Notes)
+                : await HomeOwnerService.AddServiceHistoryItemAsync(
+                    serviceHistoryForm.ServiceId,
+                    DateOnly.FromDateTime(serviceHistoryForm.ServiceDate),
+                    serviceHistoryForm.Notes);
+
+            ResetServiceHistoryForm();
+            serviceHistoryEditorExpanded = false;
+            message = $"{item.ServiceName} service item was saved for {item.ServiceDateTime.ToLocalTime():d}.";
+        });
+    }
+
+    private async Task DeleteHomeOwnerServiceItemAsync(IndependentHomeOwnerServiceHistoryItem item)
+    {
+        await RunHomeOwnerActionAsync(async () =>
+        {
+            await HomeOwnerService.DeleteServiceHistoryItemAsync(item.Id);
+            if (string.Equals(serviceHistoryForm.Id, item.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                ResetServiceHistoryForm();
+                serviceHistoryEditorExpanded = false;
+            }
+
+            message = $"{GetServiceHistoryName(item)} service item was deleted.";
+        });
+    }
+
+    private async Task RunHomeOwnerActionAsync(Func<Task> action)
+    {
+        message = null;
+        errorMessage = null;
+
+        try
+        {
+            await action();
+            homeOwnerDashboard = await HomeOwnerService.GetDashboardAsync();
+            homeOwnerCatalog = await CompanyAdminService.GetCatalogOverviewAsync(CurrentUser.UserId);
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private void ShowCreateHomeOwnerServiceItem()
+    {
+        ResetServiceHistoryForm();
+        serviceHistoryExpanded = true;
+        serviceHistoryEditorExpanded = true;
+    }
+
+    private void EditHomeOwnerServiceItem(IndependentHomeOwnerServiceHistoryItem item)
+    {
+        serviceHistoryForm = ServiceHistoryForm.FromItem(item);
+        serviceHistoryExpanded = true;
+        serviceHistoryEditorExpanded = true;
+    }
+
+    private void HideHomeOwnerServiceItemEditor()
+    {
+        ResetServiceHistoryForm();
+        serviceHistoryEditorExpanded = false;
+    }
+
+    private void ResetServiceHistoryForm() => serviceHistoryForm = new()
+    {
+        ServiceId = HomeOwnerServices.FirstOrDefault()?.Id ?? ""
+    };
+
+    private void TogglePoolEquipmentPanel() => poolEquipmentExpanded = !poolEquipmentExpanded;
+
+    private void ToggleServiceHistoryPanel() => serviceHistoryExpanded = !serviceHistoryExpanded;
+
+    private string GetServiceHistoryName(IndependentHomeOwnerServiceHistoryItem item)
+    {
+        if (!string.IsNullOrWhiteSpace(item.ServiceName))
+        {
+            return item.ServiceName;
+        }
+
+        return HomeOwnerServices.FirstOrDefault(service => string.Equals(service.Id, item.ServiceId, StringComparison.OrdinalIgnoreCase))?.Name
+            ?? "Service";
     }
 
     private static string GetRoleDescription(CompanyRole role) => role switch
@@ -132,7 +626,7 @@ else
         _ => role.ToString()
     };
 
-    private static IReadOnlyList<FeatureLink> GetFeatureLinks(CompanyRole role) => role switch
+    private IReadOnlyList<FeatureLink> GetFeatureLinks(CompanyRole role) => role switch
     {
         CompanyRole.CompanyAdmin =>
         [
@@ -144,12 +638,40 @@ else
         [
             new("Field Today", "field")
         ],
-        CompanyRole.CompanyClientUser =>
-        [
-            new("Client Portal", "client-portal")
-        ],
+        CompanyRole.CompanyClientUser => GetClientUserFeatureLinks(),
         _ => []
     };
 
+    private IReadOnlyList<FeatureLink> GetClientUserFeatureLinks()
+    {
+        var links = new List<FeatureLink>();
+        if (appMode.IsPoolMode)
+        {
+            links.Add(new("Pool Equipment", "poolequipment"));
+        }
+
+        links.Add(new("General Info", "profile"));
+        links.Add(new("Service History", "client-portal"));
+        return links;
+    }
+
     private sealed record FeatureLink(string Label, string Href);
+
+    private sealed class ServiceHistoryForm
+    {
+        public string Id { get; set; } = "";
+        public string ServiceId { get; set; } = "";
+        public DateTime ServiceDate { get; set; } = DateTime.Today;
+        public string Notes { get; set; } = "";
+        public bool IsEditing { get; set; }
+
+        public static ServiceHistoryForm FromItem(IndependentHomeOwnerServiceHistoryItem item) => new()
+        {
+            Id = item.Id,
+            ServiceId = item.ServiceId ?? "",
+            ServiceDate = item.ServiceDateTime.LocalDateTime.Date,
+            Notes = item.Notes,
+            IsEditing = true
+        };
+    }
 }

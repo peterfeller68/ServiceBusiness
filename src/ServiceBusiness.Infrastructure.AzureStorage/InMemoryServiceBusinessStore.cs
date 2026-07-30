@@ -14,6 +14,8 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
     private readonly List<ClientType> clientTypes = [];
     private readonly List<CompanyClient> clients = [];
     private readonly List<IndependentHomeOwnerProfile> independentHomeOwnerProfiles = [];
+    private readonly List<HomeOwnerPhotoRecord> homeOwnerPoolEquipmentPhotos = [];
+    private readonly List<IndependentHomeOwnerServiceHistoryItem> independentHomeOwnerServiceHistory = [];
     private readonly List<ServiceCategory> serviceCategories = [];
     private readonly List<MaterialCategory> materialCategories = [];
     private readonly List<PoolEquipmentCategory> poolEquipmentCategories = [];
@@ -23,10 +25,11 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
     private readonly List<ServiceVisit> visits = [];
     private readonly List<VisitCompletion> completions = [];
     private readonly List<EmailLogEntry> emailLogs = [];
-    private SystemSettings systemSettings = new(SystemMode.Pool);
+    private SystemSettings systemSettings;
 
-    public InMemoryServiceBusinessStore()
+    public InMemoryServiceBusinessStore(SystemSettings? defaultSystemSettings = null)
     {
+        systemSettings = defaultSystemSettings ?? new SystemSettings(SystemMode.Pool);
         Seed();
     }
 
@@ -74,6 +77,16 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
 
     public Task<IndependentHomeOwnerProfile?> GetIndependentHomeOwnerProfileAsync(string userId, CancellationToken cancellationToken = default) =>
         Task.FromResult(independentHomeOwnerProfiles.FirstOrDefault(p => p.UserId == userId));
+
+    public Task<IReadOnlyList<HomeOwnerPoolEquipmentPhoto>> GetHomeOwnerPoolEquipmentPhotosAsync(string userId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<HomeOwnerPoolEquipmentPhoto>>(homeOwnerPoolEquipmentPhotos
+            .Where(p => p.UserId == userId)
+            .Select(p => p.Photo)
+            .OrderByDescending(p => p.UploadedUtc)
+            .ToList());
+
+    public Task<IReadOnlyList<IndependentHomeOwnerServiceHistoryItem>> GetIndependentHomeOwnerServiceHistoryAsync(string userId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<IndependentHomeOwnerServiceHistoryItem>>(independentHomeOwnerServiceHistory.Where(h => h.UserId == userId).OrderByDescending(h => h.ServiceDateTime).ToList());
 
     public Task<IReadOnlyList<ServiceCategory>> GetServiceCategoriesAsync(string companyId, CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<ServiceCategory>>(serviceCategories.Where(c => c.CompanyId == companyId).ToList());
@@ -148,7 +161,33 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
 
     public Task UpsertIndependentHomeOwnerProfileAsync(IndependentHomeOwnerProfile profile, CancellationToken cancellationToken = default)
     {
-        Upsert(independentHomeOwnerProfiles, profile, existing => existing.UserId == profile.UserId);
+        Upsert(independentHomeOwnerProfiles, profile with { PoolEquipmentPhotos = null }, existing => existing.UserId == profile.UserId);
+        foreach (var photo in profile.PoolEquipmentPhotos ?? [])
+        {
+            Upsert(homeOwnerPoolEquipmentPhotos, new HomeOwnerPhotoRecord(profile.UserId, photo), existing => existing.UserId == profile.UserId && existing.Photo.Id == photo.Id);
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task UpsertHomeOwnerPoolEquipmentPhotoAsync(string userId, HomeOwnerPoolEquipmentPhoto photo, CancellationToken cancellationToken = default)
+    {
+        Upsert(homeOwnerPoolEquipmentPhotos, new HomeOwnerPhotoRecord(userId, photo), existing => existing.UserId == userId && existing.Photo.Id == photo.Id);
+        return Task.CompletedTask;
+    }
+
+    public Task DeleteHomeOwnerPoolEquipmentPhotoAsync(string userId, string photoId, CancellationToken cancellationToken = default)
+    {
+        lock (sync)
+        {
+            homeOwnerPoolEquipmentPhotos.RemoveAll(existing => existing.UserId == userId && existing.Photo.Id == photoId);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task UpsertIndependentHomeOwnerServiceHistoryItemAsync(IndependentHomeOwnerServiceHistoryItem item, CancellationToken cancellationToken = default)
+    {
+        Upsert(independentHomeOwnerServiceHistory, item, existing => existing.UserId == item.UserId && existing.Id == item.Id);
         return Task.CompletedTask;
     }
 
@@ -185,6 +224,26 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
     public Task UpsertPoolEquipmentItemAsync(PoolEquipmentItem item, CancellationToken cancellationToken = default)
     {
         Upsert(poolEquipmentItems, item, existing => existing.Scope == item.Scope && existing.ScopeOwnerId == item.ScopeOwnerId && existing.Id == item.Id);
+        return Task.CompletedTask;
+    }
+
+    public Task DeleteServiceAsync(string companyId, string serviceId, CancellationToken cancellationToken = default)
+    {
+        lock (sync)
+        {
+            services.RemoveAll(existing => existing.CompanyId == companyId && existing.Id == serviceId);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task DeletePoolEquipmentItemAsync(EquipmentScope scope, string scopeOwnerId, string itemId, CancellationToken cancellationToken = default)
+    {
+        lock (sync)
+        {
+            poolEquipmentItems.RemoveAll(existing => existing.Scope == scope && existing.ScopeOwnerId == scopeOwnerId && existing.Id == itemId);
+        }
+
         return Task.CompletedTask;
     }
 
@@ -227,6 +286,8 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
             }
         }
     }
+
+    private sealed record HomeOwnerPhotoRecord(string UserId, HomeOwnerPoolEquipmentPhoto Photo);
 
     private void Seed()
     {

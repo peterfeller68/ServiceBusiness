@@ -1,5 +1,7 @@
 @page "/signin"
 @rendermode InteractiveServer
+@inject IConfiguration Configuration
+@inject ServiceBusiness.Application.IServiceBusinessStore Store
 @inject NavigationManager Navigation
 
 <PageTitle>Sign In</PageTitle>
@@ -20,38 +22,59 @@
 <EditForm Model="form" OnValidSubmit="SignInAsync" FormName="signin">
     <div class="auth-panel">
         <a class="button primary auth-button" href="auth/google?returnUrl=/dashboard">Sign in with Google</a>
-        <div class="auth-divider">Test users</div>
-        <label>
-            Test user email
-            <InputText class="form-control" @bind-Value="form.Email" placeholder="owner-1@demo.example" />
-        </label>
+        @if (devTest)
+        {
+            <div class="auth-divider">Test users</div>
+            <label>
+                Test user id or email
+                <InputText class="form-control" @bind-Value="form.UserIdentifier" placeholder="pool1clean1-owner-1" />
+            </label>
+        }
         <div class="form-actions">
-            <button class="button" type="submit">Skip Google Auth</button>
+            @if (devTest)
+            {
+                <button class="button" type="submit">Skip Google Auth</button>
+            }
             <a class="button" href="register">Register</a>
         </div>
-        <p class="form-note">Seeded test users can skip Gmail authentication. Demo accounts include owner-1@demo.example, user-1@demo.example, and homeowner-1@independent.com.</p>
+        @if (devTest)
+        {
+            <p class="form-note">Seeded test users can skip Gmail authentication. Demo accounts include demo-owner-1, owner-1@demo.example, and homeowner-1@independent.com.</p>
+        }
     </div>
 </EditForm>
 
 @code {
     private readonly SignInForm form = new();
     private string? errorMessage;
+    private bool devTest;
+
+    protected override async Task OnInitializedAsync()
+    {
+        devTest = await SystemSettingsConfiguration.IsDevTestEnabledAsync(Configuration, Store);
+    }
 
     private async Task SignInAsync()
     {
-        if (string.IsNullOrWhiteSpace(form.Email))
+        if (!devTest)
         {
-            errorMessage = "Enter a seeded test user email or use Google sign-in.";
+            errorMessage = "Test mode is not enabled. Use Google sign-in.";
             return;
         }
 
-        var email = Uri.EscapeDataString(form.Email);
-        Navigation.NavigateTo($"auth/test-signin?email={email}&returnUrl=/dashboard", forceLoad: true);
+        if (string.IsNullOrWhiteSpace(form.UserIdentifier))
+        {
+            errorMessage = "Enter a seeded test user id or email, or use Google sign-in.";
+            return;
+        }
+
+        var userIdentifier = Uri.EscapeDataString(form.UserIdentifier);
+        Navigation.NavigateTo($"auth/test-signin?email={userIdentifier}&returnUrl=/dashboard", forceLoad: true);
         await Task.CompletedTask;
     }
 
     private sealed class SignInForm
     {
-        public string Email { get; set; } = "";
+        public string UserIdentifier { get; set; } = "";
     }
 }

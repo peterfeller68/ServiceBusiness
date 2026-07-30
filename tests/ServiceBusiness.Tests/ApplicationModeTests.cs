@@ -1,6 +1,7 @@
 using ServiceBusiness.Domain;
 using ServiceBusiness.Infrastructure.AzureStorage;
 using ServiceBusiness.Web;
+using Microsoft.Extensions.Configuration;
 
 namespace ServiceBusiness.Tests;
 
@@ -32,12 +33,38 @@ public sealed class ApplicationModeTests
     public async Task Application_mode_service_reads_persisted_system_settings()
     {
         var store = new InMemoryServiceBusinessStore();
-        await store.UpsertSystemSettingsAsync(new SystemSettings(SystemMode.Landscape));
+        await store.UpsertSystemSettingsAsync(new SystemSettings(SystemMode.Landscape, true));
         var service = new ApplicationModeService(store);
 
         var mode = await service.GetCurrentAsync();
 
         Assert.Equal(SystemMode.Landscape, mode.Mode);
         Assert.Equal("TreeShark", mode.ProductName);
+        Assert.True(mode.DevTest);
+    }
+
+    [Theory]
+    [InlineData("true", true)]
+    [InlineData("True", true)]
+    [InlineData("false", false)]
+    [InlineData("", false)]
+    public void Dev_test_setting_is_enabled_only_when_configured_true(string configuredValue, bool expected)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["SystemSettings:DevTest"] = configuredValue
+            })
+            .Build();
+
+        Assert.Equal(expected, SystemSettingsConfiguration.IsDevTest(configuration));
+    }
+
+    [Fact]
+    public void Dev_test_setting_defaults_to_disabled_when_missing()
+    {
+        var configuration = new ConfigurationBuilder().Build();
+
+        Assert.False(SystemSettingsConfiguration.IsDevTest(configuration));
     }
 }

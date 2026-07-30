@@ -27,7 +27,7 @@ else
             <p class="lede">Company setup and approval work that needs attention.</p>
         </div>
         <div class="page-actions">
-            <a class="button" href="settings/users">Users</a>
+            <a class="button" href="company/users">Users</a>
             <a class="button primary" href="schedule">Schedule</a>
         </div>
     </section>
@@ -37,22 +37,22 @@ else
             <span>Customers</span>
             <strong>@dashboard.CustomerCount</strong>
         </a>
-        <a class="metric metric-link" href="settings/users">
+        <a class="metric metric-link" href="company/users">
             <span>Employees</span>
             <strong>@dashboard.EmployeeCount</strong>
         </a>
         @if (appMode.IsPoolMode)
         {
-            <a class="metric metric-link" href="poolequipment">
+            <a class="metric metric-link" href="catalog/poolequipment">
                 <span>Pool Equipment</span>
                 <strong>@dashboard.EquipmentCount</strong>
             </a>
         }
-        <a class="metric metric-link" href="settings/materials">
+        <a class="metric metric-link" href="catalog/materials">
             <span>Materials</span>
             <strong>@dashboard.MaterialCount</strong>
         </a>
-        <a class="metric metric-link" href="settings/services">
+        <a class="metric metric-link" href="catalog/services">
             <span>Services</span>
             <strong>@dashboard.ServiceCount</strong>
         </a>

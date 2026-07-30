@@ -13,6 +13,7 @@ using ServiceBusiness.Infrastructure.Integrations;
 using ServiceBusiness.Web;
 
 var builder = WebApplication.CreateBuilder(args);
+var configuredPathBase = NormalizePathBase(builder.Configuration["Hosting:PathBase"]);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
@@ -68,7 +69,8 @@ if (bool.TryParse(builder.Configuration["AzureStorage:UseAzureStorage"], out var
 }
 else
 {
-    builder.Services.AddSingleton<IServiceBusinessStore, InMemoryServiceBusinessStore>();
+    builder.Services.AddSingleton<IServiceBusinessStore>(_ =>
+        new InMemoryServiceBusinessStore(SystemSettingsConfiguration.GetConfiguredDefaults(builder.Configuration)));
 }
 builder.Services.AddHostedService<AzureStorageTableInitializer>();
 builder.Services.AddSingleton<DemoCurrentUserContext>();
@@ -83,8 +85,14 @@ builder.Services.AddScoped<FieldWorkService>();
 builder.Services.AddScoped<ClientPortalService>();
 builder.Services.AddScoped<OnboardingService>();
 builder.Services.AddScoped<UserProfileService>();
+builder.Services.AddScoped<IndependentHomeOwnerService>();
 
 var app = builder.Build();
+
+if (!string.IsNullOrWhiteSpace(configuredPathBase))
+{
+    app.UsePathBase(configuredPathBase);
+}
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
@@ -113,7 +121,7 @@ app.MapGet("/auth/google", (HttpContext httpContext, IConfiguration configuratio
     return Results.Challenge(
         new AuthenticationProperties
         {
-            RedirectUri = $"/auth/google-complete?returnUrl={Uri.EscapeDataString(safeReturnUrl)}"
+            RedirectUri = GetAppRedirectUrl(httpContext, $"/auth/google-complete?returnUrl={Uri.EscapeDataString(safeReturnUrl)}")
         },
         [GoogleDefaults.AuthenticationScheme]);
 });
@@ -142,16 +150,23 @@ app.MapGet("/auth/google-complete", async (
         CookieAuthenticationDefaults.AuthenticationScheme,
         BuildAppPrincipal(overview.User, overview.AuthenticationSkipped));
 
-    return Results.Redirect(GetSafeReturnUrl(returnUrl));
+    return Results.Redirect(GetAppRedirectUrl(httpContext, returnUrl));
 });
 
 app.MapGet("/auth/test-signin", async (
     HttpContext httpContext,
+    IConfiguration configuration,
+    IServiceBusinessStore store,
     OnboardingService onboardingService,
     string email,
     string? returnUrl,
     CancellationToken cancellationToken) =>
 {
+    if (!await SystemSettingsConfiguration.IsDevTestEnabledAsync(configuration, store, cancellationToken))
+    {
+        return Results.BadRequest("Test mode is not enabled. Set SystemSettings:DevTest to true to skip Google authentication.");
+    }
+
     var overview = await onboardingService.SignInAsync(email, cancellationToken);
     if (overview is null)
     {
@@ -167,13 +182,13 @@ app.MapGet("/auth/test-signin", async (
         CookieAuthenticationDefaults.AuthenticationScheme,
         BuildAppPrincipal(overview.User, overview.AuthenticationSkipped));
 
-    return Results.Redirect(GetSafeReturnUrl(returnUrl));
+    return Results.Redirect(GetAppRedirectUrl(httpContext, returnUrl));
 });
 
 app.MapGet("/auth/signout", async (HttpContext httpContext) =>
 {
     await httpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-    return Results.Redirect("/");
+    return Results.Redirect(GetAppRedirectUrl(httpContext, "/"));
 });
 
 app.MapStaticAssets();
@@ -215,4 +230,34 @@ static string GetSafeReturnUrl(string? returnUrl)
     }
 
     return returnUrl.StartsWith('/') ? returnUrl : $"/{returnUrl}";
+}
+
+static string GetAppRedirectUrl(HttpContext httpContext, string? returnUrl)
+{
+    var safeReturnUrl = GetSafeReturnUrl(returnUrl);
+    var pathBase = httpContext.Request.PathBase.Value?.TrimEnd('/');
+    if (string.IsNullOrWhiteSpace(pathBase) ||
+        safeReturnUrl.Equals(pathBase, StringComparison.OrdinalIgnoreCase) ||
+        safeReturnUrl.StartsWith($"{pathBase}/", StringComparison.OrdinalIgnoreCase))
+    {
+        return safeReturnUrl;
+    }
+
+    return $"{pathBase}{safeReturnUrl}";
+}
+
+static string NormalizePathBase(string? pathBase)
+{
+    if (string.IsNullOrWhiteSpace(pathBase) || pathBase == "/")
+    {
+        return "";
+    }
+
+    var normalized = pathBase.Trim();
+    if (!normalized.StartsWith('/'))
+    {
+        normalized = $"/{normalized}";
+    }
+
+    return normalized.TrimEnd('/');
 }

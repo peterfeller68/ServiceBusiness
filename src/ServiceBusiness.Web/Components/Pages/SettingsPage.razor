@@ -46,10 +46,14 @@
                             }
                         </InputSelect>
                     </label>
+                    <label>
+                        DevTest Mode
+                        <InputCheckbox class="form-check-input" @bind-Value="settingsForm.DevTest" />
+                    </label>
                     <div>
                         <strong>@appMode.ProductName</strong>
                         <p>@appMode.ProductCategory</p>
-                        <small>Changing the mode updates the product name, hero image, and Pool Equipment visibility.</small>
+                        <small>Changing the mode updates the product name, hero image, and Pool Equipment visibility. DevTest controls whether seeded users can skip Google Auth.</small>
                     </div>
                 </div>
                 <div class="form-actions">
@@ -78,6 +82,7 @@
             {
                 var settings = await PlatformAdminService.GetSystemSettingsAsync();
                 settingsForm.SystemMode = settings.SystemMode;
+                settingsForm.DevTest = settings.DevTest;
             }
         }
     }
@@ -88,7 +93,7 @@
 
         try
         {
-            await PlatformAdminService.UpdateSystemModeAsync(settingsForm.SystemMode);
+            await PlatformAdminService.UpdateSystemSettingsAsync(new SystemSettings(settingsForm.SystemMode, settingsForm.DevTest));
             Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
         }
         catch (InvalidOperationException ex)
@@ -104,5 +109,7 @@
     private sealed class SystemSettingsForm
     {
         public SystemMode SystemMode { get; set; } = SystemMode.Pool;
+
+        public bool DevTest { get; set; }
     }
 }

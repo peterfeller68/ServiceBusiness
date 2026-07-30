@@ -1,4 +1,5 @@
 @page "/company/users"
+@page "/settings/users"
 @rendermode InteractiveServer
 @using ServiceBusiness.Application
 @using ServiceBusiness.Domain
@@ -13,7 +14,6 @@
         <h1>Users</h1>
         <p class="lede">Review access requests, manage company access, and update company-scoped roles.</p>
     </div>
-    <a class="button" href="company">Company Dashboard</a>
 </section>
 
 @if (!string.IsNullOrWhiteSpace(message))

@@ -3,8 +3,10 @@
 @page "/poolequipment"
 @rendermode InteractiveServer
 @using Microsoft.AspNetCore.Components
+@using System.Text
 @using ServiceBusiness.Domain
 @inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
+@inject ServiceBusiness.Application.IndependentHomeOwnerService HomeOwnerService
 @inject ServiceBusiness.Application.ICurrentUserContext CurrentUser
 @inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
 @inject ServiceBusiness.Web.CurrentCompanyContext CurrentCompany
@@ -21,7 +23,6 @@
             <h1>Pool Equipment</h1>
             <p class="lede">Create, edit, archive, and reactivate equipment categories and equipment items.</p>
         </div>
-        <a class="button" href="settings">Settings</a>
     </section>
 
     @if (!string.IsNullOrWhiteSpace(message))
@@ -40,6 +41,32 @@
     }
     else
     {
+        @if (IsSystemAdminRoute)
+        {
+            <section class="management-panel">
+                <div class="management-panel-header">
+                    <h2>Seed Equipment</h2>
+                </div>
+                <div class="management-panel-body">
+                    <div class="form-grid">
+                        <label class="wide">
+                            Equipment CSV
+                            <InputFile OnChange="OnSeedFileSelected" accept=".csv,text/csv" />
+                        </label>
+                    </div>
+                    <div class="form-actions">
+                        <button class="button primary" type="button" @onclick="SeedEquipmentAsync" disabled="@(seedFile is null)">Seed Table</button>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(seedFileName))
+                    {
+                        <p class="form-note">@seedFileName selected.</p>
+                    }
+                </div>
+            </section>
+        }
+
+        @if (!IsHomeOwnerRoute)
+        {
         <section class="management-panel">
             <div class="management-panel-header">
                 <h2>Equipment Categories</h2>
@@ -58,15 +85,7 @@
                                 <h3>@(categoryForm.IsEditing ? "Edit Category" : "Create Category")</h3>
                     <div class="form-grid">
                         <label>
-                            Category ID
-                            <InputText class="form-control" @bind-Value="categoryForm.Id" disabled="@categoryForm.IsEditing" />
-                        </label>
-                        <label>
-                            Manufacturer
-                            <InputText class="form-control" @bind-Value="categoryForm.Manufacturer" />
-                        </label>
-                        <label>
-                            Name
+                            Category
                             <InputText class="form-control" @bind-Value="categoryForm.Name" />
                         </label>
                         <label>
@@ -77,9 +96,10 @@
                             Description
                             <InputTextArea class="form-control" @bind-Value="categoryForm.Description" />
                         </label>
-                        <label class="check-row">
-                            <InputCheckbox @bind-Value="categoryForm.IsActive" />
-                            <span>Active</span>
+                        <label class="switch-control" title="Toggle active state">
+                            <input type="checkbox" checked="@categoryForm.IsActive" @onchange="args => categoryForm.IsActive = GetChecked(args)" />
+                            <span></span>
+                            <small>Active</small>
                         </label>
                     </div>
                     <div class="form-actions">
@@ -89,40 +109,43 @@
                             </div>
                         </EditForm>
                     }
+                    <div class="form-grid">
+                        <label class="wide">
+                            Filter categories
+                            <input class="form-control" @bind="categoryFilter" @bind:event="oninput" placeholder="Filter by active state, category, or description" />
+                        </label>
+                    </div>
                     <div class="management-table-wrap">
                         <table class="management-table">
                             <thead>
                                 <tr>
-                                    <th>ID</th>
-                                    <th>Active</th>
-                                    <th>Manufacturer</th>
-                                    <th>Name</th>
-                                    <th>Description</th>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortCategories(CategorySortColumn.Active)">Active @GetCategorySortIndicator(CategorySortColumn.Active)</button></th>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortCategories(CategorySortColumn.Category)">Category @GetCategorySortIndicator(CategorySortColumn.Category)</button></th>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortCategories(CategorySortColumn.Description)">Description @GetCategorySortIndicator(CategorySortColumn.Description)</button></th>
                                     <th class="actions">Action</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                @foreach (var group in overview.CategoryGroups)
+                                @foreach (var group in FilteredCategoryGroups)
                                 {
                                     <tr>
-                                        <td>@group.Category.Id</td>
-                                        <td>@(group.Category.IsActive ? "Yes" : "No")</td>
-                                        <td>@group.Category.Manufacturer</td>
+                                        <td>
+                                            <label class="switch-control" title="Toggle active state">
+                                                <input type="checkbox" checked="@group.Category.IsActive" @onchange="args => ToggleCategoryActiveAsync(group.Category, args)" />
+                                                <span></span>
+                                            </label>
+                                        </td>
                                         <td>@group.Category.Name</td>
                                         <td>@group.Category.Description</td>
                                         <td class="actions">
-                                            <button class="icon-button" type="button" title="Edit category" @onclick="() => EditCategory(group.Category)">Edit</button>
+                                            <button class="icon-button icon-only" type="button" title="Edit category" aria-label="Edit category" @onclick="() => EditCategory(group.Category)">
+                                                <span class="action-icon edit-icon" aria-hidden="true"></span>
+                                            </button>
                                             @if (group.Category.IsSystemManaged)
                                             {
-                                                <button class="icon-button" type="button" title="Copy category" @onclick="() => CopyCategoryAsync(group.Category)">Copy</button>
-                                            }
-                                            @if (group.Category.IsActive)
-                                            {
-                                                <button class="icon-button danger" type="button" title="Archive category" @onclick="() => SetCategoryActiveAsync(group.Category, false)">Del</button>
-                                            }
-                                            else
-                                            {
-                                                <button class="icon-button" type="button" title="Reactivate category" @onclick="() => SetCategoryActiveAsync(group.Category, true)">On</button>
+                                                <button class="icon-button icon-only" type="button" title="Copy category" aria-label="Copy category" @onclick="() => CopyCategoryAsync(group.Category)">
+                                                    <span class="action-icon copy-icon" aria-hidden="true"></span>
+                                                </button>
                                             }
                                         </td>
                                     </tr>
@@ -133,7 +156,169 @@
                 </div>
             }
         </section>
+        }
 
+        @if (IsHomeOwnerRoute)
+        {
+        <section class="management-panel">
+            <div class="management-panel-header">
+                <h2>Configuration</h2>
+                <div class="management-panel-actions">
+                    <button class="icon-button" type="button" title="Toggle equipment" @onclick="ToggleItemList">@(itemListExpanded ? "^" : "v")</button>
+                </div>
+            </div>
+            @if (itemListExpanded)
+            {
+                <div class="management-panel-body">
+                    <div class="form-grid">
+                        <label class="wide">
+                            Filter configured equipment
+                            <input class="form-control" @bind="equipmentFilter" @bind:event="oninput" placeholder="Filter by active state, manufacturer, name, category, model, or description" />
+                        </label>
+                    </div>
+                    <div class="management-table-wrap">
+                        <table class="management-table">
+                            <thead>
+                                <tr>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortEquipment(EquipmentSortColumn.Active)">Active @GetEquipmentSortIndicator(EquipmentSortColumn.Active)</button></th>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortEquipment(EquipmentSortColumn.Manufacturer)">Manufacturer @GetEquipmentSortIndicator(EquipmentSortColumn.Manufacturer)</button></th>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortEquipment(EquipmentSortColumn.Name)">Name @GetEquipmentSortIndicator(EquipmentSortColumn.Name)</button></th>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortEquipment(EquipmentSortColumn.Category)">Category @GetEquipmentSortIndicator(EquipmentSortColumn.Category)</button></th>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortEquipment(EquipmentSortColumn.ModelNo)">Model No @GetEquipmentSortIndicator(EquipmentSortColumn.ModelNo)</button></th>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortEquipment(EquipmentSortColumn.Description)">Description @GetEquipmentSortIndicator(EquipmentSortColumn.Description)</button></th>
+                                    <th class="actions">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in FilteredEquipmentRows)
+                                {
+                                    <tr>
+                                        <td>
+                                            <label class="switch-control" title="Toggle active state">
+                                                <input type="checkbox" checked="@row.Item.IsActive" @onchange="args => ToggleItemActiveAsync(row.Item, args)" />
+                                                <span></span>
+                                            </label>
+                                        </td>
+                                        <td>@row.Item.Manufacturer</td>
+                                        <td>@row.Item.Name</td>
+                                        <td>@row.Category.Name</td>
+                                        <td>@row.Item.ModelNo</td>
+                                        <td>@row.Item.Description</td>
+                                        <td class="actions">
+                                            <button class="icon-button icon-only" type="button" title="Edit equipment" aria-label="Edit equipment" @onclick="() => EditItem(row.Item)">
+                                                <span class="action-icon edit-icon" aria-hidden="true"></span>
+                                            </button>
+                                            <button class="icon-button icon-only danger" type="button" title="Delete equipment" aria-label="Delete equipment" @onclick="() => DeleteItemAsync(row.Item)">
+                                                <span class="action-icon delete-icon" aria-hidden="true"></span>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+        </section>
+
+        <section class="management-panel">
+            <div class="management-panel-header">
+                <h2>Add Pool Equipment</h2>
+                <div class="management-panel-actions">
+                    <button class="button primary" type="button" @onclick="ShowCreateItem">Create</button>
+                    <button class="icon-button" type="button" title="Toggle add pool equipment" @onclick="ToggleAddEquipmentPanel">@(addEquipmentExpanded ? "^" : "v")</button>
+                </div>
+            </div>
+            @if (addEquipmentExpanded)
+            {
+                <div class="management-panel-body">
+                    @if (itemEditorExpanded)
+                    {
+                        @EquipmentEditor()
+                    }
+                    <div class="form-grid">
+                        <label class="wide">
+                            Find global equipment
+                            <input class="form-control" @bind="globalEquipmentFilter" @bind:event="oninput" placeholder="Filter by manufacturer, name, model, category, or description" />
+                        </label>
+                    </div>
+                    <div class="management-table-wrap">
+                        <table class="management-table">
+                            <thead>
+                                <tr>
+                                    <th>Manufacturer</th>
+                                    <th>Name</th>
+                                    <th>Category</th>
+                                    <th>Model No</th>
+                                    <th class="actions">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in FilteredGlobalEquipmentRows)
+                                {
+                                    <tr>
+                                        <td>@row.Item.Manufacturer</td>
+                                        <td>@row.Item.Name</td>
+                                        <td>@row.Category.Name</td>
+                                        <td>@row.Item.ModelNo</td>
+                                        <td class="actions">
+                                            <button class="button" type="button" @onclick="() => AddGlobalEquipmentItemAsync(row.Item.Id)">Choose</button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+        </section>
+
+            <section class="management-panel">
+                <div class="management-panel-header">
+                    <h2>Equipment Pictures</h2>
+                    <div class="management-panel-actions">
+                        <button class="icon-button" type="button" title="Toggle equipment pictures" @onclick="TogglePicturesPanel">@(picturesExpanded ? "^" : "v")</button>
+                    </div>
+                </div>
+                @if (picturesExpanded)
+                {
+                <div class="management-panel-body">
+                    <div class="form-grid">
+                        <label class="wide">
+                            Upload pictures
+                            <InputFile OnChange="UploadHomeOwnerPhotosAsync" accept="image/*" multiple />
+                        </label>
+                    </div>
+                    @if (HomeOwnerPhotos.Count == 0)
+                    {
+                        <p>No pool equipment pictures uploaded.</p>
+                    }
+                    else
+                    {
+                        <div class="data-list">
+                            @foreach (var photo in HomeOwnerPhotos)
+                            {
+                                <article class="row-card">
+                                    <div>
+                                        <strong>@photo.FileName</strong>
+                                        <p>@photo.UploadedUtc.ToLocalTime().ToString("g")</p>
+                                        <button class="photo-thumb-button" type="button" @onclick="() => ShowPhoto(photo)" aria-label="Open larger image">
+                                            <img src="@photo.DataUrl" alt="@photo.FileName" />
+                                        </button>
+                                    </div>
+                                    <div class="row-actions">
+                                        <button class="button" type="button" @onclick="() => DeleteHomeOwnerPhotoAsync(photo.Id)">Delete</button>
+                                    </div>
+                                </article>
+                            }
+                        </div>
+                    }
+                </div>
+                }
+            </section>
+        }
+        else
+        {
         <section class="management-panel">
             <div class="management-panel-header">
                 <h2>Equipment</h2>
@@ -147,88 +332,54 @@
                 <div class="management-panel-body">
                     @if (itemEditorExpanded)
                     {
-                        <EditForm Model="itemForm" OnValidSubmit="SaveItemAsync" FormName="equipment-item-editor">
-                            <div class="editor-panel">
-                                <h3>@(itemForm.IsEditing ? "Edit Equipment" : "Create Equipment")</h3>
-                    <div class="form-grid">
-                        <label>
-                            Equipment ID
-                            <InputText class="form-control" @bind-Value="itemForm.Id" disabled="@itemForm.IsEditing" />
-                        </label>
-                        <label>
-                            Category
-                            <InputSelect class="form-control" @bind-Value="itemForm.CategoryId">
-                                <option value="">Choose category</option>
-                                @foreach (var category in EquipmentCategories)
-                                {
-                                    <option value="@category.Id">@category.Manufacturer - @category.Name</option>
-                                }
-                            </InputSelect>
-                        </label>
-                        <label>
-                            Name
-                            <InputText class="form-control" @bind-Value="itemForm.Name" />
-                        </label>
-                        <label>
-                            Image URL
-                            <InputText class="form-control" @bind-Value="itemForm.ImageUrl" />
-                        </label>
-                        <label class="wide">
-                            Description
-                            <InputTextArea class="form-control" @bind-Value="itemForm.Description" />
-                        </label>
-                        <label class="check-row">
-                            <InputCheckbox @bind-Value="itemForm.IsActive" />
-                            <span>Active</span>
-                        </label>
-                    </div>
-                    <div class="form-actions">
-                        <button class="button primary" type="submit">Save Equipment</button>
-                                        <button class="button" type="button" @onclick="HideItemEditor">Cancel</button>
-                    </div>
-                            </div>
-                        </EditForm>
+                        @EquipmentEditor()
                     }
+                    <div class="form-grid">
+                        <label class="wide">
+                            Filter equipment
+                            <input class="form-control" @bind="equipmentFilter" @bind:event="oninput" placeholder="Filter by active state, manufacturer, name, category, model, or description" />
+                        </label>
+                    </div>
                     <div class="management-table-wrap">
                         <table class="management-table">
                             <thead>
                                 <tr>
-                                    <th>ID</th>
-                                    <th>Active</th>
-                                    <th>Name</th>
-                                    <th>Category</th>
-                                    <th>Description</th>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortEquipment(EquipmentSortColumn.Active)">Active @GetEquipmentSortIndicator(EquipmentSortColumn.Active)</button></th>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortEquipment(EquipmentSortColumn.Manufacturer)">Manufacturer @GetEquipmentSortIndicator(EquipmentSortColumn.Manufacturer)</button></th>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortEquipment(EquipmentSortColumn.Name)">Name @GetEquipmentSortIndicator(EquipmentSortColumn.Name)</button></th>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortEquipment(EquipmentSortColumn.Category)">Category @GetEquipmentSortIndicator(EquipmentSortColumn.Category)</button></th>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortEquipment(EquipmentSortColumn.ModelNo)">Model No @GetEquipmentSortIndicator(EquipmentSortColumn.ModelNo)</button></th>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortEquipment(EquipmentSortColumn.Description)">Description @GetEquipmentSortIndicator(EquipmentSortColumn.Description)</button></th>
                                     <th class="actions">Action</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                @foreach (var group in overview.CategoryGroups)
+                                @foreach (var row in FilteredEquipmentRows)
                                 {
-                                    @foreach (var item in group.Items)
-                                    {
-                                        <tr>
-                                            <td>@item.Id</td>
-                                            <td>@(item.IsActive ? "Yes" : "No")</td>
-                                            <td>@item.Name</td>
-                                            <td>@group.Category.Name</td>
-                                            <td>@item.Description</td>
-                                            <td class="actions">
-                                                <button class="icon-button" type="button" title="Edit equipment" @onclick="() => EditItem(item)">Edit</button>
-                                                @if (group.Category.IsSystemManaged)
-                                                {
-                                                    <button class="icon-button" type="button" title="Copy equipment" @onclick="() => CopyItemAsync(item)">Copy</button>
-                                                }
-                                                @if (item.IsActive)
-                                                {
-                                                    <button class="icon-button danger" type="button" title="Archive equipment" @onclick="() => SetItemActiveAsync(item, false)">Del</button>
-                                                }
-                                                else
-                                                {
-                                                    <button class="icon-button" type="button" title="Reactivate equipment" @onclick="() => SetItemActiveAsync(item, true)">On</button>
-                                                }
-                                            </td>
-                                        </tr>
-                                    }
+                                    <tr>
+                                        <td>
+                                            <label class="switch-control" title="Toggle active state">
+                                                <input type="checkbox" checked="@row.Item.IsActive" @onchange="args => ToggleItemActiveAsync(row.Item, args)" />
+                                                <span></span>
+                                            </label>
+                                        </td>
+                                        <td>@row.Item.Manufacturer</td>
+                                        <td>@row.Item.Name</td>
+                                        <td>@row.Category.Name</td>
+                                        <td>@row.Item.ModelNo</td>
+                                        <td>@row.Item.Description</td>
+                                        <td class="actions">
+                                            <button class="icon-button icon-only" type="button" title="Edit equipment" aria-label="Edit equipment" @onclick="() => EditItem(row.Item)">
+                                                <span class="action-icon edit-icon" aria-hidden="true"></span>
+                                            </button>
+                                            @if (row.Category.IsSystemManaged)
+                                            {
+                                                <button class="icon-button icon-only" type="button" title="Copy equipment" aria-label="Copy equipment" @onclick="() => CopyItemAsync(row.Item)">
+                                                    <span class="action-icon copy-icon" aria-hidden="true"></span>
+                                                </button>
+                                            }
+                                        </td>
+                                    </tr>
                                 }
                             </tbody>
                         </table>
@@ -236,17 +387,45 @@
                 </div>
             }
         </section>
+        }
     }
+}
+
+@if (zoomedPhoto is not null)
+{
+    <div class="photo-modal-backdrop" @onclick="ClosePhoto">
+        <div class="photo-modal" @onclick:stopPropagation="true">
+            <div class="photo-modal-header">
+                <strong>@zoomedPhoto.FileName</strong>
+                <button class="icon-button icon-only" type="button" title="Close image" aria-label="Close image" @onclick="ClosePhoto">x</button>
+            </div>
+            <img src="@zoomedPhoto.DataUrl" alt="@zoomedPhoto.FileName" />
+        </div>
+    </div>
 }
 
 @code {
     private PoolEquipmentOverview? overview;
+    private PoolEquipmentOverview? globalOverview;
     private EquipmentCategoryForm categoryForm = new();
     private EquipmentItemForm itemForm = new();
     private bool categoryListExpanded = true;
     private bool itemListExpanded = true;
+    private bool addEquipmentExpanded = true;
+    private bool picturesExpanded = true;
     private bool categoryEditorExpanded;
     private bool itemEditorExpanded;
+    private IBrowserFile? seedFile;
+    private string? seedFileName;
+    private string globalEquipmentFilter = "";
+    private string categoryFilter = "";
+    private string equipmentFilter = "";
+    private CategorySortColumn categorySortColumn = CategorySortColumn.Category;
+    private EquipmentSortColumn equipmentSortColumn = EquipmentSortColumn.Name;
+    private bool categorySortDescending;
+    private bool equipmentSortDescending;
+    private IndependentHomeOwnerProfile? homeOwnerProfile;
+    private HomeOwnerPoolEquipmentPhoto? zoomedPhoto;
     private string? message;
     private string? errorMessage;
     private string companyId = "";
@@ -273,6 +452,33 @@
         _ => "Company"
     };
     private IReadOnlyList<PoolEquipmentCategory> EquipmentCategories => overview?.CategoryGroups.Select(g => g.Category).ToList() ?? [];
+    private IReadOnlyList<PoolEquipmentCategory> GlobalEquipmentCategories => globalOverview?.CategoryGroups.Select(g => g.Category).ToList() ?? [];
+    private IReadOnlyList<PoolEquipmentCategory> AvailableEquipmentCategories => IsHomeOwnerRoute
+        ? GlobalEquipmentCategories
+            .Concat(EquipmentCategories)
+            .GroupBy(category => category.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(category => category.Name)
+            .ToList()
+        : EquipmentCategories;
+    private HashSet<string> EquipmentItemIds => (overview?.CategoryGroups ?? [])
+        .SelectMany(group => group.Items)
+        .Select(item => item.Id)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<EquipmentGridRow> GlobalEquipmentRows => globalOverview?.CategoryGroups
+        .SelectMany(group => group.Items.Select(item => new EquipmentGridRow(group.Category, item)))
+        .Where(row => !EquipmentItemIds.Contains(row.Item.Id))
+        .OrderBy(row => row.Category.Name)
+        .ThenBy(row => row.Item.Manufacturer)
+        .ThenBy(row => row.Item.Name)
+        .ToList() ?? [];
+    private IReadOnlyList<EquipmentGridRow> FilteredGlobalEquipmentRows => GlobalEquipmentRows
+        .Where(MatchesGlobalEquipmentFilter)
+        .Take(50)
+        .ToList();
+    private IReadOnlyList<HomeOwnerPoolEquipmentPhoto> HomeOwnerPhotos => homeOwnerProfile?.PoolEquipmentPhotos ?? [];
+    private IReadOnlyList<PoolEquipmentCategoryGroup> FilteredCategoryGroups => GetFilteredCategoryGroups();
+    private IReadOnlyList<EquipmentGridRow> FilteredEquipmentRows => GetFilteredEquipmentRows();
 
     protected override async Task OnInitializedAsync()
     {
@@ -295,15 +501,63 @@
         await LoadAsync();
     }
 
+    private RenderFragment EquipmentEditor() =>
+        @<EditForm Model="itemForm" OnValidSubmit="SaveItemAsync" FormName="equipment-item-editor">
+            <div class="editor-panel">
+                <h3>@(itemForm.IsEditing ? "Edit Equipment" : "Create Equipment")</h3>
+                <div class="form-grid">
+                    <label>
+                        Category
+                        <InputSelect class="form-control" @bind-Value="itemForm.CategoryId">
+                            <option value="">Uncategorized</option>
+                            @foreach (var category in AvailableEquipmentCategories)
+                            {
+                                <option value="@category.Id">@category.Name</option>
+                            }
+                        </InputSelect>
+                    </label>
+                    <label>
+                        Manufacturer
+                        <InputText class="form-control" @bind-Value="itemForm.Manufacturer" />
+                    </label>
+                    <label>
+                        Name
+                        <InputText class="form-control" @bind-Value="itemForm.Name" />
+                    </label>
+                    <label>
+                        Model No
+                        <InputText class="form-control" @bind-Value="itemForm.ModelNo" />
+                    </label>
+                    <label>
+                        Image URL
+                        <InputText class="form-control" @bind-Value="itemForm.ImageUrl" />
+                    </label>
+                    <label class="wide">
+                        Description
+                        <InputTextArea class="form-control" @bind-Value="itemForm.Description" />
+                    </label>
+                    <label class="switch-control" title="Toggle active state">
+                        <input type="checkbox" checked="@itemForm.IsActive" @onchange="args => itemForm.IsActive = GetChecked(args)" />
+                        <span></span>
+                        <small>Active</small>
+                    </label>
+                </div>
+                <div class="form-actions">
+                    <button class="button primary" type="submit">Save Equipment</button>
+                    <button class="button" type="button" @onclick="HideItemEditor">Cancel</button>
+                </div>
+            </div>
+        </EditForm>;
+
     private async Task SaveCategoryAsync()
     {
         await RunAsync(async () =>
         {
             await CompanyAdminService.UpsertPoolEquipmentCategoryAsync(new PoolEquipmentCategory(
-                categoryForm.Id,
+                GetCategoryRowKey(),
                 Scope,
                 ScopeOwnerId,
-                categoryForm.Manufacturer,
+                "",
                 categoryForm.Name,
                 categoryForm.Description,
                 categoryForm.IsSystemManaged,
@@ -318,20 +572,141 @@
     {
         await RunAsync(async () =>
         {
+            if (IsHomeOwnerRoute)
+            {
+                await EnsureHomeOwnerCategoryAsync(itemForm.CategoryId);
+            }
+
             await CompanyAdminService.UpsertPoolEquipmentItemAsync(new PoolEquipmentItem(
-                itemForm.Id,
+                GetItemRowKey(),
                 Scope,
                 ScopeOwnerId,
                 itemForm.CategoryId,
                 itemForm.Name,
                 itemForm.Description,
                 itemForm.ImageUrl,
-                itemForm.IsActive));
+                itemForm.IsActive,
+                itemForm.ModelNo,
+                itemForm.Manufacturer));
             message = $"{itemForm.Name} was saved.";
             ResetItemForm();
             itemEditorExpanded = false;
         });
     }
+
+    private async Task AddGlobalEquipmentItemAsync(string itemId)
+    {
+        if (string.IsNullOrWhiteSpace(itemId))
+        {
+            errorMessage = "Choose global equipment before adding it.";
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            var row = GlobalEquipmentRows.FirstOrDefault(row => row.Item.Id == itemId)
+                ?? throw new InvalidOperationException("Global equipment item was not found.");
+
+            await EnsureHomeOwnerCategoryAsync(row.Item.CategoryId);
+            await CompanyAdminService.UpsertPoolEquipmentItemAsync(row.Item with
+            {
+                Scope = EquipmentScope.HomeOwner,
+                ScopeOwnerId = ScopeOwnerId,
+                IsActive = true
+            });
+
+            message = $"{row.Item.Name} was added to your pool equipment.";
+            globalEquipmentFilter = "";
+        });
+    }
+
+    private async Task DeleteItemAsync(PoolEquipmentItem item)
+    {
+        await RunAsync(async () =>
+        {
+            await CompanyAdminService.DeletePoolEquipmentItemAsync(Scope, ScopeOwnerId, item.Id);
+            if (string.Equals(itemForm.Id, item.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                ResetItemForm();
+                itemEditorExpanded = false;
+            }
+
+            message = $"{item.Name} was deleted.";
+        });
+    }
+
+    private void OnSeedFileSelected(InputFileChangeEventArgs args)
+    {
+        seedFile = args.File;
+        seedFileName = seedFile.Name;
+        message = null;
+        errorMessage = null;
+    }
+
+    private async Task SeedEquipmentAsync()
+    {
+        if (seedFile is null)
+        {
+            errorMessage = "Choose a CSV file before seeding equipment.";
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            var rows = await ReadSeedRowsAsync(seedFile);
+            var result = await CompanyAdminService.SeedPoolEquipmentAsync(Scope, ScopeOwnerId, rows);
+            message = $"Seeded {result.CategoriesSeeded} equipment categories and {result.EquipmentSeeded} equipment items.";
+            seedFile = null;
+            seedFileName = null;
+        });
+    }
+
+    private async Task UploadHomeOwnerPhotosAsync(InputFileChangeEventArgs args)
+    {
+        await RunAsync(async () =>
+        {
+            var photos = new List<HomeOwnerPoolEquipmentPhoto>();
+            foreach (var file in args.GetMultipleFiles())
+            {
+                await using var stream = file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
+                using var memory = new MemoryStream();
+                await stream.CopyToAsync(memory);
+                var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
+                photos.Add(new HomeOwnerPoolEquipmentPhoto(
+                    Guid.NewGuid().ToString("N"),
+                    file.Name,
+                    contentType,
+                    $"data:{contentType};base64,{Convert.ToBase64String(memory.ToArray())}",
+                    DateTimeOffset.UtcNow));
+            }
+
+            if (photos.Count == 0)
+            {
+                throw new InvalidOperationException("Choose at least one image to upload.");
+            }
+
+            homeOwnerProfile = await HomeOwnerService.AddPoolEquipmentPhotosAsync(photos);
+            message = $"{photos.Count} pool equipment picture{(photos.Count == 1 ? "" : "s")} uploaded.";
+        });
+    }
+
+    private async Task DeleteHomeOwnerPhotoAsync(string photoId)
+    {
+        await RunAsync(async () =>
+        {
+            homeOwnerProfile = await HomeOwnerService.DeletePoolEquipmentPhotoAsync(photoId);
+            if (string.Equals(zoomedPhoto?.Id, photoId, StringComparison.OrdinalIgnoreCase))
+            {
+                zoomedPhoto = null;
+            }
+
+            message = "Pool equipment picture was deleted.";
+        });
+    }
+
+    private void ShowPhoto(HomeOwnerPoolEquipmentPhoto photo) => zoomedPhoto = photo;
+
+    private void ClosePhoto() => zoomedPhoto = null;
 
     private async Task SetCategoryActiveAsync(PoolEquipmentCategory category, bool isActive)
     {
@@ -341,6 +716,9 @@
             message = $"{category.Name} was {(isActive ? "reactivated" : "archived")}.";
         });
     }
+
+    private Task ToggleCategoryActiveAsync(PoolEquipmentCategory category, ChangeEventArgs args) =>
+        SetCategoryActiveAsync(category, GetChecked(args));
 
     private async Task CopyCategoryAsync(PoolEquipmentCategory category)
     {
@@ -359,6 +737,9 @@
             message = $"{item.Name} was {(isActive ? "reactivated" : "archived")}.";
         });
     }
+
+    private Task ToggleItemActiveAsync(PoolEquipmentItem item, ChangeEventArgs args) =>
+        SetItemActiveAsync(item, GetChecked(args));
 
     private async Task CopyItemAsync(PoolEquipmentItem item)
     {
@@ -392,6 +773,38 @@
     private async Task LoadAsync()
     {
         overview = await CompanyAdminService.GetPoolEquipmentOverviewAsync(Scope, ScopeOwnerId);
+        if (IsHomeOwnerRoute)
+        {
+            globalOverview = await CompanyAdminService.GetPoolEquipmentOverviewAsync(EquipmentScope.Global, "global");
+            homeOwnerProfile = await HomeOwnerService.GetProfileAsync();
+        }
+        else
+        {
+            globalOverview = null;
+        }
+    }
+
+    private async Task EnsureHomeOwnerCategoryAsync(string categoryId)
+    {
+        if (!IsHomeOwnerRoute || string.IsNullOrWhiteSpace(categoryId))
+        {
+            return;
+        }
+
+        if (EquipmentCategories.Any(category => string.Equals(category.Id, categoryId, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        var sourceCategory = GlobalEquipmentCategories.FirstOrDefault(category => string.Equals(category.Id, categoryId, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException("Choose an equipment category from the global catalog.");
+        await CompanyAdminService.UpsertPoolEquipmentCategoryAsync(sourceCategory with
+        {
+            Scope = EquipmentScope.HomeOwner,
+            ScopeOwnerId = ScopeOwnerId,
+            IsSystemManaged = false,
+            IsActive = true
+        });
     }
 
     private void EditCategory(PoolEquipmentCategory category)
@@ -442,10 +855,178 @@
 
     private void ToggleItemList() => itemListExpanded = !itemListExpanded;
 
+    private void ToggleAddEquipmentPanel() => addEquipmentExpanded = !addEquipmentExpanded;
+
+    private void TogglePicturesPanel() => picturesExpanded = !picturesExpanded;
+
+    private void SortCategories(CategorySortColumn column)
+    {
+        if (categorySortColumn == column)
+        {
+            categorySortDescending = !categorySortDescending;
+        }
+        else
+        {
+            categorySortColumn = column;
+            categorySortDescending = false;
+        }
+    }
+
+    private void SortEquipment(EquipmentSortColumn column)
+    {
+        if (equipmentSortColumn == column)
+        {
+            equipmentSortDescending = !equipmentSortDescending;
+        }
+        else
+        {
+            equipmentSortColumn = column;
+            equipmentSortDescending = false;
+        }
+    }
+
+    private string GetCategorySortIndicator(CategorySortColumn column) =>
+        categorySortColumn == column ? (categorySortDescending ? "v" : "^") : "";
+
+    private string GetEquipmentSortIndicator(EquipmentSortColumn column) =>
+        equipmentSortColumn == column ? (equipmentSortDescending ? "v" : "^") : "";
+
+    private IReadOnlyList<PoolEquipmentCategoryGroup> GetFilteredCategoryGroups()
+    {
+        var groups = overview?.CategoryGroups ?? [];
+        var filtered = groups.Where(group => MatchesCategoryFilter(group.Category));
+        filtered = categorySortColumn switch
+        {
+            CategorySortColumn.Active => ApplyCategorySort(filtered, group => group.Category.IsActive ? "1" : "0"),
+            CategorySortColumn.Category => ApplyCategorySort(filtered, group => group.Category.Name),
+            CategorySortColumn.Description => ApplyCategorySort(filtered, group => group.Category.Description),
+            _ => filtered
+        };
+
+        return filtered.ToList();
+    }
+
+    private IReadOnlyList<EquipmentGridRow> GetFilteredEquipmentRows()
+    {
+        var rows = (overview?.CategoryGroups ?? [])
+            .SelectMany(group => group.Items.Select(item => new EquipmentGridRow(group.Category, item)))
+            .Where(MatchesEquipmentFilter);
+
+        rows = equipmentSortColumn switch
+        {
+            EquipmentSortColumn.Active => ApplyEquipmentSort(rows, row => row.Item.IsActive ? "1" : "0"),
+            EquipmentSortColumn.Manufacturer => ApplyEquipmentSort(rows, row => row.Item.Manufacturer),
+            EquipmentSortColumn.Name => ApplyEquipmentSort(rows, row => row.Item.Name),
+            EquipmentSortColumn.Category => ApplyEquipmentSort(rows, row => row.Category.Name),
+            EquipmentSortColumn.ModelNo => ApplyEquipmentSort(rows, row => row.Item.ModelNo),
+            EquipmentSortColumn.Description => ApplyEquipmentSort(rows, row => row.Item.Description),
+            _ => rows
+        };
+
+        return rows.ToList();
+    }
+
+    private IEnumerable<PoolEquipmentCategoryGroup> ApplyCategorySort(
+        IEnumerable<PoolEquipmentCategoryGroup> groups,
+        Func<PoolEquipmentCategoryGroup, string> keySelector) =>
+        categorySortDescending
+            ? groups.OrderByDescending(keySelector, StringComparer.OrdinalIgnoreCase)
+            : groups.OrderBy(keySelector, StringComparer.OrdinalIgnoreCase);
+
+    private IEnumerable<EquipmentGridRow> ApplyEquipmentSort(
+        IEnumerable<EquipmentGridRow> rows,
+        Func<EquipmentGridRow, string> keySelector) =>
+        equipmentSortDescending
+            ? rows.OrderByDescending(keySelector, StringComparer.OrdinalIgnoreCase)
+            : rows.OrderBy(keySelector, StringComparer.OrdinalIgnoreCase);
+
+    private bool MatchesCategoryFilter(PoolEquipmentCategory category)
+    {
+        if (string.IsNullOrWhiteSpace(categoryFilter))
+        {
+            return true;
+        }
+
+        return ContainsFilter(category.IsActive ? "active" : "inactive", categoryFilter) ||
+            ContainsFilter(category.Name, categoryFilter) ||
+            ContainsFilter(category.Description, categoryFilter);
+    }
+
+    private bool MatchesEquipmentFilter(EquipmentGridRow row)
+    {
+        if (string.IsNullOrWhiteSpace(equipmentFilter))
+        {
+            return true;
+        }
+
+        return ContainsFilter(row.Item.IsActive ? "active" : "inactive", equipmentFilter) ||
+            ContainsFilter(row.Item.Manufacturer, equipmentFilter) ||
+            ContainsFilter(row.Item.Name, equipmentFilter) ||
+            ContainsFilter(row.Category.Name, equipmentFilter) ||
+            ContainsFilter(row.Item.ModelNo, equipmentFilter) ||
+            ContainsFilter(row.Item.Description, equipmentFilter);
+    }
+
+    private bool MatchesGlobalEquipmentFilter(EquipmentGridRow row)
+    {
+        if (string.IsNullOrWhiteSpace(globalEquipmentFilter))
+        {
+            return true;
+        }
+
+        return ContainsFilter(row.Item.Manufacturer, globalEquipmentFilter) ||
+            ContainsFilter(row.Item.Name, globalEquipmentFilter) ||
+            ContainsFilter(row.Category.Name, globalEquipmentFilter) ||
+            ContainsFilter(row.Item.ModelNo, globalEquipmentFilter) ||
+            ContainsFilter(row.Item.Description, globalEquipmentFilter);
+    }
+
+    private static bool ContainsFilter(string? value, string filter) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        value.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private string GetCategoryRowKey() =>
+        categoryForm.IsEditing
+            ? categoryForm.Id
+            : categoryForm.Name;
+
+    private string GetItemRowKey()
+    {
+        if (itemForm.IsEditing)
+        {
+            return itemForm.Id;
+        }
+
+        return string.IsNullOrWhiteSpace(itemForm.ModelNo)
+            ? itemForm.Name
+            : $"{itemForm.Name} {itemForm.ModelNo}";
+    }
+
+    private static bool GetChecked(ChangeEventArgs args) =>
+        args.Value is bool value && value;
+
+    private sealed record EquipmentGridRow(PoolEquipmentCategory Category, PoolEquipmentItem Item);
+
+    private enum CategorySortColumn
+    {
+        Active,
+        Category,
+        Description
+    }
+
+    private enum EquipmentSortColumn
+    {
+        Active,
+        Manufacturer,
+        Name,
+        Category,
+        ModelNo,
+        Description
+    }
+
     private sealed class EquipmentCategoryForm
     {
         public string Id { get; set; } = "";
-        public string Manufacturer { get; set; } = "";
         public string Name { get; set; } = "";
         public string Description { get; set; } = "";
         public bool IsSystemManaged { get; set; }
@@ -455,7 +1036,6 @@
         public static EquipmentCategoryForm FromCategory(PoolEquipmentCategory category) => new()
         {
             Id = category.Id,
-            Manufacturer = category.Manufacturer,
             Name = category.Name,
             Description = category.Description,
             IsSystemManaged = category.IsSystemManaged,
@@ -468,7 +1048,9 @@
     {
         public string Id { get; set; } = "";
         public string CategoryId { get; set; } = "";
+        public string Manufacturer { get; set; } = "";
         public string Name { get; set; } = "";
+        public string ModelNo { get; set; } = "";
         public string Description { get; set; } = "";
         public string? ImageUrl { get; set; }
         public bool IsActive { get; set; } = true;
@@ -478,11 +1060,103 @@
         {
             Id = item.Id,
             CategoryId = item.CategoryId,
+            Manufacturer = item.Manufacturer,
             Name = item.Name,
+            ModelNo = item.ModelNo,
             Description = item.Description,
             ImageUrl = item.ImageUrl,
             IsActive = item.IsActive,
             IsEditing = true
         };
+    }
+
+    private static async Task<IReadOnlyList<PoolEquipmentSeedRow>> ReadSeedRowsAsync(IBrowserFile file)
+    {
+        await using var stream = file.OpenReadStream(maxAllowedSize: 1024 * 1024);
+        using var reader = new StreamReader(stream);
+        var text = await reader.ReadToEndAsync();
+        var records = ParseCsv(text);
+
+        if (records.Count == 0)
+        {
+            return [];
+        }
+
+        var header = records[0];
+        if (header.Count < 4 ||
+            !string.Equals(header[0], "Manufacturer", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(header[1], "Category", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(header[2], "Name", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(header[3], "Model No", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Seed CSV must include Manufacturer, Category, Name, and Model No columns.");
+        }
+
+        return records
+            .Skip(1)
+            .Where(record => record.Any(value => !string.IsNullOrWhiteSpace(value)))
+            .Select(record => new PoolEquipmentSeedRow(
+                GetCsvValue(record, 0),
+                GetCsvValue(record, 1),
+                GetCsvValue(record, 2),
+                GetCsvValue(record, 3)))
+            .ToList();
+    }
+
+    private static string GetCsvValue(IReadOnlyList<string> record, int index) =>
+        index < record.Count ? record[index] : "";
+
+    private static IReadOnlyList<IReadOnlyList<string>> ParseCsv(string text)
+    {
+        var records = new List<IReadOnlyList<string>>();
+        var fields = new List<string>();
+        var field = new StringBuilder();
+        var inQuotes = false;
+
+        for (var i = 0; i < text.Length; i++)
+        {
+            var ch = text[i];
+            if (ch == '"')
+            {
+                if (inQuotes && i + 1 < text.Length && text[i + 1] == '"')
+                {
+                    field.Append('"');
+                    i++;
+                }
+                else
+                {
+                    inQuotes = !inQuotes;
+                }
+            }
+            else if (ch == ',' && !inQuotes)
+            {
+                fields.Add(field.ToString().Trim());
+                field.Clear();
+            }
+            else if ((ch == '\r' || ch == '\n') && !inQuotes)
+            {
+                if (ch == '\r' && i + 1 < text.Length && text[i + 1] == '\n')
+                {
+                    i++;
+                }
+
+                fields.Add(field.ToString().Trim());
+                field.Clear();
+                records.Add(fields.ToList());
+                fields.Clear();
+            }
+            else
+            {
+                field.Append(ch);
+            }
+        }
+
+        if (field.Length > 0 || fields.Count > 0)
+        {
+            fields.Add(field.ToString().Trim());
+            records.Add(fields.ToList());
+        }
+
+        return records;
     }
 }

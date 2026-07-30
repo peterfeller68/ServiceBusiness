@@ -77,7 +77,7 @@ public enum SystemMode
     Landscape
 }
 
-public sealed record SystemSettings(SystemMode SystemMode);
+public sealed record SystemSettings(SystemMode SystemMode, bool DevTest = false);
 
 public sealed record AppUser(
     string Id,
@@ -175,7 +175,16 @@ public sealed record IndependentHomeOwnerProfile(
     string HomeAddress,
     string AccessNotes,
     DateTimeOffset CreatedUtc,
-    DateTimeOffset UpdatedUtc);
+    DateTimeOffset UpdatedUtc,
+    IReadOnlyList<HomeOwnerPoolEquipmentPhoto>? PoolEquipmentPhotos = null,
+    string GeneralNotes = "");
+
+public sealed record HomeOwnerPoolEquipmentPhoto(
+    string Id,
+    string FileName,
+    string ContentType,
+    string DataUrl,
+    DateTimeOffset UploadedUtc);
 
 public sealed record ServiceOffering(
     string Id,
@@ -188,6 +197,15 @@ public sealed record ServiceOffering(
     bool IsTaxable,
     bool IsActive);
 
+public sealed record ServiceSeedRow(
+    string Category,
+    string Name,
+    string Description);
+
+public sealed record ServiceSeedResult(
+    int CategoriesSeeded,
+    int ServicesSeeded);
+
 public sealed record Material(
     string Id,
     string CompanyId,
@@ -197,7 +215,19 @@ public sealed record Material(
     decimal DefaultUnitCost,
     decimal DefaultBillableUnitPrice,
     bool IsTaxable,
-    bool IsActive);
+    bool IsActive,
+    string Brand = "",
+    string ModelNo = "");
+
+public sealed record MaterialSeedRow(
+    string Brand,
+    string Category,
+    string Name,
+    string ModelNo);
+
+public sealed record MaterialSeedResult(
+    int CategoriesSeeded,
+    int MaterialsSeeded);
 
 public sealed record PoolEquipmentItem(
     string Id,
@@ -207,7 +237,19 @@ public sealed record PoolEquipmentItem(
     string Name,
     string Description,
     string? ImageUrl,
-    bool IsActive);
+    bool IsActive,
+    string ModelNo = "",
+    string Manufacturer = "");
+
+public sealed record PoolEquipmentSeedRow(
+    string Manufacturer,
+    string Category,
+    string Name,
+    string ModelNo);
+
+public sealed record PoolEquipmentSeedResult(
+    int CategoriesSeeded,
+    int EquipmentSeeded);
 
 public sealed record ServiceVisit(
     string Id,
@@ -244,6 +286,16 @@ public sealed record ServiceHistoryItem(
     AppUser? AssignedUser,
     VisitCompletion? Completion);
 
+public sealed record IndependentHomeOwnerServiceHistoryItem(
+    string Id,
+    string UserId,
+    DateTimeOffset ServiceDateTime,
+    string Notes,
+    DateTimeOffset CreatedUtc,
+    string? ServiceId = "",
+    string ServiceName = "",
+    bool IsDeleted = false);
+
 public sealed record CatalogOverview(
     IReadOnlyList<ServiceCategoryGroup> ServiceGroups,
     IReadOnlyList<MaterialCategoryGroup> MaterialGroups);
@@ -262,6 +314,12 @@ public sealed record PoolEquipmentOverview(
 public sealed record PoolEquipmentCategoryGroup(
     PoolEquipmentCategory Category,
     IReadOnlyList<PoolEquipmentItem> Items);
+
+public sealed record IndependentHomeOwnerDashboard(
+    AppUser User,
+    IndependentHomeOwnerProfile Profile,
+    PoolEquipmentOverview PoolEquipment,
+    IReadOnlyList<IndependentHomeOwnerServiceHistoryItem> ServiceHistory);
 
 public sealed record CompanyDashboard(
     Company Company,

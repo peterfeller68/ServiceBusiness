@@ -2,6 +2,9 @@
 @using ServiceBusiness.Application
 @using ServiceBusiness.Domain
 @using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using ServiceBusiness.Web
+@implements IDisposable
 @inject OnboardingService OnboardingService
 @inject ICurrentUserContext CurrentUser
 @inject AuthenticationStateProvider AuthenticationStateProvider
@@ -16,11 +19,7 @@
         <div class="top-row px-4">
             <span>@appMode.ProductName Azure-ready Blazor SaaS MVP</span>
             <div class="profile-chip">
-                @if (currentUser is null)
-                {
-                    <a href="signin">Sign in</a>
-                }
-                else
+                @if (currentUser is not null)
                 {
                     <a class="profile-link" href="profile" title="Open account profile">
                         <span>@currentUser.DisplayName</span>
@@ -50,22 +49,56 @@
     protected override async Task OnInitializedAsync()
     {
         appMode = await ApplicationMode.GetCurrentAsync();
+        AuthenticationStateProvider.AuthenticationStateChanged += OnAuthenticationStateChanged;
 
+        await LoadUserStateAsync(await AuthenticationStateProvider.GetAuthenticationStateAsync());
+    }
+
+    private async void OnAuthenticationStateChanged(Task<AuthenticationState> authenticationStateTask)
+    {
         try
         {
-            var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
-            if (authenticationState.User.Identity?.IsAuthenticated == true)
+            var authenticationState = await authenticationStateTask;
+            await InvokeAsync(async () =>
             {
-                var overview = await OnboardingService.GetAccessOverviewAsync(CurrentUser.UserId);
-                currentUser = overview.User;
-                currentRoleLabel = GetRoleLabel(overview);
-            }
+                await LoadUserStateAsync(authenticationState);
+                StateHasChanged();
+            });
         }
         catch
         {
-            currentUser = null;
-            currentRoleLabel = "";
+            await InvokeAsync(() =>
+            {
+                ResetUserState();
+                StateHasChanged();
+            });
         }
+    }
+
+    private async Task LoadUserStateAsync(AuthenticationState authenticationState)
+    {
+        ResetUserState();
+        if (authenticationState.User.Identity?.IsAuthenticated != true)
+        {
+            return;
+        }
+
+        var userId = authenticationState.User.FindFirstValue(ServiceBusinessClaimTypes.AppUserId)
+            ?? CurrentUser.UserId;
+        var overview = await OnboardingService.GetAccessOverviewAsync(userId);
+        currentUser = overview.User;
+        currentRoleLabel = GetRoleLabel(overview);
+    }
+
+    private void ResetUserState()
+    {
+        currentUser = null;
+        currentRoleLabel = "";
+    }
+
+    public void Dispose()
+    {
+        AuthenticationStateProvider.AuthenticationStateChanged -= OnAuthenticationStateChanged;
     }
 
     private static string GetRoleLabel(UserAccessOverview overview)
