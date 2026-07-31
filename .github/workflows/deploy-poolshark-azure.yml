@@ -10,6 +10,7 @@ env:
   DOTNET_VERSION: 9.0.x
   WEB_PROJECT: src/ServiceBusiness.Web/ServiceBusiness.Web.csproj
   PUBLISH_DIR: ${{ github.workspace }}/publish
+  PUBLISH_ZIP: ${{ github.workspace }}/servicebusiness-web.zip
 
 jobs:
   build-test-deploy:
@@ -37,6 +38,11 @@ jobs:
       - name: Publish web app
         run: dotnet publish "${{ env.WEB_PROJECT }}" --configuration Release --no-build --output "${{ env.PUBLISH_DIR }}"
 
+      - name: Package web app
+        run: |
+          cd "${{ env.PUBLISH_DIR }}"
+          zip -r "${{ env.PUBLISH_ZIP }}" .
+
       - name: Sign in to Azure
         uses: azure/login@v3
         with:
@@ -44,9 +50,15 @@ jobs:
 
       - name: Validate Azure Web App resource names
         env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
           POOL_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
           LANDSCAPE_WEBAPP_NAME: ${{ vars.AZURE_LANDSCAPE_WEBAPP_NAME }}
         run: |
+          if [ -z "$AZURE_RESOURCE_GROUP" ]; then
+            echo "::error::AZURE_RESOURCE_GROUP is empty. Set it to the Azure resource group containing both App Services."
+            exit 1
+          fi
+
           validate_app_name() {
             local variable_name="$1"
             local app_name="$2"
@@ -66,59 +78,49 @@ jobs:
           validate_app_name "AZURE_LANDSCAPE_WEBAPP_NAME" "$LANDSCAPE_WEBAPP_NAME"
 
       - name: Configure PoolShark Azure App Service
-        uses: azure/appservice-settings@v1
-        with:
-          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
-          app-settings-json: |
-            [
-              {
-                "name": "ASPNETCORE_ENVIRONMENT",
-                "value": "Production",
-                "slotSetting": false
-              },
-              {
-                "name": "SystemSettings__SystemMode",
-                "value": "Pool",
-                "slotSetting": false
-              },
-              {
-                "name": "SystemSettings__DevTest",
-                "value": "false",
-                "slotSetting": false
-              }
-            ]
+        run: |
+          az webapp show \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ vars.AZURE_WEBAPP_NAME }}" \
+            --query name \
+            --output tsv
+
+          az webapp config appsettings set \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ vars.AZURE_WEBAPP_NAME }}" \
+            --settings \
+              ASPNETCORE_ENVIRONMENT=Production \
+              SystemSettings__SystemMode=Pool \
+              SystemSettings__DevTest=false
 
       - name: Deploy PoolShark to Azure App Service
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
-          package: ${{ env.PUBLISH_DIR }}
+        run: |
+          az webapp deploy \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ vars.AZURE_WEBAPP_NAME }}" \
+            --src-path "${{ env.PUBLISH_ZIP }}" \
+            --type zip
 
       - name: Configure Landscape Azure App Service
-        uses: azure/appservice-settings@v1
-        with:
-          app-name: ${{ vars.AZURE_LANDSCAPE_WEBAPP_NAME }}
-          app-settings-json: |
-            [
-              {
-                "name": "ASPNETCORE_ENVIRONMENT",
-                "value": "Production",
-                "slotSetting": false
-              },
-              {
-                "name": "SystemSettings__SystemMode",
-                "value": "Landscape",
-                "slotSetting": false
-              },
-              {
-                "name": "SystemSettings__DevTest",
-                "value": "false",
-                "slotSetting": false
-              }
-            ]
+        run: |
+          az webapp show \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ vars.AZURE_LANDSCAPE_WEBAPP_NAME }}" \
+            --query name \
+            --output tsv
+
+          az webapp config appsettings set \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ vars.AZURE_LANDSCAPE_WEBAPP_NAME }}" \
+            --settings \
+              ASPNETCORE_ENVIRONMENT=Production \
+              SystemSettings__SystemMode=Landscape \
+              SystemSettings__DevTest=false
 
       - name: Deploy Landscape to Azure App Service
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: ${{ vars.AZURE_LANDSCAPE_WEBAPP_NAME }}
-          package: ${{ env.PUBLISH_DIR }}
+        run: |
+          az webapp deploy \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ vars.AZURE_LANDSCAPE_WEBAPP_NAME }}" \
+            --src-path "${{ env.PUBLISH_ZIP }}" \
+            --type zip
