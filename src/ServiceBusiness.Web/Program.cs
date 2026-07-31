@@ -156,13 +156,12 @@ app.MapGet("/auth/google-complete", async (
 app.MapGet("/auth/test-signin", async (
     HttpContext httpContext,
     IConfiguration configuration,
-    IServiceBusinessStore store,
     OnboardingService onboardingService,
     string email,
     string? returnUrl,
     CancellationToken cancellationToken) =>
 {
-    if (!await SystemSettingsConfiguration.IsDevTestEnabledAsync(configuration, store, cancellationToken))
+    if (!SystemSettingsConfiguration.IsDevTestEnabled(configuration))
     {
         return Results.BadRequest("Test mode is not enabled. Set SystemSettings:DevTest to true to skip Google authentication.");
     }

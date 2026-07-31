@@ -58,8 +58,7 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
     public async Task<SystemSettings> GetSystemSettingsAsync(CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
-        return await GetAsync<SystemSettings>("SystemSettings", "SYSTEM_SETTINGS", "CURRENT", cancellationToken)
-            ?? configuredDefaultSystemSettings;
+        return configuredDefaultSystemSettings;
     }
 
     public async Task<IReadOnlyList<RoleDefinition>> GetRoleDefinitionsAsync(CancellationToken cancellationToken = default)
@@ -417,7 +416,6 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
     public async Task UpsertSystemSettingsAsync(SystemSettings settings, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
-        await UpsertAsync("SystemSettings", "SYSTEM_SETTINGS", "CURRENT", settings, cancellationToken);
     }
 
     private async Task EnsureInitializedAsync(CancellationToken cancellationToken)
@@ -438,12 +436,6 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
             foreach (var tableName in AzureStorageTableInitializer.TableNames)
             {
                 await tableServiceClient.CreateTableIfNotExistsAsync(tableName, cancellationToken);
-            }
-
-            var settings = await GetAsync<SystemSettings>("SystemSettings", "SYSTEM_SETTINGS", "CURRENT", cancellationToken);
-            if (settings is null)
-            {
-                await UpsertWithoutInitializationAsync("SystemSettings", "SYSTEM_SETTINGS", "CURRENT", configuredDefaultSystemSettings, cancellationToken);
             }
 
             var users = await GetPartitionWithoutInitializationAsync<AppUser>("Users", "USER", cancellationToken);
@@ -467,8 +459,6 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
     private async Task SeedAsync(CancellationToken cancellationToken)
     {
         var seed = new InMemoryServiceBusinessStore();
-
-        await UpsertWithoutInitializationAsync("SystemSettings", "SYSTEM_SETTINGS", "CURRENT", configuredDefaultSystemSettings, cancellationToken);
 
         foreach (var user in await seed.GetUsersAsync(cancellationToken))
         {

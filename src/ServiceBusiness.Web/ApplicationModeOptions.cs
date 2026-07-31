@@ -1,15 +1,12 @@
-using ServiceBusiness.Application;
+using Microsoft.Extensions.Configuration;
 using ServiceBusiness.Domain;
 
 namespace ServiceBusiness.Web;
 
-public sealed class ApplicationModeService(IServiceBusinessStore store)
+public sealed class ApplicationModeService(IConfiguration configuration)
 {
-    public async Task<ApplicationModeSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
-    {
-        var settings = await store.GetSystemSettingsAsync(cancellationToken);
-        return ApplicationModeSnapshot.From(settings);
-    }
+    public Task<ApplicationModeSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(ApplicationModeSnapshot.From(SystemSettingsConfiguration.GetConfiguredDefaults(configuration)));
 }
 
 public sealed record ApplicationModeSnapshot(

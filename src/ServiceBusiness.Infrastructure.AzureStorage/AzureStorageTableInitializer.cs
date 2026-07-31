@@ -10,7 +10,6 @@ public sealed class AzureStorageTableInitializer(IConfiguration configuration, I
     public static readonly string[] TableNames =
     [
         "CompanyTypes",
-        "SystemSettings",
         "Companies",
         "Users",
         "UserByGoogleSubject",
@@ -55,7 +54,6 @@ public sealed class AzureStorageTableInitializer(IConfiguration configuration, I
 
         // The store owns seed hydration. Touch it during startup so an empty Users
         // table is reseeded even before the first page or endpoint reads data.
-        await store.GetSystemSettingsAsync(cancellationToken);
         await store.GetUsersAsync(cancellationToken);
     }
 

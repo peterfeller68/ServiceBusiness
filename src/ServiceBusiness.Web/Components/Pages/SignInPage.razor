@@ -1,7 +1,6 @@
 @page "/signin"
 @rendermode InteractiveServer
 @inject IConfiguration Configuration
-@inject ServiceBusiness.Application.IServiceBusinessStore Store
 @inject NavigationManager Navigation
 
 <PageTitle>Sign In</PageTitle>
@@ -49,9 +48,9 @@
     private string? errorMessage;
     private bool devTest;
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
-        devTest = await SystemSettingsConfiguration.IsDevTestEnabledAsync(Configuration, Store);
+        devTest = SystemSettingsConfiguration.IsDevTestEnabled(Configuration);
     }
 
     private async Task SignInAsync()

@@ -5,9 +5,8 @@
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject ServiceBusiness.Application.ICurrentUserContext CurrentUser
 @inject ServiceBusiness.Application.OnboardingService OnboardingService
-@inject ServiceBusiness.Application.PlatformAdminService PlatformAdminService
 @inject ServiceBusiness.Web.ApplicationModeService ApplicationMode
-@inject NavigationManager Navigation
+@inject IConfiguration Configuration
 
 <PageTitle>Settings</PageTitle>
 
@@ -31,85 +30,47 @@
     <section class="section">
         <div class="form-panel">
             <h2>System Settings</h2>
-            @if (!string.IsNullOrWhiteSpace(errorMessage))
-            {
-                <div class="notice error">@errorMessage</div>
-            }
-            <EditForm Model="settingsForm" OnValidSubmit="SaveSystemSettingsAsync" FormName="system-settings-editor">
-                <div class="form-grid">
-                    <label>
-                        SystemMode
-                        <InputSelect class="form-control" @bind-Value="settingsForm.SystemMode">
-                            @foreach (var mode in Enum.GetValues<SystemMode>())
-                            {
-                                <option value="@mode">@mode</option>
-                            }
-                        </InputSelect>
-                    </label>
-                    <label>
-                        DevTest Mode
-                        <InputCheckbox class="form-check-input" @bind-Value="settingsForm.DevTest" />
-                    </label>
+            <div class="form-grid">
+                <label>
+                    SystemMode
+                    <input class="form-control" value="@configuredSettings.SystemMode" readonly />
+                </label>
+                <label>
+                    DevTest Mode
+                    <input class="form-control" value="@configuredSettings.DevTest" readonly />
+                </label>
+                <div>
+                    <strong>@appMode.ProductName</strong>
+                    <p>@appMode.ProductCategory</p>
+                    <small>System settings are configured through appsettings.json or Azure App Service environment variables so each deployed Web App can run in its own mode while sharing the same storage account.</small>
+                </div>
+            </div>
+            <div class="data-list">
+                <article class="row-card">
                     <div>
-                        <strong>@appMode.ProductName</strong>
-                        <p>@appMode.ProductCategory</p>
-                        <small>Changing the mode updates the product name, hero image, and Pool Equipment visibility. DevTest controls whether seeded users can skip Google Auth.</small>
+                        <strong>Azure App Service settings</strong>
+                        <p>Set SystemSettings__SystemMode to Pool or Landscape. Set SystemSettings__DevTest to true only when seeded test-user sign-in should be enabled.</p>
                     </div>
-                </div>
-                <div class="form-actions">
-                    <button class="button primary" type="submit">Save System Settings</button>
-                </div>
-            </EditForm>
+                </article>
+            </div>
         </div>
     </section>
 }
 
 @code {
     private bool isSystemAdmin;
-    private SystemSettingsForm settingsForm = new();
+    private SystemSettings configuredSettings = new(SystemMode.Pool);
     private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
-    private string? errorMessage;
 
     protected override async Task OnInitializedAsync()
     {
+        configuredSettings = SystemSettingsConfiguration.GetConfiguredDefaults(Configuration);
         appMode = await ApplicationMode.GetCurrentAsync();
         var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
         if (authenticationState.User.Identity?.IsAuthenticated == true)
         {
             var overview = await OnboardingService.GetAccessOverviewAsync(CurrentUser.UserId);
             isSystemAdmin = overview.User.IsSystemAdmin;
-            if (isSystemAdmin)
-            {
-                var settings = await PlatformAdminService.GetSystemSettingsAsync();
-                settingsForm.SystemMode = settings.SystemMode;
-                settingsForm.DevTest = settings.DevTest;
-            }
         }
-    }
-
-    private async Task SaveSystemSettingsAsync()
-    {
-        errorMessage = null;
-
-        try
-        {
-            await PlatformAdminService.UpdateSystemSettingsAsync(new SystemSettings(settingsForm.SystemMode, settingsForm.DevTest));
-            Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
-        }
-        catch (InvalidOperationException ex)
-        {
-            errorMessage = ex.Message;
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            errorMessage = ex.Message;
-        }
-    }
-
-    private sealed class SystemSettingsForm
-    {
-        public SystemMode SystemMode { get; set; } = SystemMode.Pool;
-
-        public bool DevTest { get; set; }
     }
 }

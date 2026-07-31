@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Configuration;
-using ServiceBusiness.Application;
 using ServiceBusiness.Domain;
 
 namespace ServiceBusiness.Web;
@@ -19,17 +18,6 @@ public static class SystemSettingsConfiguration
     public static bool IsDevTest(IConfiguration configuration) =>
         bool.TryParse(configuration["SystemSettings:DevTest"], out var devTest) && devTest;
 
-    public static async Task<bool> IsDevTestEnabledAsync(
-        IConfiguration configuration,
-        IServiceBusinessStore store,
-        CancellationToken cancellationToken = default)
-    {
-        if (IsDevTest(configuration))
-        {
-            return true;
-        }
-
-        var settings = await store.GetSystemSettingsAsync(cancellationToken);
-        return settings.DevTest;
-    }
+    public static bool IsDevTestEnabled(IConfiguration configuration) =>
+        GetConfiguredDefaults(configuration).DevTest;
 }

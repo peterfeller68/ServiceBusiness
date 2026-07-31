@@ -1,5 +1,4 @@
 using ServiceBusiness.Domain;
-using ServiceBusiness.Infrastructure.AzureStorage;
 using ServiceBusiness.Web;
 using Microsoft.Extensions.Configuration;
 
@@ -30,11 +29,16 @@ public sealed class ApplicationModeTests
     }
 
     [Fact]
-    public async Task Application_mode_service_reads_persisted_system_settings()
+    public async Task Application_mode_service_reads_configured_system_settings()
     {
-        var store = new InMemoryServiceBusinessStore();
-        await store.UpsertSystemSettingsAsync(new SystemSettings(SystemMode.Landscape, true));
-        var service = new ApplicationModeService(store);
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["SystemSettings:SystemMode"] = "Landscape",
+                ["SystemSettings:DevTest"] = "true"
+            })
+            .Build();
+        var service = new ApplicationModeService(configuration);
 
         var mode = await service.GetCurrentAsync();
 
@@ -66,5 +70,16 @@ public sealed class ApplicationModeTests
         var configuration = new ConfigurationBuilder().Build();
 
         Assert.False(SystemSettingsConfiguration.IsDevTest(configuration));
+    }
+
+    [Fact]
+    public void Configured_defaults_use_pool_mode_when_missing()
+    {
+        var configuration = new ConfigurationBuilder().Build();
+
+        var settings = SystemSettingsConfiguration.GetConfiguredDefaults(configuration);
+
+        Assert.Equal(SystemMode.Pool, settings.SystemMode);
+        Assert.False(settings.DevTest);
     }
 }

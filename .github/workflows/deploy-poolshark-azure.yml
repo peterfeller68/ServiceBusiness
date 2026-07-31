@@ -1,4 +1,4 @@
-name: Deploy PoolShark to Azure App Service
+name: Deploy ServiceBusiness Apps to Azure App Service
 
 on:
   push:
@@ -10,7 +10,6 @@ env:
   DOTNET_VERSION: 9.0.x
   WEB_PROJECT: src/ServiceBusiness.Web/ServiceBusiness.Web.csproj
   PUBLISH_DIR: ${{ github.workspace }}/publish
-  PATH_BASE: /poolshark
 
 jobs:
   build-test-deploy:
@@ -43,7 +42,7 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Configure Azure App Service
+      - name: Configure PoolShark Azure App Service
         uses: azure/appservice-settings@v1
         with:
           app-name: ${{ vars.AZURE_WEBAPP_NAME }}
@@ -56,14 +55,49 @@ jobs:
                 "slotSetting": false
               },
               {
-                "name": "Hosting__PathBase",
-                "value": "${{ env.PATH_BASE }}",
+                "name": "SystemSettings__SystemMode",
+                "value": "Pool",
+                "slotSetting": false
+              },
+              {
+                "name": "SystemSettings__DevTest",
+                "value": "false",
                 "slotSetting": false
               }
             ]
 
-      - name: Deploy to Azure App Service
+      - name: Deploy PoolShark to Azure App Service
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          package: ${{ env.PUBLISH_DIR }}
+
+      - name: Configure Landscape Azure App Service
+        uses: azure/appservice-settings@v1
+        with:
+          app-name: ${{ vars.AZURE_LANDSCAPE_WEBAPP_NAME }}
+          resource-group-name: ${{ vars.AZURE_RESOURCE_GROUP }}
+          app-settings-json: |
+            [
+              {
+                "name": "ASPNETCORE_ENVIRONMENT",
+                "value": "Production",
+                "slotSetting": false
+              },
+              {
+                "name": "SystemSettings__SystemMode",
+                "value": "Landscape",
+                "slotSetting": false
+              },
+              {
+                "name": "SystemSettings__DevTest",
+                "value": "false",
+                "slotSetting": false
+              }
+            ]
+
+      - name: Deploy Landscape to Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_LANDSCAPE_WEBAPP_NAME }}
           package: ${{ env.PUBLISH_DIR }}
