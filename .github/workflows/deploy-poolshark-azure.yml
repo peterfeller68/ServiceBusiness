@@ -42,11 +42,33 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Validate Azure Web App resource names
+        env:
+          POOL_WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
+          LANDSCAPE_WEBAPP_NAME: ${{ vars.AZURE_LANDSCAPE_WEBAPP_NAME }}
+        run: |
+          validate_app_name() {
+            local variable_name="$1"
+            local app_name="$2"
+
+            if [ -z "$app_name" ]; then
+              echo "::error::$variable_name is empty. Set it to the Azure App Service resource name."
+              exit 1
+            fi
+
+            if echo "$app_name" | grep -Eq '^https?://|azurewebsites\.net|/'; then
+              echo "::error::$variable_name must be the Azure App Service resource name, not a URL or domain. Use the app resource name shown in Azure Portal, for example LandscapeServiceBusiness."
+              exit 1
+            fi
+          }
+
+          validate_app_name "AZURE_WEBAPP_NAME" "$POOL_WEBAPP_NAME"
+          validate_app_name "AZURE_LANDSCAPE_WEBAPP_NAME" "$LANDSCAPE_WEBAPP_NAME"
+
       - name: Configure PoolShark Azure App Service
         uses: azure/appservice-settings@v1
         with:
           app-name: ${{ vars.AZURE_WEBAPP_NAME }}
-          resource-group-name: ${{ vars.AZURE_RESOURCE_GROUP }}
           app-settings-json: |
             [
               {
@@ -76,7 +98,6 @@ jobs:
         uses: azure/appservice-settings@v1
         with:
           app-name: ${{ vars.AZURE_LANDSCAPE_WEBAPP_NAME }}
-          resource-group-name: ${{ vars.AZURE_RESOURCE_GROUP }}
           app-settings-json: |
             [
               {
