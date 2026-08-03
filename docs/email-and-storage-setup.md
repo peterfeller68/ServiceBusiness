@@ -45,7 +45,6 @@ ClientTypes
 Services
 Materials
 ServiceVisits
-VisitCompletions
 EmailLogs
 ```
 
@@ -58,7 +57,7 @@ On first access, if the `Users` table is empty, the store seeds the current MVP 
 - company types
 - Clearwater demo company
 - company memberships
-- client types, clients, services, materials, visits, and visit completion history
+- client types, clients, services, materials, visits, and completed visit history stored on visits
 
 Google-authenticated users are persisted to:
 

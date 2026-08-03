@@ -5,23 +5,24 @@
 @using Microsoft.AspNetCore.Components
 @using System.Text
 @using ServiceBusiness.Domain
+@inject ServiceBusiness.Application.PlatformAdminService PlatformAdminService
 @inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
-@inject ServiceBusiness.Application.IndependentHomeOwnerService HomeOwnerService
+@inject ServiceBusiness.Application.OnboardingService OnboardingService
 @inject ServiceBusiness.Application.ICurrentUserContext CurrentUser
 @inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
 @inject ServiceBusiness.Web.CurrentCompanyContext CurrentCompany
 @inject ServiceBusiness.Web.ApplicationModeService ApplicationMode
 @inject NavigationManager Navigation
 
-<PageTitle>Pool Equipment</PageTitle>
+<PageTitle>@PageTitleText</PageTitle>
 
 @if (appMode.IsPoolMode)
 {
     <section class="page-header">
         <div>
             <p class="eyebrow">@PageScope</p>
-            <h1>Pool Equipment</h1>
-            <p class="lede">Create, edit, archive, and reactivate equipment categories and equipment items.</p>
+            <h1>@PageTitleText</h1>
+            <p class="lede">@PageDescription</p>
         </div>
     </section>
 
@@ -35,9 +36,80 @@
         <div class="notice error">@errorMessage</div>
     }
 
+    @if (IsHomeOwnerRoute && showChooseClientPanel)
+    {
+        <section class="management-panel">
+            <div class="management-panel-header">
+                <h2>@ChooseClientPanelTitle</h2>
+                <div class="management-panel-actions">
+                    <button class="icon-button" type="button" title="Toggle choose client" @onclick="ToggleChooseClientPanel">@(chooseClientExpanded ? "^" : "v")</button>
+                </div>
+            </div>
+            @if (chooseClientExpanded)
+            {
+                <div class="management-panel-body">
+                    @if (poolConfigurationClients.Count == 0)
+                    {
+                        <p>No pool configuration clients are available.</p>
+                    }
+                    else
+                    {
+                        <div class="form-grid">
+                            <label class="wide">
+                                Filter clients
+                                <input class="form-control" @bind="poolConfigurationClientFilter" @bind:event="oninput" placeholder="Filter by company, address, or client type" />
+                            </label>
+                        </div>
+                        <div class="management-table-wrap">
+                            <table class="management-table">
+                                <thead>
+                                    <tr>
+                                        @if (isSystemAdminConfiguration)
+                                        {
+                                            <th>Company</th>
+                                        }
+                                        <th>Client Address</th>
+                                        @if (isSystemAdminConfiguration)
+                                        {
+                                            <th>Client Type</th>
+                                        }
+                                        <th class="actions">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var client in FilteredPoolConfigurationClients)
+                                    {
+                                        <tr class="@(IsSelectedPoolConfigurationClient(client) ? "selected-row" : null)">
+                                            @if (isSystemAdminConfiguration)
+                                            {
+                                                <td>@(string.IsNullOrWhiteSpace(client.CompanyName) ? "-" : client.CompanyName)</td>
+                                            }
+                                            <td>@client.ClientAddress</td>
+                                            @if (isSystemAdminConfiguration)
+                                            {
+                                                <td>@client.ClientType</td>
+                                            }
+                                            <td class="actions">
+                                                <button class="button" type="button" @onclick="() => ChoosePoolConfigurationClientAsync(client)">Choose</button>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+    }
+
     @if (overview is null)
     {
         <p>Loading pool equipment...</p>
+    }
+    else if (IsHomeOwnerRoute && string.IsNullOrWhiteSpace(ScopeOwnerId))
+    {
+        <p>Choose a client to manage pool configuration.</p>
     }
     else
     {
@@ -46,7 +118,12 @@
             <section class="management-panel">
                 <div class="management-panel-header">
                     <h2>Seed Equipment</h2>
+                    <div class="management-panel-actions">
+                        <button class="icon-button" type="button" title="Toggle seed equipment" @onclick="ToggleSeedPanel">@(seedPanelExpanded ? "^" : "v")</button>
+                    </div>
                 </div>
+                @if (seedPanelExpanded)
+                {
                 <div class="management-panel-body">
                     <div class="form-grid">
                         <label class="wide">
@@ -62,6 +139,7 @@
                         <p class="form-note">@seedFileName selected.</p>
                     }
                 </div>
+                }
             </section>
         }
 
@@ -141,12 +219,9 @@
                                             <button class="icon-button icon-only" type="button" title="Edit category" aria-label="Edit category" @onclick="() => EditCategory(group.Category)">
                                                 <span class="action-icon edit-icon" aria-hidden="true"></span>
                                             </button>
-                                            @if (group.Category.IsSystemManaged)
-                                            {
-                                                <button class="icon-button icon-only" type="button" title="Copy category" aria-label="Copy category" @onclick="() => CopyCategoryAsync(group.Category)">
-                                                    <span class="action-icon copy-icon" aria-hidden="true"></span>
-                                                </button>
-                                            }
+                                            <button class="icon-button icon-only danger" type="button" title="Delete category" aria-label="Delete category" @onclick="() => SetCategoryActiveAsync(group.Category, false)">
+                                                <span class="action-icon delete-icon" aria-hidden="true"></span>
+                                            </button>
                                         </td>
                                     </tr>
                                 }
@@ -173,19 +248,18 @@
                     <div class="form-grid">
                         <label class="wide">
                             Filter configured equipment
-                            <input class="form-control" @bind="equipmentFilter" @bind:event="oninput" placeholder="Filter by active state, manufacturer, name, category, model, or description" />
+                            <input class="form-control" @bind="equipmentFilter" @bind:event="oninput" placeholder="Filter by manufacturer, name, category, model, or description" />
                         </label>
                     </div>
                     <div class="management-table-wrap">
                         <table class="management-table">
                             <thead>
                                 <tr>
-                                    <th><button class="table-sort-button" type="button" @onclick="() => SortEquipment(EquipmentSortColumn.Active)">Active @GetEquipmentSortIndicator(EquipmentSortColumn.Active)</button></th>
                                     <th><button class="table-sort-button" type="button" @onclick="() => SortEquipment(EquipmentSortColumn.Manufacturer)">Manufacturer @GetEquipmentSortIndicator(EquipmentSortColumn.Manufacturer)</button></th>
                                     <th><button class="table-sort-button" type="button" @onclick="() => SortEquipment(EquipmentSortColumn.Name)">Name @GetEquipmentSortIndicator(EquipmentSortColumn.Name)</button></th>
                                     <th><button class="table-sort-button" type="button" @onclick="() => SortEquipment(EquipmentSortColumn.Category)">Category @GetEquipmentSortIndicator(EquipmentSortColumn.Category)</button></th>
                                     <th><button class="table-sort-button" type="button" @onclick="() => SortEquipment(EquipmentSortColumn.ModelNo)">Model No @GetEquipmentSortIndicator(EquipmentSortColumn.ModelNo)</button></th>
-                                    <th><button class="table-sort-button" type="button" @onclick="() => SortEquipment(EquipmentSortColumn.Description)">Description @GetEquipmentSortIndicator(EquipmentSortColumn.Description)</button></th>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortEquipment(EquipmentSortColumn.Comment)">Comment @GetEquipmentSortIndicator(EquipmentSortColumn.Comment)</button></th>
                                     <th class="actions">Action</th>
                                 </tr>
                             </thead>
@@ -193,20 +267,19 @@
                                 @foreach (var row in FilteredEquipmentRows)
                                 {
                                     <tr>
-                                        <td>
-                                            <label class="switch-control" title="Toggle active state">
-                                                <input type="checkbox" checked="@row.Item.IsActive" @onchange="args => ToggleItemActiveAsync(row.Item, args)" />
-                                                <span></span>
-                                            </label>
-                                        </td>
                                         <td>@row.Item.Manufacturer</td>
                                         <td>@row.Item.Name</td>
                                         <td>@row.Category.Name</td>
                                         <td>@row.Item.ModelNo</td>
-                                        <td>@row.Item.Description</td>
+                                        <td>
+                                            <input class="form-control compact-select" value="@GetCommentEdit(row.Item)" @onchange="args => SaveItemCommentAsync(row.Item, args.Value?.ToString() ?? string.Empty)" />
+                                        </td>
                                         <td class="actions">
                                             <button class="icon-button icon-only" type="button" title="Edit equipment" aria-label="Edit equipment" @onclick="() => EditItem(row.Item)">
                                                 <span class="action-icon edit-icon" aria-hidden="true"></span>
+                                            </button>
+                                            <button class="icon-button icon-only" type="button" title="Show description" aria-label="Show description" @onclick="() => ShowDescription(row.Item)">
+                                                <span class="action-icon info-icon" aria-hidden="true"></span>
                                             </button>
                                             <button class="icon-button icon-only danger" type="button" title="Delete equipment" aria-label="Delete equipment" @onclick="() => DeleteItemAsync(row.Item)">
                                                 <span class="action-icon delete-icon" aria-hidden="true"></span>
@@ -250,6 +323,7 @@
                                     <th>Name</th>
                                     <th>Category</th>
                                     <th>Model No</th>
+                                    <th>Description</th>
                                     <th class="actions">Action</th>
                                 </tr>
                             </thead>
@@ -261,8 +335,11 @@
                                         <td>@row.Item.Name</td>
                                         <td>@row.Category.Name</td>
                                         <td>@row.Item.ModelNo</td>
+                                        <td>@row.Item.Description</td>
                                         <td class="actions">
-                                            <button class="button" type="button" @onclick="() => AddGlobalEquipmentItemAsync(row.Item.Id)">Choose</button>
+                                            <button class="icon-button icon-only" type="button" title="Choose equipment" aria-label="Choose equipment" @onclick="() => AddGlobalEquipmentItemAsync(row.Item.Id)">
+                                                <span class="action-icon choose-icon" aria-hidden="true"></span>
+                                            </button>
                                         </td>
                                     </tr>
                                 }
@@ -289,14 +366,14 @@
                             <InputFile OnChange="UploadHomeOwnerPhotosAsync" accept="image/*" multiple />
                         </label>
                     </div>
-                    @if (HomeOwnerPhotos.Count == 0)
+                    @if (PoolConfigurationPhotos.Count == 0)
                     {
                         <p>No pool equipment pictures uploaded.</p>
                     }
                     else
                     {
                         <div class="data-list">
-                            @foreach (var photo in HomeOwnerPhotos)
+                            @foreach (var photo in PoolConfigurationPhotos)
                             {
                                 <article class="row-card">
                                     <div>
@@ -372,12 +449,9 @@
                                             <button class="icon-button icon-only" type="button" title="Edit equipment" aria-label="Edit equipment" @onclick="() => EditItem(row.Item)">
                                                 <span class="action-icon edit-icon" aria-hidden="true"></span>
                                             </button>
-                                            @if (row.Category.IsSystemManaged)
-                                            {
-                                                <button class="icon-button icon-only" type="button" title="Copy equipment" aria-label="Copy equipment" @onclick="() => CopyItemAsync(row.Item)">
-                                                    <span class="action-icon copy-icon" aria-hidden="true"></span>
-                                                </button>
-                                            }
+                                            <button class="icon-button icon-only danger" type="button" title="Delete equipment" aria-label="Delete equipment" @onclick="() => DeleteItemAsync(row.Item)">
+                                                <span class="action-icon delete-icon" aria-hidden="true"></span>
+                                            </button>
                                         </td>
                                     </tr>
                                 }
@@ -404,6 +478,19 @@
     </div>
 }
 
+@if (descriptionItem is not null)
+{
+    <div class="photo-modal-backdrop" @onclick="CloseDescription">
+        <div class="photo-modal" @onclick:stopPropagation="true">
+            <div class="photo-modal-header">
+                <strong>@descriptionItem.Name</strong>
+                <button class="icon-button icon-only" type="button" title="Close description" aria-label="Close description" @onclick="CloseDescription">x</button>
+            </div>
+            <p>@(string.IsNullOrWhiteSpace(descriptionItem.Description) ? "No description available." : descriptionItem.Description)</p>
+        </div>
+    </div>
+}
+
 @code {
     private PoolEquipmentOverview? overview;
     private PoolEquipmentOverview? globalOverview;
@@ -413,22 +500,33 @@
     private bool itemListExpanded = true;
     private bool addEquipmentExpanded = true;
     private bool picturesExpanded = true;
+    private bool seedPanelExpanded = true;
+    private bool chooseClientExpanded = true;
     private bool categoryEditorExpanded;
     private bool itemEditorExpanded;
     private IBrowserFile? seedFile;
     private string? seedFileName;
     private string globalEquipmentFilter = "";
+    private string poolConfigurationClientFilter = "";
     private string categoryFilter = "";
     private string equipmentFilter = "";
     private CategorySortColumn categorySortColumn = CategorySortColumn.Category;
     private EquipmentSortColumn equipmentSortColumn = EquipmentSortColumn.Name;
     private bool categorySortDescending;
     private bool equipmentSortDescending;
-    private IndependentHomeOwnerProfile? homeOwnerProfile;
+    private IReadOnlyList<PoolConfigurationClientRow> poolConfigurationClients = [];
+    private IReadOnlyList<HomeOwnerPoolEquipmentPhoto> poolConfigurationPhotos = [];
+    private readonly Dictionary<string, string> commentEdits = [];
+    private PoolEquipmentItem? descriptionItem;
     private HomeOwnerPoolEquipmentPhoto? zoomedPhoto;
     private string? message;
     private string? errorMessage;
     private string companyId = "";
+    private string selectedPoolConfigurationScopeOwnerId = "";
+    private bool isSystemAdminConfiguration;
+    private bool isBusinessOwnerConfiguration;
+    private bool isIndependentHomeOwnerConfiguration;
+    private bool showChooseClientPanel;
     private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
     private bool IsSystemAdminRoute => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("admin/", StringComparison.OrdinalIgnoreCase);
     private bool IsHomeOwnerRoute => string.Equals(Navigation.ToBaseRelativePath(Navigation.Uri).Trim('/'), "poolequipment", StringComparison.OrdinalIgnoreCase);
@@ -436,13 +534,13 @@
     private string ScopeOwnerId => Scope switch
     {
         EquipmentScope.Global => "global",
-        EquipmentScope.HomeOwner => CurrentUser.UserId,
+        EquipmentScope.HomeOwner => selectedPoolConfigurationScopeOwnerId,
         _ => companyId
     };
     private string PageScope => Scope switch
     {
         EquipmentScope.Global => "System Administrator",
-        EquipmentScope.HomeOwner => "Home Owner",
+        EquipmentScope.HomeOwner => "Pool Configuration",
         _ => "Company Admin"
     };
     private string ScopeLabel => Scope switch
@@ -451,6 +549,16 @@
         EquipmentScope.HomeOwner => "Home Owner",
         _ => "Company"
     };
+    private string PageTitleText => IsHomeOwnerRoute ? "Pool Configuration" : "Pool Equipment";
+    private string PageDescription => IsHomeOwnerRoute
+        ? "Manage the equipment configured for the selected pool and the pictures associated with that setup."
+        : "Create, edit, archive, and reactivate equipment categories and equipment items.";
+    private string ChooseClientPanelTitle =>
+        string.IsNullOrWhiteSpace(SelectedPoolConfigurationClientAddress)
+            ? "Choose Client"
+            : SelectedPoolConfigurationClientAddress;
+    private string SelectedPoolConfigurationClientAddress =>
+        poolConfigurationClients.FirstOrDefault(IsSelectedPoolConfigurationClient)?.ClientAddress ?? "";
     private IReadOnlyList<PoolEquipmentCategory> EquipmentCategories => overview?.CategoryGroups.Select(g => g.Category).ToList() ?? [];
     private IReadOnlyList<PoolEquipmentCategory> GlobalEquipmentCategories => globalOverview?.CategoryGroups.Select(g => g.Category).ToList() ?? [];
     private IReadOnlyList<PoolEquipmentCategory> AvailableEquipmentCategories => IsHomeOwnerRoute
@@ -461,13 +569,8 @@
             .OrderBy(category => category.Name)
             .ToList()
         : EquipmentCategories;
-    private HashSet<string> EquipmentItemIds => (overview?.CategoryGroups ?? [])
-        .SelectMany(group => group.Items)
-        .Select(item => item.Id)
-        .ToHashSet(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<EquipmentGridRow> GlobalEquipmentRows => globalOverview?.CategoryGroups
         .SelectMany(group => group.Items.Select(item => new EquipmentGridRow(group.Category, item)))
-        .Where(row => !EquipmentItemIds.Contains(row.Item.Id))
         .OrderBy(row => row.Category.Name)
         .ThenBy(row => row.Item.Manufacturer)
         .ThenBy(row => row.Item.Name)
@@ -476,7 +579,10 @@
         .Where(MatchesGlobalEquipmentFilter)
         .Take(50)
         .ToList();
-    private IReadOnlyList<HomeOwnerPoolEquipmentPhoto> HomeOwnerPhotos => homeOwnerProfile?.PoolEquipmentPhotos ?? [];
+    private IReadOnlyList<PoolConfigurationClientRow> FilteredPoolConfigurationClients => poolConfigurationClients
+        .Where(MatchesPoolConfigurationClientFilter)
+        .ToList();
+    private IReadOnlyList<HomeOwnerPoolEquipmentPhoto> PoolConfigurationPhotos => poolConfigurationPhotos;
     private IReadOnlyList<PoolEquipmentCategoryGroup> FilteredCategoryGroups => GetFilteredCategoryGroups();
     private IReadOnlyList<EquipmentGridRow> FilteredEquipmentRows => GetFilteredEquipmentRows();
 
@@ -495,7 +601,42 @@
         }
         else if (Scope == EquipmentScope.Company)
         {
-            companyId = await CurrentCompany.GetRequiredCompanyIdAsync([CompanyRole.CompanyAdmin]);
+            Navigation.NavigateTo("dashboard", replace: true);
+            return;
+        }
+        else if (IsHomeOwnerRoute)
+        {
+            var access = await OnboardingService.GetAccessOverviewAsync(CurrentUser.UserId);
+            isSystemAdminConfiguration = access.User.IsSystemAdmin;
+            isBusinessOwnerConfiguration = access.Companies.Any(company => company.Status == MembershipStatus.Active && company.Role == CompanyRole.CompanyAdmin);
+            isIndependentHomeOwnerConfiguration = !isSystemAdminConfiguration && access.Companies.Count == 0;
+            showChooseClientPanel = isSystemAdminConfiguration || isBusinessOwnerConfiguration;
+
+            if (isSystemAdminConfiguration)
+            {
+                DemoUser.UserId = "sys-admin";
+                poolConfigurationClients = await PlatformAdminService.GetPoolConfigurationClientsAsync();
+            }
+            else if (isBusinessOwnerConfiguration)
+            {
+                var companyAccess = access.Companies.First(company => company.Status == MembershipStatus.Active && company.Role == CompanyRole.CompanyAdmin);
+                companyId = companyAccess.Company.Id;
+                poolConfigurationClients = await CompanyAdminService.GetPoolConfigurationClientsAsync(companyId);
+            }
+            else if (isIndependentHomeOwnerConfiguration)
+            {
+                selectedPoolConfigurationScopeOwnerId = CurrentUser.UserId;
+            }
+            else
+            {
+                Navigation.NavigateTo("dashboard", replace: true);
+                return;
+            }
+
+            if (showChooseClientPanel && poolConfigurationClients.Count > 0)
+            {
+                selectedPoolConfigurationScopeOwnerId = poolConfigurationClients[0].ScopeOwnerId;
+            }
         }
 
         await LoadAsync();
@@ -536,6 +677,13 @@
                         Description
                         <InputTextArea class="form-control" @bind-Value="itemForm.Description" />
                     </label>
+                    @if (IsHomeOwnerRoute)
+                    {
+                        <label class="wide">
+                            Comment
+                            <InputTextArea class="form-control" @bind-Value="itemForm.Comment" />
+                        </label>
+                    }
                     <label class="switch-control" title="Toggle active state">
                         <input type="checkbox" checked="@itemForm.IsActive" @onchange="args => itemForm.IsActive = GetChecked(args)" />
                         <span></span>
@@ -574,7 +722,7 @@
         {
             if (IsHomeOwnerRoute)
             {
-                await EnsureHomeOwnerCategoryAsync(itemForm.CategoryId);
+                await EnsurePoolConfigurationCategoryAsync(itemForm.CategoryId);
             }
 
             await CompanyAdminService.UpsertPoolEquipmentItemAsync(new PoolEquipmentItem(
@@ -587,7 +735,8 @@
                 itemForm.ImageUrl,
                 itemForm.IsActive,
                 itemForm.ModelNo,
-                itemForm.Manufacturer));
+                itemForm.Manufacturer,
+                itemForm.Comment));
             message = $"{itemForm.Name} was saved.";
             ResetItemForm();
             itemEditorExpanded = false;
@@ -607,16 +756,28 @@
             var row = GlobalEquipmentRows.FirstOrDefault(row => row.Item.Id == itemId)
                 ?? throw new InvalidOperationException("Global equipment item was not found.");
 
-            await EnsureHomeOwnerCategoryAsync(row.Item.CategoryId);
+            await EnsurePoolConfigurationCategoryAsync(row.Item.CategoryId);
             await CompanyAdminService.UpsertPoolEquipmentItemAsync(row.Item with
             {
+                Id = CreateConfiguredEquipmentItemId(row.Item.Id),
                 Scope = EquipmentScope.HomeOwner,
                 ScopeOwnerId = ScopeOwnerId,
-                IsActive = true
+                IsActive = true,
+                Comment = ""
             });
 
-            message = $"{row.Item.Name} was added to your pool equipment.";
+            message = $"{row.Item.Name} was added to the pool configuration.";
             globalEquipmentFilter = "";
+        });
+    }
+
+    private async Task SaveItemCommentAsync(PoolEquipmentItem item, string comment)
+    {
+        commentEdits[item.Id] = comment;
+        await RunAsync(async () =>
+        {
+            await CompanyAdminService.UpsertPoolEquipmentItemAsync(item with { Comment = comment });
+            message = $"{item.Name} comment was saved.";
         });
     }
 
@@ -685,7 +846,7 @@
                 throw new InvalidOperationException("Choose at least one image to upload.");
             }
 
-            homeOwnerProfile = await HomeOwnerService.AddPoolEquipmentPhotosAsync(photos);
+            poolConfigurationPhotos = await CompanyAdminService.AddPoolConfigurationPhotosAsync(ScopeOwnerId, photos);
             message = $"{photos.Count} pool equipment picture{(photos.Count == 1 ? "" : "s")} uploaded.";
         });
     }
@@ -694,7 +855,7 @@
     {
         await RunAsync(async () =>
         {
-            homeOwnerProfile = await HomeOwnerService.DeletePoolEquipmentPhotoAsync(photoId);
+            poolConfigurationPhotos = await CompanyAdminService.DeletePoolConfigurationPhotoAsync(ScopeOwnerId, photoId);
             if (string.Equals(zoomedPhoto?.Id, photoId, StringComparison.OrdinalIgnoreCase))
             {
                 zoomedPhoto = null;
@@ -772,19 +933,39 @@
 
     private async Task LoadAsync()
     {
+        if (IsHomeOwnerRoute && string.IsNullOrWhiteSpace(ScopeOwnerId))
+        {
+            overview = new PoolEquipmentOverview([]);
+            globalOverview = await CompanyAdminService.GetPoolEquipmentOverviewAsync(EquipmentScope.Global, "global");
+            LoadCommentEdits();
+            poolConfigurationPhotos = [];
+            return;
+        }
+
         overview = await CompanyAdminService.GetPoolEquipmentOverviewAsync(Scope, ScopeOwnerId);
+        LoadCommentEdits();
         if (IsHomeOwnerRoute)
         {
             globalOverview = await CompanyAdminService.GetPoolEquipmentOverviewAsync(EquipmentScope.Global, "global");
-            homeOwnerProfile = await HomeOwnerService.GetProfileAsync();
+            poolConfigurationPhotos = await CompanyAdminService.GetPoolConfigurationPhotosAsync(ScopeOwnerId);
         }
         else
         {
             globalOverview = null;
+            poolConfigurationPhotos = [];
         }
     }
 
-    private async Task EnsureHomeOwnerCategoryAsync(string categoryId)
+    private void LoadCommentEdits()
+    {
+        commentEdits.Clear();
+        foreach (var item in (overview?.CategoryGroups ?? []).SelectMany(group => group.Items))
+        {
+            commentEdits[item.Id] = item.Comment;
+        }
+    }
+
+    private async Task EnsurePoolConfigurationCategoryAsync(string categoryId)
     {
         if (!IsHomeOwnerRoute || string.IsNullOrWhiteSpace(categoryId))
         {
@@ -855,9 +1036,36 @@
 
     private void ToggleItemList() => itemListExpanded = !itemListExpanded;
 
+    private void ToggleSeedPanel() => seedPanelExpanded = !seedPanelExpanded;
+
+    private void ToggleChooseClientPanel() => chooseClientExpanded = !chooseClientExpanded;
+
     private void ToggleAddEquipmentPanel() => addEquipmentExpanded = !addEquipmentExpanded;
 
     private void TogglePicturesPanel() => picturesExpanded = !picturesExpanded;
+
+    private async Task ChoosePoolConfigurationClientAsync(PoolConfigurationClientRow client)
+    {
+        selectedPoolConfigurationScopeOwnerId = client.ScopeOwnerId;
+        ResetItemForm();
+        itemEditorExpanded = false;
+        equipmentFilter = "";
+        globalEquipmentFilter = "";
+        zoomedPhoto = null;
+        await LoadAsync();
+        message = $"Pool configuration client was changed to {client.ClientAddress}.";
+        errorMessage = null;
+    }
+
+    private bool IsSelectedPoolConfigurationClient(PoolConfigurationClientRow client) =>
+        string.Equals(client.ScopeOwnerId, selectedPoolConfigurationScopeOwnerId, StringComparison.OrdinalIgnoreCase);
+
+    private string GetCommentEdit(PoolEquipmentItem item) =>
+        commentEdits.TryGetValue(item.Id, out var comment) ? comment : item.Comment;
+
+    private void ShowDescription(PoolEquipmentItem item) => descriptionItem = item;
+
+    private void CloseDescription() => descriptionItem = null;
 
     private void SortCategories(CategorySortColumn column)
     {
@@ -920,6 +1128,7 @@
             EquipmentSortColumn.Category => ApplyEquipmentSort(rows, row => row.Category.Name),
             EquipmentSortColumn.ModelNo => ApplyEquipmentSort(rows, row => row.Item.ModelNo),
             EquipmentSortColumn.Description => ApplyEquipmentSort(rows, row => row.Item.Description),
+            EquipmentSortColumn.Comment => ApplyEquipmentSort(rows, row => row.Item.Comment),
             _ => rows
         };
 
@@ -964,7 +1173,8 @@
             ContainsFilter(row.Item.Name, equipmentFilter) ||
             ContainsFilter(row.Category.Name, equipmentFilter) ||
             ContainsFilter(row.Item.ModelNo, equipmentFilter) ||
-            ContainsFilter(row.Item.Description, equipmentFilter);
+            ContainsFilter(row.Item.Description, equipmentFilter) ||
+            ContainsFilter(row.Item.Comment, equipmentFilter);
     }
 
     private bool MatchesGlobalEquipmentFilter(EquipmentGridRow row)
@@ -979,6 +1189,18 @@
             ContainsFilter(row.Category.Name, globalEquipmentFilter) ||
             ContainsFilter(row.Item.ModelNo, globalEquipmentFilter) ||
             ContainsFilter(row.Item.Description, globalEquipmentFilter);
+    }
+
+    private bool MatchesPoolConfigurationClientFilter(PoolConfigurationClientRow row)
+    {
+        if (string.IsNullOrWhiteSpace(poolConfigurationClientFilter))
+        {
+            return true;
+        }
+
+        return ContainsFilter(row.CompanyName, poolConfigurationClientFilter) ||
+            ContainsFilter(row.ClientAddress, poolConfigurationClientFilter) ||
+            ContainsFilter(row.ClientType, poolConfigurationClientFilter);
     }
 
     private static bool ContainsFilter(string? value, string filter) =>
@@ -997,10 +1219,21 @@
             return itemForm.Id;
         }
 
+        if (IsHomeOwnerRoute)
+        {
+            var baseName = string.IsNullOrWhiteSpace(itemForm.ModelNo)
+                ? itemForm.Name
+                : $"{itemForm.Name} {itemForm.ModelNo}";
+            return CreateConfiguredEquipmentItemId(baseName);
+        }
+
         return string.IsNullOrWhiteSpace(itemForm.ModelNo)
             ? itemForm.Name
             : $"{itemForm.Name} {itemForm.ModelNo}";
     }
+
+    private static string CreateConfiguredEquipmentItemId(string sourceId) =>
+        $"{sourceId}-{Guid.NewGuid():N}";
 
     private static bool GetChecked(ChangeEventArgs args) =>
         args.Value is bool value && value;
@@ -1021,7 +1254,8 @@
         Name,
         Category,
         ModelNo,
-        Description
+        Description,
+        Comment
     }
 
     private sealed class EquipmentCategoryForm
@@ -1052,6 +1286,7 @@
         public string Name { get; set; } = "";
         public string ModelNo { get; set; } = "";
         public string Description { get; set; } = "";
+        public string Comment { get; set; } = "";
         public string? ImageUrl { get; set; }
         public bool IsActive { get; set; } = true;
         public bool IsEditing { get; set; }
@@ -1064,6 +1299,7 @@
             Name = item.Name,
             ModelNo = item.ModelNo,
             Description = item.Description,
+            Comment = item.Comment,
             ImageUrl = item.ImageUrl,
             IsActive = item.IsActive,
             IsEditing = true

@@ -30,19 +30,19 @@
     <section class="section">
         <div class="form-panel">
             <h2>System Settings</h2>
-            <div class="form-grid">
-                <label>
-                    SystemMode
-                    <input class="form-control" value="@configuredSettings.SystemMode" readonly />
-                </label>
-                <label>
-                    DevTest Mode
-                    <input class="form-control" value="@configuredSettings.DevTest" readonly />
-                </label>
-                <div>
+            <p class="form-note">System settings are configured through appsettings.json or Azure App Service environment variables so each deployed Web App can run in its own mode while sharing the same storage account.</p>
+            <div class="metric-grid">
+                <div class="metric">
+                    <span>SystemMode</span>
+                    <strong>@configuredSettings.SystemMode</strong>
+                </div>
+                <div class="metric">
+                    <span>DevTest</span>
+                    <strong>@configuredSettings.DevTest</strong>
+                </div>
+                <div class="metric">
+                    <span>Product</span>
                     <strong>@appMode.ProductName</strong>
-                    <p>@appMode.ProductCategory</p>
-                    <small>System settings are configured through appsettings.json or Azure App Service environment variables so each deployed Web App can run in its own mode while sharing the same storage account.</small>
                 </div>
             </div>
             <div class="data-list">

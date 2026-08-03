@@ -1,8 +1,10 @@
 @page "/admin/users"
 @rendermode InteractiveServer
 @using ServiceBusiness.Domain
+@inject ServiceBusiness.Application.ICurrentUserContext CurrentUser
 @inject ServiceBusiness.Application.PlatformAdminService PlatformAdminService
 @inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+@inject ServiceBusiness.Web.ApplicationModeService ApplicationMode
 
 <PageTitle>Users</PageTitle>
 
@@ -33,23 +35,23 @@ else
     <div class="metric-grid">
         <div class="metric">
             <span>Users</span>
-            <strong>@userOverview.TotalUsers</strong>
+            <strong>@FilteredUserRows.Count</strong>
         </div>
         <div class="metric">
             <span>Active</span>
-            <strong>@userOverview.ActiveUsers</strong>
+            <strong>@FilteredUserRows.Count(row => row.User.Status == UserStatus.Active)</strong>
         </div>
         <div class="metric">
             <span>System Admins</span>
-            <strong>@userOverview.SystemAdmins</strong>
+            <strong>@FilteredUserRows.Count(row => row.User.IsSystemAdmin)</strong>
         </div>
         <div class="metric">
             <span>Pending Access</span>
-            <strong>@userOverview.PendingMemberships</strong>
+            <strong>@FilteredUserRows.Sum(row => row.PendingMembershipCount)</strong>
         </div>
         <div class="metric">
             <span>Disabled</span>
-            <strong>@userOverview.DisabledUsers</strong>
+            <strong>@FilteredUserRows.Count(row => row.User.Status == UserStatus.Disabled)</strong>
         </div>
     </div>
 
@@ -57,7 +59,6 @@ else
         <div class="management-panel-header">
             <h2>Users</h2>
             <div class="management-panel-actions">
-                <button class="button primary" type="button" @onclick="ShowCreateUser">Create</button>
                 <button class="icon-button" type="button" title="Toggle users" @onclick="ToggleUsers">@(usersExpanded ? "^" : "v")</button>
             </div>
         </div>
@@ -68,15 +69,8 @@ else
                 {
                     <EditForm Model="userForm" OnValidSubmit="SaveUserAsync" FormName="user-editor">
                         <div class="editor-panel">
-                            <h3>@(userForm.IsEditing ? "Edit User" : "Create User")</h3>
+                            <h3>Edit User</h3>
                             <div class="form-grid">
-                                @if (userForm.IsEditing)
-                                {
-                                    <label>
-                                        User ID
-                                        <input class="form-control" value="@userForm.UserId" disabled />
-                                    </label>
-                                }
                                 <label>
                                     Display name
                                     <InputText class="form-control" @bind-Value="userForm.DisplayName" />
@@ -113,43 +107,80 @@ else
                     <table class="management-table">
                         <thead>
                             <tr>
-                                <th>ID</th>
                                 <th>Status</th>
                                 <th>Name</th>
                                 <th>Email</th>
                                 <th>Flags</th>
-                                <th>Company Access</th>
+                                <th>Company</th>
+                                <th>User Type</th>
+                                <th>Approved</th>
+                                <th>Sys Admin</th>
                                 <th class="actions">Action</th>
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var row in userOverview.Users)
+                            @foreach (var row in FilteredUserRows)
                             {
+                                var primaryAccess = GetPrimaryAccess(row);
+                                var userTypeKey = primaryAccess is null ? "" : RoleEditKey(row, primaryAccess);
+                                var isCurrentUser = IsCurrentUser(row.User);
                                 <tr>
-                                    <td>@row.User.Id</td>
-                                    <td>@row.User.Status</td>
+                                    <td>
+                                        <label class="switch-control" title="Toggle active state">
+                                            <input type="checkbox" checked="@(row.User.Status == UserStatus.Active)" disabled="@isCurrentUser" @onchange="args => SetUserStatusAsync(row.User, GetChecked(args) ? UserStatus.Active : UserStatus.Disabled)" />
+                                            <span></span>
+                                        </label>
+                                    </td>
                                     <td>@row.User.DisplayName</td>
                                     <td>@row.User.Email</td>
                                     <td>@GetUserFlags(row.User)</td>
-                                    <td>@string.Join(", ", row.CompanyAccess.Select(a => $"{a.Company.Name}: {a.Role} ({a.Status})"))</td>
+                                    <td>@GetCompanyAccessLabel(row)</td>
+                                    <td>
+                                        @if (primaryAccess is null)
+                                        {
+                                            <span>-</span>
+                                        }
+                                        else
+                                        {
+                                            <select class="form-control compact-select" @bind="roleEdits[userTypeKey]" disabled="@isCurrentUser">
+                                                @foreach (var role in userOverview.Roles)
+                                                {
+                                                    <option value="@role.Role">@role.DisplayName</option>
+                                                }
+                                            </select>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (primaryAccess is null)
+                                        {
+                                            <span>-</span>
+                                        }
+                                        else
+                                        {
+                                            <label class="switch-control" title="Toggle approval state">
+                                                <input type="checkbox" checked="@(primaryAccess.Status == MembershipStatus.Active)" disabled="@isCurrentUser" @onchange="args => SetPrimaryAccessApprovalAsync(row, GetChecked(args))" />
+                                                <span></span>
+                                            </label>
+                                        }
+                                    </td>
+                                    <td>
+                                        <label class="switch-control" title="Toggle system admin access">
+                                            <input type="checkbox" checked="@row.User.IsSystemAdmin" disabled="@isCurrentUser" @onchange="args => SetSystemAdminAsync(row.User, GetChecked(args))" />
+                                            <span></span>
+                                        </label>
+                                    </td>
                                     <td class="actions">
-                                        <button class="icon-button" type="button" title="Edit user" @onclick="() => EditUser(row.User)">Edit</button>
-                                        @if (row.User.IsSystemAdmin)
+                                        @if (primaryAccess is not null)
                                         {
-                                            <button class="icon-button" type="button" title="Remove system admin" @onclick="() => SetSystemAdminAsync(row.User, false)">Adm-</button>
+                                            <button class="icon-button icon-only" type="button" title="Update user type" aria-label="Update user type" disabled="@isCurrentUser" @onclick="() => UpdatePrimaryAccessRoleAsync(row, primaryAccess)">
+                                                <span class="action-icon edit-icon" aria-hidden="true"></span>
+                                            </button>
                                         }
-                                        else
+                                        @if (!isCurrentUser)
                                         {
-                                            <button class="icon-button" type="button" title="Make system admin" @onclick="() => SetSystemAdminAsync(row.User, true)">Adm+</button>
-                                        }
-
-                                        @if (row.User.Status == UserStatus.Active)
-                                        {
-                                            <button class="icon-button danger" type="button" title="Disable user" @onclick="() => SetUserStatusAsync(row.User, UserStatus.Disabled)">Del</button>
-                                        }
-                                        else
-                                        {
-                                            <button class="icon-button" type="button" title="Enable user" @onclick="() => SetUserStatusAsync(row.User, UserStatus.Active)">On</button>
+                                            <button class="icon-button icon-only" type="button" title="Edit user" aria-label="Edit user" @onclick="() => EditUser(row.User)">
+                                                <span class="action-icon edit-icon" aria-hidden="true"></span>
+                                            </button>
                                         }
                                     </td>
                                 </tr>
@@ -165,14 +196,21 @@ else
 @code {
     private PlatformUserManagementOverview? userOverview;
     private UserForm userForm = new();
+    private IReadOnlyList<CompanyType> companyTypes = [];
+    private readonly Dictionary<string, CompanyRole> roleEdits = [];
     private bool usersExpanded = true;
     private bool userEditorExpanded;
     private string? message;
     private string? errorMessage;
+    private string currentUserId = "";
+    private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
+    private IReadOnlyList<UserManagementRow> FilteredUserRows => userOverview?.Users.Where(UserMatchesMode).ToList() ?? [];
 
     protected override async Task OnInitializedAsync()
     {
         DemoUser.UserId = "sys-admin";
+        currentUserId = CurrentUser.UserId;
+        appMode = await ApplicationMode.GetCurrentAsync();
         await LoadAsync();
     }
 
@@ -191,27 +229,14 @@ else
     {
         await RunUserActionAsync(async () =>
         {
-            if (userForm.IsEditing)
-            {
-                await PlatformAdminService.UpdateUserAsync(
-                    userForm.UserId,
-                    userForm.DisplayName,
-                    userForm.Email,
-                    userForm.NotificationEmail,
-                    userForm.Phone,
-                    userForm.IsTestUser,
-                    userForm.EmailNotificationsEnabled);
-            }
-            else
-            {
-                await PlatformAdminService.CreateUserAsync(
-                    userForm.DisplayName,
-                    userForm.Email,
-                    userForm.NotificationEmail,
-                    userForm.Phone,
-                    userForm.IsTestUser,
-                    userForm.EmailNotificationsEnabled);
-            }
+            await PlatformAdminService.UpdateUserAsync(
+                userForm.UserId,
+                userForm.DisplayName,
+                userForm.Email,
+                userForm.NotificationEmail,
+                userForm.Phone,
+                userForm.IsTestUser,
+                userForm.EmailNotificationsEnabled);
 
             message = $"{userForm.DisplayName} was saved.";
             ResetUserForm();
@@ -251,6 +276,16 @@ else
     private async Task LoadAsync()
     {
         userOverview = await PlatformAdminService.GetUserManagementOverviewAsync();
+        companyTypes = await PlatformAdminService.GetCompanyTypesAsync();
+        roleEdits.Clear();
+        foreach (var row in userOverview.Users)
+        {
+            var primaryAccess = GetPrimaryAccess(row);
+            if (primaryAccess is not null)
+            {
+                roleEdits[RoleEditKey(row, primaryAccess)] = primaryAccess.Role;
+            }
+        }
     }
 
     private void EditUser(AppUser user)
@@ -265,11 +300,37 @@ else
         userForm = new UserForm();
     }
 
-    private void ShowCreateUser()
+    private async Task SetPrimaryAccessApprovalAsync(UserManagementRow row, bool isApproved)
     {
-        ResetUserForm();
-        userEditorExpanded = true;
-        usersExpanded = true;
+        var access = GetPrimaryAccess(row);
+        if (access is null)
+        {
+            return;
+        }
+
+        await RunUserActionAsync(async () =>
+        {
+            await PlatformAdminService.SetCompanyMembershipApprovalAsync(
+                access.Company.Id,
+                row.User.Id,
+                access.Role,
+                isApproved);
+            message = $"{row.User.DisplayName} approval was updated.";
+        });
+    }
+
+    private async Task UpdatePrimaryAccessRoleAsync(UserManagementRow row, CompanyAccess access)
+    {
+        await RunUserActionAsync(async () =>
+        {
+            var newRole = roleEdits[RoleEditKey(row, access)];
+            await PlatformAdminService.UpdateCompanyMembershipRoleAsync(
+                access.Company.Id,
+                row.User.Id,
+                access.Role,
+                newRole);
+            message = $"{row.User.DisplayName} user type was updated to {GetRoleDisplayName(newRole)}.";
+        });
     }
 
     private void HideUserEditor()
@@ -295,6 +356,57 @@ else
 
         return flags.Count == 0 ? "-" : string.Join(", ", flags);
     }
+
+    private CompanyAccess? GetPrimaryAccess(UserManagementRow row) =>
+        row.CompanyAccess
+            .Where(access => access.Status != MembershipStatus.Removed && CompanyMatchesMode(access.Company))
+            .OrderByDescending(access => access.Status == MembershipStatus.Active)
+            .ThenByDescending(access => access.Status == MembershipStatus.Pending)
+            .ThenBy(access => access.Company.Name)
+            .FirstOrDefault();
+
+    private string GetCompanyAccessLabel(UserManagementRow row)
+    {
+        var activeAccess = row.CompanyAccess
+            .Where(access => access.Status != MembershipStatus.Removed && CompanyMatchesMode(access.Company))
+            .Select(access => $"{access.Company.Name}: {access.Role}");
+        return string.Join(", ", activeAccess.DefaultIfEmpty("-"));
+    }
+
+    private bool UserMatchesMode(UserManagementRow row)
+    {
+        if (row.User.IsSystemAdmin || row.CompanyAccess.Count == 0)
+        {
+            return true;
+        }
+
+        return row.CompanyAccess.Any(access => access.Status != MembershipStatus.Removed && CompanyMatchesMode(access.Company));
+    }
+
+    private bool CompanyMatchesMode(Company company)
+    {
+        var type = companyTypes.FirstOrDefault(t => string.Equals(t.Id, company.CompanyTypeId, StringComparison.OrdinalIgnoreCase));
+        var searchable = type is null
+            ? company.CompanyTypeId
+            : $"{company.CompanyTypeId} {type.Name} {type.Description}";
+        return appMode.IsPoolMode
+            ? searchable.Contains("pool", StringComparison.OrdinalIgnoreCase)
+            : ContainsAny(searchable, "landscape", "landscaping", "lawn", "yard", "tree");
+    }
+
+    private static bool ContainsAny(string value, params string[] terms) =>
+        terms.Any(term => value.Contains(term, StringComparison.OrdinalIgnoreCase));
+
+    private static bool GetChecked(ChangeEventArgs args) => args.Value is bool value && value;
+
+    private bool IsCurrentUser(AppUser user) =>
+        string.Equals(user.Id, currentUserId, StringComparison.OrdinalIgnoreCase);
+
+    private static string RoleEditKey(UserManagementRow row, CompanyAccess access) =>
+        $"{row.User.Id}|{access.Company.Id}|{access.Role}";
+
+    private string GetRoleDisplayName(CompanyRole role) =>
+        userOverview?.Roles.FirstOrDefault(r => r.Role == role)?.DisplayName ?? role.ToString();
 
     private sealed class UserForm
     {

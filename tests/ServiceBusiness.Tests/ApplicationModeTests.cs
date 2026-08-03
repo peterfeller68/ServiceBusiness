@@ -14,6 +14,7 @@ public sealed class ApplicationModeTests
         Assert.Equal(SystemMode.Pool, mode.Mode);
         Assert.Equal("PoolShark", mode.ProductName);
         Assert.True(mode.IsPoolMode);
+        Assert.Equal(GlobalCatalogScope.Pool, mode.GlobalCatalogCompanyId);
         Assert.Equal("/images/pool-waterfall-hero.png", mode.HeroImageUrl);
     }
 
@@ -25,6 +26,7 @@ public sealed class ApplicationModeTests
         Assert.Equal(SystemMode.Landscape, mode.Mode);
         Assert.Equal("TreeShark", mode.ProductName);
         Assert.False(mode.IsPoolMode);
+        Assert.Equal(GlobalCatalogScope.Landscape, mode.GlobalCatalogCompanyId);
         Assert.Equal("/images/landscape-fruit-trees-hero.png", mode.HeroImageUrl);
     }
 

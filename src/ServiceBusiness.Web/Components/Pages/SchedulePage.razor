@@ -1,89 +1,784 @@
 @page "/schedule"
+@page "/visits"
+@page "/admin/visits"
 @rendermode InteractiveServer
+@using ServiceBusiness.Application
 @using ServiceBusiness.Domain
-@inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
+@inject CompanyAdminService CompanyAdminService
+@inject OnboardingService OnboardingService
+@inject PlatformAdminService PlatformAdminService
+@inject ICurrentUserContext CurrentUser
 @inject ServiceBusiness.Web.CurrentCompanyContext CurrentCompany
+@inject ServiceBusiness.Web.ApplicationModeService ApplicationMode
+@inject NavigationManager Navigation
 
-<PageTitle>Schedule</PageTitle>
+<PageTitle>Visit Scheduling</PageTitle>
 
 <section class="page-header">
     <div>
-        <p class="eyebrow">Company Admin</p>
-        <h1>Schedule</h1>
-        <p class="lede">Visits for @selectedDate.ToLongDateString().</p>
+        <p class="eyebrow">@PageEyebrow</p>
+        <h1>Visit Scheduling</h1>
+        <p class="lede">Plan, assign, complete, and inspect service visits.</p>
     </div>
 </section>
 
 @if (!string.IsNullOrWhiteSpace(message))
 {
-    <div class="notice">@message</div>
+    <div class="notice success">@message</div>
 }
 
-@if (visits is null || clients is null)
+@if (!string.IsNullOrWhiteSpace(errorMessage))
 {
-    <p>Loading schedule...</p>
+    <div class="notice error">@errorMessage</div>
+}
+
+@if (isLoading)
+{
+    <p>Loading visits...</p>
+}
+else if (!CanManageVisits)
+{
+    <p>You do not have access to visit scheduling.</p>
 }
 else
 {
-    <div class="data-list">
-        @foreach (var visit in visits)
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>Unscheduled and Scheduled Visits</h2>
+            <div class="management-panel-actions">
+                <button class="button primary" type="button" @onclick="CreateVisit">Create</button>
+                <button class="icon-button" type="button" title="Toggle visits needing assignment" @onclick="() => pendingExpanded = !pendingExpanded">@(pendingExpanded ? "^" : "v")</button>
+            </div>
+        </div>
+        @if (pendingExpanded)
         {
-            var client = clients.First(c => c.Id == visit.CompanyClientId);
-            <article class="row-card">
-                <div>
-                    <strong>@client.DisplayName</strong>
-                    <p>@visit.ServiceWindowStart.ToShortTimeString() - @visit.ServiceWindowEnd.ToShortTimeString() · @client.ServiceAddress</p>
-                    <small>@visit.Notes</small>
-                </div>
-                <div class="row-actions">
-                    <span class="status-pill">@visit.Status</span>
-                    @if (string.IsNullOrWhiteSpace(visit.AssignedUserId) && defaultAssignee is not null)
-                    {
-                        <button class="button" @onclick="() => AssignVisit(visit.Id)">Assign to @defaultAssignee.User.DisplayName</button>
-                    }
-                </div>
-            </article>
+            <div class="management-panel-body">
+                @VisitEditor()
+                @VisitTable(PendingVisits)
+            </div>
         }
+    </section>
+
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>Assigned Visits</h2>
+            <div class="management-panel-actions">
+                <button class="icon-button" type="button" title="Toggle assigned visits" @onclick="() => assignedExpanded = !assignedExpanded">@(assignedExpanded ? "^" : "v")</button>
+            </div>
+        </div>
+        @if (assignedExpanded)
+        {
+            <div class="management-panel-body">
+                @VisitTable(AssignedVisits)
+            </div>
+        }
+    </section>
+
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>Recently Completed Visits</h2>
+            <div class="management-panel-actions">
+                <button class="icon-button" type="button" title="Toggle completed visits" @onclick="() => completedExpanded = !completedExpanded">@(completedExpanded ? "^" : "v")</button>
+            </div>
+        </div>
+        @if (completedExpanded)
+        {
+            <div class="management-panel-body">
+                @VisitTable(CompletedVisits)
+            </div>
+        }
+    </section>
+
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>Closed Visits</h2>
+            <div class="management-panel-actions">
+                <button class="icon-button" type="button" title="Toggle closed visits" @onclick="() => closedExpanded = !closedExpanded">@(closedExpanded ? "^" : "v")</button>
+            </div>
+        </div>
+        @if (closedExpanded)
+        {
+            <div class="management-panel-body">
+                @VisitTable(ClosedVisits)
+            </div>
+        }
+    </section>
+}
+
+@if (infoVisit is not null)
+{
+    <div class="photo-modal-backdrop" @onclick="CloseInfo">
+        <div class="photo-modal" @onclick:stopPropagation="true">
+            <div class="photo-modal-header">
+                <strong>@DisplayVisitName(infoVisit)</strong>
+                <button class="icon-button icon-only" type="button" title="Close visit info" aria-label="Close visit info" @onclick="CloseInfo">x</button>
+            </div>
+            <div class="data-list">
+                <article class="row-card"><strong>Visit ID</strong><p>@infoVisit.Id</p></article>
+                <article class="row-card"><strong>Visit Type</strong><p>@DisplayVisitType(infoVisit.VisitType)</p></article>
+                <article class="row-card"><strong>Visit Date</strong><p>@DisplayVisitDate(infoVisit)</p></article>
+                <article class="row-card"><strong>Visit Name</strong><p>@DisplayVisitName(infoVisit)</p></article>
+                <article class="row-card"><strong>Window</strong><p>@infoVisit.ServiceWindowStart.ToString("t") - @infoVisit.ServiceWindowEnd.ToString("t")</p></article>
+                <article class="row-card"><strong>Status</strong><p>@DisplayStatus(infoVisit.Status)</p></article>
+                @if (IsSystemAdminView)
+                {
+                    <article class="row-card"><strong>Service Client</strong><p>@GetCompanyName(infoVisit.CompanyId)</p></article>
+                }
+                <article class="row-card"><strong>Business Client</strong><p>@GetClientName(infoVisit)</p></article>
+                <article class="row-card"><strong>Assigned To</strong><p>@GetEmployeeName(infoVisit)</p></article>
+                <article class="row-card"><strong>Route Order</strong><p>@infoVisit.RouteOrder</p></article>
+                <article class="row-card"><strong>Services</strong><p>@GetServiceNames(infoVisit.PlannedServiceIds)</p></article>
+                <article class="row-card"><strong>Completed Services</strong><p>@GetServiceNames(infoVisit.CompletedServiceIds ?? [])</p></article>
+                <article class="row-card"><strong>Out-of-Scope Services</strong><p>@GetServiceNames(infoVisit.OutOfScopeServiceIds ?? [])</p></article>
+                <article class="row-card"><strong>Out-of-Scope Materials</strong><p>@GetMaterialUsageText(infoVisit.OutOfScopeMaterials ?? [])</p></article>
+                <article class="row-card"><strong>Materials Used</strong><p>@GetMaterialUsageText(infoVisit.MaterialsUsed ?? [])</p></article>
+                <article class="row-card"><strong>Started</strong><p>@(infoVisit.StartedUtc?.ToLocalTime().ToString("g") ?? "-")</p></article>
+                <article class="row-card"><strong>Completed</strong><p>@(infoVisit.CompletedUtc?.ToLocalTime().ToString("g") ?? "-")</p></article>
+                <article class="row-card"><strong>Completed By</strong><p>@(string.IsNullOrWhiteSpace(infoVisit.CompletedByUserId) ? "-" : infoVisit.CompletedByUserId)</p></article>
+                <article class="row-card"><strong>Notes</strong><p>@(string.IsNullOrWhiteSpace(infoVisit.Notes) ? "-" : infoVisit.Notes)</p></article>
+                <article class="row-card"><strong>Notes To Business Client</strong><p>@(string.IsNullOrWhiteSpace(infoVisit.NotesToBusinessClient) ? "-" : infoVisit.NotesToBusinessClient)</p></article>
+                <article class="row-card"><strong>Notes To Service Client</strong><p>@(string.IsNullOrWhiteSpace(infoVisit.NotesToServiceClient) ? "-" : infoVisit.NotesToServiceClient)</p></article>
+                <article class="row-card"><strong>Internal Notes</strong><p>@(string.IsNullOrWhiteSpace(infoVisit.InternalNotes) ? "-" : infoVisit.InternalNotes)</p></article>
+                <article class="row-card"><strong>Invoice</strong><p>@(string.IsNullOrWhiteSpace(infoVisit.InvoiceId) ? "-" : infoVisit.InvoiceId)</p></article>
+            </div>
+        </div>
     </div>
 }
 
 @code {
-    private DateOnly selectedDate = DateOnly.FromDateTime(DateTime.Today);
-    private IReadOnlyList<ServiceVisit>? visits;
-    private IReadOnlyList<CompanyClient>? clients;
-    private CompanyUserManagementRow? defaultAssignee;
-    private string companyId = "";
+    private bool isLoading = true;
+    private bool pendingExpanded = true;
+    private bool assignedExpanded = true;
+    private bool completedExpanded = true;
+    private bool closedExpanded;
     private string? message;
+    private string? errorMessage;
+    private UserAccessOverview? overview;
+    private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
+    private IReadOnlyList<CompanyType> companyTypes = [];
+    private IReadOnlyList<Company> companies = [];
+    private IReadOnlyList<Company> visibleCompanies = [];
+    private readonly Dictionary<string, IReadOnlyList<CompanyClient>> clientsByCompany = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, IReadOnlyList<CompanyUserManagementRow>> usersByCompany = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, IReadOnlyList<ServiceOffering>> servicesByCompany = new(StringComparer.OrdinalIgnoreCase);
+    private List<ServiceVisit> visits = [];
+    private VisitForm? visitForm;
+    private ServiceVisit? infoVisit;
+    private string companyId = "";
+
+    private bool IsSystemAdminView => overview?.User.IsSystemAdmin == true && Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("admin/visits", StringComparison.OrdinalIgnoreCase);
+    private bool IsBusinessOwner => overview?.Companies.Any(access => access.Status == MembershipStatus.Active && access.Role == CompanyRole.CompanyAdmin) == true;
+    private bool CanManageVisits => IsSystemAdminView || IsBusinessOwner;
+    private string PageEyebrow => IsSystemAdminView ? "System Administrator" : "Business Owner";
+
+    private IReadOnlyList<ServiceVisit> PendingVisits => visits
+        .Where(visit => visit.Status is VisitStatus.New or VisitStatus.Unscheduled or VisitStatus.Scheduled)
+        .OrderBy(visit => visit.ScheduledDate == default ? DateOnly.MaxValue : visit.ScheduledDate)
+        .ThenBy(visit => visit.ServiceWindowStart)
+        .ToList();
+
+    private IReadOnlyList<ServiceVisit> AssignedVisits => visits
+        .Where(visit => visit.Status is VisitStatus.Assigned or VisitStatus.InProgress)
+        .OrderBy(visit => visit.ScheduledDate == default ? DateOnly.MaxValue : visit.ScheduledDate)
+        .ThenBy(visit => visit.ServiceWindowStart)
+        .ToList();
+
+    private IReadOnlyList<ServiceVisit> CompletedVisits => visits
+        .Where(visit => visit.Status == VisitStatus.Completed)
+        .OrderByDescending(visit => visit.CompletedUtc ?? new DateTimeOffset(visit.ScheduledDate == default ? DateTime.MinValue : visit.ScheduledDate.ToDateTime(TimeOnly.MinValue)))
+        .Take(25)
+        .ToList();
+
+    private IReadOnlyList<ServiceVisit> ClosedVisits => visits
+        .Where(visit => visit.Status == VisitStatus.Closed)
+        .OrderByDescending(visit => visit.CompletedUtc ?? new DateTimeOffset(visit.ScheduledDate == default ? DateTime.MinValue : visit.ScheduledDate.ToDateTime(TimeOnly.MinValue)))
+        .Take(25)
+        .ToList();
 
     protected override async Task OnInitializedAsync()
     {
-        companyId = await CurrentCompany.GetRequiredCompanyIdAsync([CompanyRole.CompanyAdmin]);
-        await LoadAsync();
-    }
-
-    private async Task AssignVisit(string visitId)
-    {
-        if (defaultAssignee is null)
+        appMode = await ApplicationMode.GetCurrentAsync();
+        overview = await OnboardingService.GetAccessOverviewAsync(CurrentUser.UserId);
+        if (!CanManageVisits)
         {
-            message = "No active company user is available for assignment.";
+            isLoading = false;
             return;
         }
 
-        await CompanyAdminService.AssignVisitAsync(companyId, visitId, defaultAssignee.User.Id);
-        message = $"Visit assigned to {defaultAssignee.User.DisplayName}.";
+        if (IsSystemAdminView)
+        {
+            companyTypes = await PlatformAdminService.GetCompanyTypesAsync();
+            companies = await PlatformAdminService.GetCompaniesAsync();
+            visibleCompanies = companies.Where(CompanyMatchesMode).OrderBy(company => company.Name).ToList();
+        }
+        else
+        {
+            companyId = await CurrentCompany.GetRequiredCompanyIdAsync([CompanyRole.CompanyAdmin]);
+            var company = overview.Companies.First(access => string.Equals(access.Company.Id, companyId, StringComparison.OrdinalIgnoreCase)).Company;
+            visibleCompanies = [company];
+        }
+
         await LoadAsync();
+        isLoading = false;
     }
+
+    private RenderFragment VisitEditor() => @<div>
+        @if (visitForm is not null)
+        {
+            <EditForm Model="visitForm" OnValidSubmit="SaveVisitAsync" FormName="visit-editor">
+                <div class="editor-panel">
+                    <h3>@(visitForm.IsEditing ? "Edit Visit" : "Create Ad-Hoc Visit")</h3>
+                    <div class="form-grid">
+                        @if (IsSystemAdminView)
+                        {
+                            <label>
+                                Service Client
+                                <select class="form-control" value="@visitForm.CompanyId" @onchange="OnVisitCompanyChanged">
+                                    @foreach (var company in visibleCompanies)
+                                    {
+                                        <option value="@company.Id">@company.Name</option>
+                                    }
+                                </select>
+                            </label>
+                        }
+                        <label>
+                            Visit Type
+                            <InputSelect class="form-control" @bind-Value="visitForm.VisitType">
+                                <option value="@VisitType.AdHocVisit">Ad-Hoc Visit</option>
+                                <option value="@VisitType.ServicePackageVisit">Service Package Visit</option>
+                            </InputSelect>
+                        </label>
+                        <label>
+                            Visit Name
+                            <InputText class="form-control" @bind-Value="visitForm.VisitName" />
+                        </label>
+                        <label>
+                            Business Client
+                            <InputSelect class="form-control" @bind-Value="visitForm.CompanyClientId">
+                                <option value="">Choose business client</option>
+                                @foreach (var client in GetClients(visitForm.CompanyId))
+                                {
+                                    <option value="@client.Id">@client.DisplayName</option>
+                                }
+                            </InputSelect>
+                        </label>
+                        <label>
+                            Visit Date
+                            <InputDate class="form-control" @bind-Value="visitForm.ScheduledDate" />
+                        </label>
+                        <label>
+                            Assigned To
+                            <InputSelect class="form-control" @bind-Value="visitForm.AssignedUserId">
+                                <option value="">Unassigned</option>
+                                @foreach (var employee in GetEmployees(visitForm.CompanyId))
+                                {
+                                    <option value="@employee.User.Id">@employee.User.DisplayName</option>
+                                }
+                            </InputSelect>
+                        </label>
+                        <label>
+                            Status
+                            <InputSelect class="form-control" @bind-Value="visitForm.Status">
+                                <option value="@VisitStatus.New">New</option>
+                                <option value="@VisitStatus.Assigned">Assigned to Employee</option>
+                                <option value="@VisitStatus.InProgress">In Progress</option>
+                                <option value="@VisitStatus.Completed">Complete</option>
+                                <option value="@VisitStatus.Closed">Closed</option>
+                            </InputSelect>
+                        </label>
+                        <label class="wide">
+                            Notes To Business Client
+                            <InputTextArea class="form-control" @bind-Value="visitForm.NotesToBusinessClient" />
+                        </label>
+                        <label class="wide">
+                            Notes To Service Client
+                            <InputTextArea class="form-control" @bind-Value="visitForm.NotesToServiceClient" />
+                        </label>
+                        <label class="wide">
+                            Internal Notes
+                            <InputTextArea class="form-control" @bind-Value="visitForm.InternalNotes" />
+                        </label>
+                    </div>
+
+                    <h4>Chosen Services</h4>
+                    @if (visitForm.ServiceIds.Count == 0)
+                    {
+                        <p>No services chosen for this visit.</p>
+                    }
+                    else
+                    {
+                        <div class="management-table-wrap">
+                            <table class="management-table">
+                                <thead>
+                                    <tr>
+                                        <th>Service</th>
+                                        <th>Scope</th>
+                                        <th>Description</th>
+                                        <th class="actions">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var serviceId in visitForm.ServiceIds)
+                                    {
+                                        var service = GetService(visitForm.CompanyId, serviceId);
+                                        <tr>
+                                            <td>@(service?.Name ?? serviceId)</td>
+                                            <td>@(service is null ? "-" : GetServiceScope(visitForm.CompanyId, service))</td>
+                                            <td>@(service?.Description ?? "")</td>
+                                            <td class="actions">
+                                                <button class="icon-button icon-only danger" type="button" title="Remove service" aria-label="Remove service" @onclick="() => RemoveService(serviceId)">
+                                                    <span class="action-icon delete-icon" aria-hidden="true"></span>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+
+                    <div class="form-actions">
+                        <button class="button primary" type="submit">Save Visit</button>
+                        <button class="button" type="button" @onclick="CancelEdit">Cancel</button>
+                    </div>
+
+                    <h4>Choose Services</h4>
+                    <label class="wide">
+                        Filter services
+                        <input class="form-control" @bind="visitForm.ServiceFilter" @bind:event="oninput" />
+                    </label>
+                    <div class="management-table-wrap">
+                        <table class="management-table">
+                            <thead>
+                                <tr>
+                                    <th>Service</th>
+                                    <th>Scope</th>
+                                    <th>Description</th>
+                                    <th class="actions">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var service in GetFilteredServices(visitForm))
+                                {
+                                    <tr>
+                                        <td>@service.Name</td>
+                                        <td>@GetServiceScope(visitForm.CompanyId, service)</td>
+                                        <td>@service.Description</td>
+                                        <td class="actions">
+                                            <button class="icon-button icon-only" type="button" title="Choose service" aria-label="Choose service" disabled="@visitForm.ServiceIds.Contains(service.Id, StringComparer.OrdinalIgnoreCase)" @onclick="() => ChooseService(service.Id)">
+                                                <span class="action-icon choose-icon" aria-hidden="true"></span>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </EditForm>
+        }
+    </div>;
+
+    private RenderFragment VisitTable(IReadOnlyList<ServiceVisit> rows) => @<div>
+        @if (rows.Count == 0)
+        {
+            <p>No visits in this panel.</p>
+        }
+        else
+        {
+            <div class="management-table-wrap">
+                <table class="management-table">
+                    <thead>
+                        <tr>
+                            <th>Visit Type</th>
+                            <th>Visit Date</th>
+                            <th>Visit Name</th>
+                            @if (IsSystemAdminView)
+                            {
+                                <th>Service Client</th>
+                            }
+                            <th>Business Client</th>
+                            <th>Assigned To</th>
+                            <th>Status</th>
+                            <th class="actions">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var visit in rows)
+                        {
+                            <tr>
+                                <td>@DisplayVisitType(visit.VisitType)</td>
+                                <td>@DisplayVisitDate(visit)</td>
+                                <td>@DisplayVisitName(visit)</td>
+                                @if (IsSystemAdminView)
+                                {
+                                    <td>@GetCompanyName(visit.CompanyId)</td>
+                                }
+                                <td>@GetClientName(visit)</td>
+                                <td>@GetEmployeeName(visit)</td>
+                                <td>@DisplayStatus(visit.Status)</td>
+                                <td class="actions">
+                                    <button class="icon-button icon-only" type="button" title="Edit visit" aria-label="Edit visit" @onclick="() => EditVisit(visit)">
+                                        <span class="action-icon edit-icon" aria-hidden="true"></span>
+                                    </button>
+                                    @if (visit.Status is VisitStatus.InProgress or VisitStatus.Assigned)
+                                    {
+                                        <button class="icon-button icon-only" type="button" title="Complete visit" aria-label="Complete visit" @onclick="() => SetStatusAsync(visit, VisitStatus.Completed)">
+                                            <span class="action-icon check-icon" aria-hidden="true"></span>
+                                        </button>
+                                    }
+                                    @if (visit.Status == VisitStatus.Completed)
+                                    {
+                                        <button class="icon-button icon-only" type="button" title="Close visit" aria-label="Close visit" @onclick="() => SetStatusAsync(visit, VisitStatus.Closed)">
+                                            <span class="action-icon check-icon" aria-hidden="true"></span>
+                                        </button>
+                                    }
+                                    <button class="icon-button icon-only" type="button" title="Show visit info" aria-label="Show visit info" @onclick="() => ShowInfo(visit)">
+                                        <span class="action-icon info-icon" aria-hidden="true"></span>
+                                    </button>
+                                    @if (visit.Status is not VisitStatus.Completed and not VisitStatus.Closed)
+                                    {
+                                        <button class="icon-button icon-only danger" type="button" title="Delete visit" aria-label="Delete visit" @onclick="() => DeleteVisitAsync(visit)">
+                                            <span class="action-icon delete-icon" aria-hidden="true"></span>
+                                        </button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>;
 
     private async Task LoadAsync()
     {
-        visits = await CompanyAdminService.GetScheduleAsync(companyId, selectedDate);
-        clients = await CompanyAdminService.GetClientsAsync(companyId);
-        var usersOverview = await CompanyAdminService.GetCompanyUserManagementOverviewAsync(companyId);
-        defaultAssignee = usersOverview.Users
-            .Where(row =>
-                row.Membership.Role == CompanyRole.CompanyUser &&
-                row.Membership.Status == MembershipStatus.Active)
-            .OrderBy(row => row.User.DisplayName)
-            .FirstOrDefault();
+        visits = [];
+        clientsByCompany.Clear();
+        usersByCompany.Clear();
+        servicesByCompany.Clear();
+
+        foreach (var company in visibleCompanies)
+        {
+            clientsByCompany[company.Id] = (await CompanyAdminService.GetClientsAsync(company.Id))
+                .Where(client => client.IsActive)
+                .OrderBy(client => client.DisplayName)
+                .ToList();
+            var userOverview = await CompanyAdminService.GetCompanyUserManagementOverviewAsync(company.Id);
+            usersByCompany[company.Id] = userOverview.Users
+                .Where(row => row.Membership.Role is CompanyRole.CompanyUser or CompanyRole.CompanyAdmin && row.Membership.Status == MembershipStatus.Active)
+                .OrderBy(row => row.User.DisplayName)
+                .ToList();
+
+            var globalCatalogCompanyId = GetGlobalCatalogCompanyId(company);
+            var companyServices = (await CompanyAdminService.GetCatalogOverviewAsync(company.Id)).ServiceGroups.SelectMany(group => group.Services);
+            var globalServices = (await CompanyAdminService.GetCatalogOverviewAsync(globalCatalogCompanyId)).ServiceGroups.SelectMany(group => group.Services);
+            servicesByCompany[company.Id] = companyServices
+                .Concat(globalServices)
+                .Where(service => service.IsActive)
+                .GroupBy(service => service.Id, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .OrderBy(service => service.Name)
+                .ToList();
+
+            visits.AddRange(await CompanyAdminService.GetVisitsAsync(company.Id));
+        }
+    }
+
+    private void CreateVisit()
+    {
+        var selectedCompanyId = IsSystemAdminView
+            ? visibleCompanies.FirstOrDefault()?.Id ?? ""
+            : companyId;
+        var firstClient = GetClients(selectedCompanyId).FirstOrDefault();
+        visitForm = new VisitForm
+        {
+            Id = $"visit-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}",
+            CompanyId = selectedCompanyId,
+            CompanyClientId = firstClient?.Id ?? "",
+            VisitType = VisitType.AdHocVisit,
+            VisitName = "Ad-Hoc Visit",
+            ScheduledDate = null,
+            Status = VisitStatus.New
+        };
+        pendingExpanded = true;
+    }
+
+    private void EditVisit(ServiceVisit visit)
+    {
+        visitForm = VisitForm.FromVisit(visit);
+        pendingExpanded = true;
+    }
+
+    private void CancelEdit() => visitForm = null;
+
+    private async Task SaveVisitAsync()
+    {
+        if (visitForm is null)
+        {
+            return;
+        }
+
+        await RunActionAsync(async () =>
+        {
+            var scheduledDate = visitForm.ScheduledDate.HasValue
+                ? DateOnly.FromDateTime(visitForm.ScheduledDate.Value)
+                : default;
+            await CompanyAdminService.UpsertVisitAsync(new ServiceVisit(
+                visitForm.Id,
+                visitForm.CompanyId,
+                visitForm.CompanyClientId,
+                string.IsNullOrWhiteSpace(visitForm.AssignedUserId) ? null : visitForm.AssignedUserId,
+                scheduledDate,
+                new TimeOnly(8, 0),
+                new TimeOnly(10, 0),
+                visitForm.Status,
+                visitForm.ServiceIds,
+                0,
+                visitForm.NotesToBusinessClient,
+                null,
+                null,
+                visitForm.VisitType,
+                visitForm.VisitName,
+                visitForm.NotesToBusinessClient,
+                visitForm.NotesToServiceClient,
+                visitForm.InternalNotes,
+                visitForm.InvoiceId));
+
+            message = "Visit was saved.";
+            visitForm = null;
+        });
+    }
+
+    private async Task SetStatusAsync(ServiceVisit visit, VisitStatus status)
+    {
+        await RunActionAsync(async () =>
+        {
+            await CompanyAdminService.SetVisitStatusAsync(visit.CompanyId, visit.Id, status);
+            message = $"Visit marked {DisplayStatus(status)}.";
+        });
+    }
+
+    private async Task DeleteVisitAsync(ServiceVisit visit)
+    {
+        await RunActionAsync(async () =>
+        {
+            await CompanyAdminService.DeleteVisitAsync(visit.CompanyId, visit.Id);
+            message = "Visit was deleted.";
+        });
+    }
+
+    private async Task RunActionAsync(Func<Task> action)
+    {
+        message = null;
+        errorMessage = null;
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private void OnVisitCompanyChanged(ChangeEventArgs args)
+    {
+        if (visitForm is null || args.Value is not string selectedCompanyId)
+        {
+            return;
+        }
+
+        visitForm.CompanyId = selectedCompanyId;
+        visitForm.CompanyClientId = GetClients(selectedCompanyId).FirstOrDefault()?.Id ?? "";
+        visitForm.AssignedUserId = "";
+        visitForm.ServiceIds = [];
+    }
+
+    private void ChooseService(string serviceId)
+    {
+        if (visitForm is null)
+        {
+            return;
+        }
+
+        var ids = visitForm.ServiceIds.ToList();
+        if (!ids.Contains(serviceId, StringComparer.OrdinalIgnoreCase))
+        {
+            ids.Add(serviceId);
+        }
+
+        visitForm.ServiceIds = ids;
+    }
+
+    private void RemoveService(string serviceId)
+    {
+        if (visitForm is null)
+        {
+            return;
+        }
+
+        var ids = visitForm.ServiceIds.ToList();
+        ids.RemoveAll(id => string.Equals(id, serviceId, StringComparison.OrdinalIgnoreCase));
+        visitForm.ServiceIds = ids;
+    }
+
+    private IReadOnlyList<ServiceOffering> GetFilteredServices(VisitForm form)
+    {
+        var services = GetServices(form.CompanyId)
+            .Where(service => !form.ServiceIds.Contains(service.Id, StringComparer.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(form.ServiceFilter))
+        {
+            services = services.Where(service =>
+                service.Name.Contains(form.ServiceFilter, StringComparison.OrdinalIgnoreCase) ||
+                service.Description.Contains(form.ServiceFilter, StringComparison.OrdinalIgnoreCase) ||
+                GetServiceScope(form.CompanyId, service).Contains(form.ServiceFilter, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return services
+            .OrderBy(service => service.Name)
+            .ToList();
+    }
+
+    private void ShowInfo(ServiceVisit visit) => infoVisit = visit;
+
+    private void CloseInfo() => infoVisit = null;
+
+    private IReadOnlyList<CompanyClient> GetClients(string selectedCompanyId) =>
+        clientsByCompany.TryGetValue(selectedCompanyId, out var rows) ? rows : [];
+
+    private IReadOnlyList<CompanyUserManagementRow> GetEmployees(string selectedCompanyId) =>
+        usersByCompany.TryGetValue(selectedCompanyId, out var rows) ? rows : [];
+
+    private IReadOnlyList<ServiceOffering> GetServices(string selectedCompanyId) =>
+        servicesByCompany.TryGetValue(selectedCompanyId, out var rows) ? rows : [];
+
+    private ServiceOffering? GetService(string selectedCompanyId, string serviceId) =>
+        GetServices(selectedCompanyId).FirstOrDefault(service => string.Equals(service.Id, serviceId, StringComparison.OrdinalIgnoreCase));
+
+    private static string GetServiceScope(string selectedCompanyId, ServiceOffering service) =>
+        string.Equals(service.CompanyId, selectedCompanyId, StringComparison.OrdinalIgnoreCase) ? "Service Client" : "Global";
+
+    private string GetCompanyName(string selectedCompanyId) =>
+        visibleCompanies.FirstOrDefault(company => string.Equals(company.Id, selectedCompanyId, StringComparison.OrdinalIgnoreCase))?.Name
+        ?? selectedCompanyId;
+
+    private string GetClientName(ServiceVisit visit) =>
+        GetClients(visit.CompanyId).FirstOrDefault(client => string.Equals(client.Id, visit.CompanyClientId, StringComparison.OrdinalIgnoreCase))?.DisplayName
+        ?? visit.CompanyClientId;
+
+    private string GetEmployeeName(ServiceVisit visit) =>
+        string.IsNullOrWhiteSpace(visit.AssignedUserId)
+            ? "-"
+            : GetEmployees(visit.CompanyId).FirstOrDefault(row => string.Equals(row.User.Id, visit.AssignedUserId, StringComparison.OrdinalIgnoreCase))?.User.DisplayName
+                ?? visit.AssignedUserId;
+
+    private string GetServiceNames(IReadOnlyList<string> serviceIds)
+    {
+        var names = serviceIds
+            .Select(id => servicesByCompany.Values.SelectMany(service => service).FirstOrDefault(service => string.Equals(service.Id, id, StringComparison.OrdinalIgnoreCase))?.Name ?? id)
+            .ToList();
+        return names.Count == 0 ? "-" : string.Join(", ", names);
+    }
+
+    private static string GetMaterialUsageText(IReadOnlyList<MaterialUsage> materials)
+    {
+        if (materials.Count == 0)
+        {
+            return "-";
+        }
+
+        return string.Join(", ", materials.Select(material => $"{material.MaterialId} ({material.Quantity})"));
+    }
+
+    private string GetGlobalCatalogCompanyId(Company company)
+    {
+        var type = companyTypes.FirstOrDefault(t => string.Equals(t.Id, company.CompanyTypeId, StringComparison.OrdinalIgnoreCase));
+        if (type is null && overview is not null)
+        {
+            return appMode.GlobalCatalogCompanyId;
+        }
+
+        var searchable = type is null ? company.CompanyTypeId : $"{type.Id} {type.Name} {type.Description}";
+        return ContainsAny(searchable, "landscape", "landscaping", "lawn", "yard", "tree")
+            ? GlobalCatalogScope.For(SystemMode.Landscape)
+            : GlobalCatalogScope.For(SystemMode.Pool);
+    }
+
+    private bool CompanyMatchesMode(Company company)
+    {
+        var type = companyTypes.FirstOrDefault(t => string.Equals(t.Id, company.CompanyTypeId, StringComparison.OrdinalIgnoreCase));
+        var searchable = type is null ? company.CompanyTypeId : $"{type.Id} {type.Name} {type.Description}";
+        return appMode.IsPoolMode
+            ? searchable.Contains("pool", StringComparison.OrdinalIgnoreCase)
+            : ContainsAny(searchable, "landscape", "landscaping", "lawn", "yard", "tree");
+    }
+
+    private static bool ContainsAny(string value, params string[] terms) =>
+        terms.Any(term => value.Contains(term, StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsChecked(ChangeEventArgs args) => args.Value is bool value && value;
+
+    private static string DisplayVisitName(ServiceVisit visit) =>
+        string.IsNullOrWhiteSpace(visit.VisitName) ? "Service Visit" : visit.VisitName;
+
+    private static string DisplayVisitDate(ServiceVisit visit) =>
+        visit.ScheduledDate == default ? "Unscheduled" : visit.ScheduledDate.ToString("d");
+
+    private static string DisplayVisitType(VisitType visitType) => visitType switch
+    {
+        VisitType.AdHocVisit => "Ad-Hoc Visit",
+        _ => "Service Package Visit"
+    };
+
+    private static string DisplayStatus(VisitStatus status) => status switch
+    {
+        VisitStatus.Assigned => "Assigned to Employee",
+        VisitStatus.InProgress => "In Progress",
+        VisitStatus.Completed => "Complete",
+        VisitStatus.Unscheduled or VisitStatus.Scheduled => "New",
+        _ => status.ToString()
+    };
+
+    private sealed class VisitForm
+    {
+        public string Id { get; set; } = "";
+        public string CompanyId { get; set; } = "";
+        public string CompanyClientId { get; set; } = "";
+        public string AssignedUserId { get; set; } = "";
+        public DateTime? ScheduledDate { get; set; }
+        public VisitStatus Status { get; set; } = VisitStatus.New;
+        public VisitType VisitType { get; set; } = VisitType.AdHocVisit;
+        public string VisitName { get; set; } = "";
+        public string NotesToBusinessClient { get; set; } = "";
+        public string NotesToServiceClient { get; set; } = "";
+        public string InternalNotes { get; set; } = "";
+        public string? InvoiceId { get; set; }
+        public IReadOnlyList<string> ServiceIds { get; set; } = [];
+        public string ServiceFilter { get; set; } = "";
+        public bool IsEditing { get; set; }
+
+        public static VisitForm FromVisit(ServiceVisit visit) => new()
+        {
+            Id = visit.Id,
+            CompanyId = visit.CompanyId,
+            CompanyClientId = visit.CompanyClientId,
+            AssignedUserId = visit.AssignedUserId ?? "",
+            ScheduledDate = visit.ScheduledDate == default ? null : visit.ScheduledDate.ToDateTime(TimeOnly.MinValue),
+            Status = visit.Status,
+            VisitType = visit.VisitType,
+            VisitName = DisplayVisitName(visit),
+            NotesToBusinessClient = visit.NotesToBusinessClient,
+            NotesToServiceClient = visit.NotesToServiceClient,
+            InternalNotes = visit.InternalNotes,
+            InvoiceId = visit.InvoiceId,
+            ServiceIds = visit.PlannedServiceIds,
+            IsEditing = true
+        };
     }
 }

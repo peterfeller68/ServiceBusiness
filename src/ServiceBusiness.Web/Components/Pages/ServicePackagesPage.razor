@@ -1,0 +1,642 @@
+@page "/catalog/servicepackages"
+@page "/admin/catalog/servicepackages"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components
+@using ServiceBusiness.Application
+@using ServiceBusiness.Domain
+@inject CompanyAdminService CompanyAdminService
+@inject ServiceBusiness.Web.CurrentCompanyContext CurrentCompany
+@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+@inject ServiceBusiness.Web.ApplicationModeService ApplicationMode
+@inject NavigationManager Navigation
+
+<PageTitle>Service Packages</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">@PageScope</p>
+        <h1>Service Packages</h1>
+        <p class="lede">Create, edit, delete, and activate service packages for the current service scope.</p>
+    </div>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="notice success">@message</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="notice error">@errorMessage</div>
+}
+
+@if (packages is null || catalog is null)
+{
+    <p>Loading service packages...</p>
+}
+else
+{
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>Manage Service Packages</h2>
+            <div class="management-panel-actions">
+                <button class="button primary" type="button" @onclick="ShowCreatePackage">Create</button>
+                <button class="icon-button" type="button" title="Toggle service packages" @onclick="TogglePackagePanel">@(packagesExpanded ? "^" : "v")</button>
+            </div>
+        </div>
+        @if (packagesExpanded)
+        {
+            <div class="management-panel-body">
+                @if (editorExpanded)
+                {
+                    <EditForm Model="packageForm" OnValidSubmit="SavePackageAsync" FormName="service-package-editor">
+                        <div class="editor-panel">
+                            <h3>@(packageForm.IsEditing ? "Edit Package" : "Create Package")</h3>
+                            <div class="form-grid">
+                                <label>
+                                    Name
+                                    <InputText class="form-control" @bind-Value="packageForm.Name" />
+                                </label>
+                                <label>
+                                    Recurrence
+                                    <InputSelect class="form-control" @bind-Value="packageForm.Recurrence">
+                                        @foreach (var recurrence in PackageRecurrenceOptions)
+                                        {
+                                            <option value="@recurrence">@recurrence</option>
+                                        }
+                                    </InputSelect>
+                                </label>
+                                <label>
+                                    Cost
+                                    <InputNumber class="form-control" @bind-Value="packageForm.Cost" />
+                                </label>
+                                <label class="switch-control" title="Toggle active state">
+                                    <input type="checkbox" checked="@packageForm.IsActive" @onchange="args => packageForm.IsActive = GetChecked(args)" />
+                                    <span></span>
+                                    <small>Active</small>
+                                </label>
+                                <label class="wide">
+                                    Description
+                                    <InputTextArea class="form-control" @bind-Value="packageForm.Description" />
+                                </label>
+                            </div>
+
+                            <h4>Chosen Services</h4>
+                            @if (SelectedServiceRows.Count > 0)
+                            {
+                                <div class="management-table-wrap">
+                                    <table class="management-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Service</th>
+                                                <th>Category</th>
+                                                <th>Scope</th>
+                                                <th>Recurrence</th>
+                                                <th class="actions">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var service in SelectedServiceRows)
+                                            {
+                                                <tr>
+                                                    <td>@service.Service.Name</td>
+                                                    <td>@service.CategoryName</td>
+                                                    <td>@service.ScopeLabel</td>
+                                                    <td>@ServiceRecurrenceEditor(service.Service.Id, true)</td>
+                                                    <td class="actions">
+                                                        <button class="icon-button icon-only danger" type="button" title="Remove service" aria-label="Remove service" @onclick="() => RemoveSelectedService(service.Service.Id)">
+                                                            <span class="action-icon delete-icon" aria-hidden="true"></span>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                            else
+                            {
+                                <p>No services have been chosen for this package.</p>
+                            }
+
+                            <div class="form-actions">
+                                <button class="button primary" type="submit">Save Package</button>
+                                <button class="button" type="button" @onclick="HidePackageEditor">Cancel</button>
+                            </div>
+
+                            <h4>Choose Services</h4>
+                            @if (AvailableServices.Count == 0)
+                            {
+                                <p>No services are available for this package scope.</p>
+                            }
+                            else
+                            {
+                                <div class="form-grid">
+                                    <label class="wide">
+                                        Filter services
+                                        <input class="form-control" @bind="serviceFilter" @bind:event="oninput" placeholder="Filter by service, category, scope, or description" />
+                                    </label>
+                                </div>
+                                <div class="management-table-wrap">
+                                    <table class="management-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Service</th>
+                                                <th>Category</th>
+                                                <th>Scope</th>
+                                                <th>Recurrence</th>
+                                                <th class="actions">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var service in FilteredAvailableServices)
+                                            {
+                                                <tr>
+                                                    <td>@service.Service.Name</td>
+                                                    <td>@service.CategoryName</td>
+                                                    <td>@service.ScopeLabel</td>
+                                                    <td>@ServiceRecurrenceEditor(service.Service.Id, false)</td>
+                                                    <td class="actions">
+                                                        <button class="icon-button icon-only" type="button" title="Choose service" aria-label="Choose service" @onclick="() => ChooseService(service.Service.Id)">
+                                                            <span class="action-icon choose-icon" aria-hidden="true"></span>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                        </div>
+                    </EditForm>
+                }
+
+                <div class="form-grid">
+                    <label class="wide">
+                        Filter packages
+                        <input class="form-control" @bind="packageFilter" @bind:event="oninput" placeholder="Filter by active state, name, recurrence, cost, description, or service" />
+                    </label>
+                </div>
+
+                <div class="management-table-wrap">
+                    <table class="management-table">
+                        <thead>
+                            <tr>
+                                <th><button class="table-sort-button" type="button" @onclick="() => SortPackages(PackageSortColumn.Active)">Active @GetSortIndicator(PackageSortColumn.Active)</button></th>
+                                <th><button class="table-sort-button" type="button" @onclick="() => SortPackages(PackageSortColumn.Name)">Name @GetSortIndicator(PackageSortColumn.Name)</button></th>
+                                <th><button class="table-sort-button" type="button" @onclick="() => SortPackages(PackageSortColumn.Recurrence)">Recurrence @GetSortIndicator(PackageSortColumn.Recurrence)</button></th>
+                                <th><button class="table-sort-button" type="button" @onclick="() => SortPackages(PackageSortColumn.Description)">Description @GetSortIndicator(PackageSortColumn.Description)</button></th>
+                                <th><button class="table-sort-button" type="button" @onclick="() => SortPackages(PackageSortColumn.Cost)">Cost @GetSortIndicator(PackageSortColumn.Cost)</button></th>
+                                <th>Services</th>
+                                <th class="actions">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var servicePackage in FilteredPackages)
+                            {
+                                <tr>
+                                    <td>
+                                        <label class="switch-control" title="Toggle active state">
+                                            <input type="checkbox" checked="@servicePackage.IsActive" @onchange="args => TogglePackageActiveAsync(servicePackage, args)" />
+                                            <span></span>
+                                        </label>
+                                    </td>
+                                    <td>@servicePackage.Name</td>
+                                    <td>@servicePackage.Recurrence</td>
+                                    <td>@servicePackage.Description</td>
+                                    <td>@servicePackage.Cost.ToString("C")</td>
+                                    <td>@GetPackageServices(servicePackage)</td>
+                                    <td class="actions">
+                                        <button class="icon-button icon-only" type="button" title="Edit package" aria-label="Edit package" @onclick="() => EditPackage(servicePackage)">
+                                            <span class="action-icon edit-icon" aria-hidden="true"></span>
+                                        </button>
+                                        <button class="icon-button icon-only danger" type="button" title="Delete package" aria-label="Delete package" @onclick="() => DeletePackageAsync(servicePackage)">
+                                            <span class="action-icon delete-icon" aria-hidden="true"></span>
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    private string companyId = "";
+    private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
+    private CatalogOverview? catalog;
+    private CatalogOverview? globalCatalog;
+    private IReadOnlyList<ServicePackage>? packages;
+    private ServicePackageForm packageForm = new();
+    private Dictionary<string, string> selectedServiceRecurrences = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, string> draftServiceRecurrences = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> everyXVisitServices = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> everyXVisitDraftServices = new(StringComparer.OrdinalIgnoreCase);
+    private bool packagesExpanded = true;
+    private bool editorExpanded;
+    private string packageFilter = "";
+    private string serviceFilter = "";
+    private PackageSortColumn sortColumn = PackageSortColumn.Name;
+    private bool sortDescending;
+    private string? message;
+    private string? errorMessage;
+    private bool IsSystemAdminRoute => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("admin/", StringComparison.OrdinalIgnoreCase);
+    private bool IsBusinessOwnerRoute => string.Equals(Navigation.ToBaseRelativePath(Navigation.Uri).Trim('/'), "catalog/servicepackages", StringComparison.OrdinalIgnoreCase);
+    private string PageScope => IsSystemAdminRoute ? "System Administrator" : "Company Admin";
+    private IReadOnlyList<ServiceChoice> AvailableServices => BuildAvailableServices();
+    private IReadOnlyList<ServiceChoice> SelectedServiceRows => AvailableServices
+        .Where(choice => selectedServiceRecurrences.ContainsKey(choice.Service.Id))
+        .OrderBy(choice => choice.Service.Name)
+        .ToList();
+    private IReadOnlyList<ServiceChoice> FilteredAvailableServices => AvailableServices
+        .Where(choice => !selectedServiceRecurrences.ContainsKey(choice.Service.Id))
+        .Where(MatchesServiceFilter)
+        .Take(50)
+        .ToList();
+    private IReadOnlyList<ServicePackage> FilteredPackages => GetFilteredPackages();
+    private IReadOnlyList<string> AccessibleServiceCompanyIds => IsSystemAdminRoute
+        ? [appMode.GlobalCatalogCompanyId]
+        : [companyId, appMode.GlobalCatalogCompanyId];
+
+    protected override async Task OnInitializedAsync()
+    {
+        appMode = await ApplicationMode.GetCurrentAsync();
+        if (IsSystemAdminRoute)
+        {
+            DemoUser.UserId = "sys-admin";
+            companyId = appMode.GlobalCatalogCompanyId;
+        }
+        else if (IsBusinessOwnerRoute)
+        {
+            companyId = await CurrentCompany.GetRequiredCompanyIdAsync([CompanyRole.CompanyAdmin]);
+        }
+        else
+        {
+            Navigation.NavigateTo("dashboard", replace: true);
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        catalog = await CompanyAdminService.GetCatalogOverviewAsync(companyId);
+        globalCatalog = IsSystemAdminRoute
+            ? null
+            : await CompanyAdminService.GetCatalogOverviewAsync(appMode.GlobalCatalogCompanyId);
+        packages = await CompanyAdminService.GetServicePackagesAsync(companyId);
+    }
+
+    private async Task SavePackageAsync()
+    {
+        await RunAsync(async () =>
+        {
+            await CompanyAdminService.UpsertServicePackageAsync(
+                new ServicePackage(
+                    GetPackageRowKey(),
+                    companyId,
+                    packageForm.Name,
+                    packageForm.Recurrence,
+                    packageForm.Description,
+                    packageForm.Cost,
+                    packageForm.IsActive,
+                    selectedServiceRecurrences
+                        .Select(pair => new ServicePackageService(pair.Key, pair.Value))
+                        .ToList()),
+                AccessibleServiceCompanyIds);
+
+            message = $"{packageForm.Name} was saved.";
+            HidePackageEditor();
+        });
+    }
+
+    private async Task TogglePackageActiveAsync(ServicePackage servicePackage, ChangeEventArgs args)
+    {
+        await RunAsync(async () =>
+        {
+            var isActive = GetChecked(args);
+            await CompanyAdminService.SetServicePackageActiveAsync(companyId, servicePackage.Id, isActive);
+            message = $"{servicePackage.Name} was {(isActive ? "reactivated" : "archived")}.";
+        });
+    }
+
+    private async Task DeletePackageAsync(ServicePackage servicePackage)
+    {
+        await RunAsync(async () =>
+        {
+            await CompanyAdminService.DeleteServicePackageAsync(companyId, servicePackage.Id);
+            if (string.Equals(packageForm.Id, servicePackage.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                HidePackageEditor();
+            }
+
+            message = $"{servicePackage.Name} was deleted.";
+        });
+    }
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        message = null;
+        errorMessage = null;
+
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private void ShowCreatePackage()
+    {
+        packageForm = new();
+        selectedServiceRecurrences = new(StringComparer.OrdinalIgnoreCase);
+        draftServiceRecurrences = new(StringComparer.OrdinalIgnoreCase);
+        everyXVisitServices = new(StringComparer.OrdinalIgnoreCase);
+        everyXVisitDraftServices = new(StringComparer.OrdinalIgnoreCase);
+        serviceFilter = "";
+        editorExpanded = true;
+        packagesExpanded = true;
+    }
+
+    private void EditPackage(ServicePackage servicePackage)
+    {
+        packageForm = ServicePackageForm.FromPackage(servicePackage);
+        selectedServiceRecurrences = servicePackage.Services
+            .ToDictionary(service => service.ServiceId, service => service.Recurrence, StringComparer.OrdinalIgnoreCase);
+        everyXVisitServices = servicePackage.Services
+            .Where(service => IsEveryXVisits(service.Recurrence))
+            .Select(service => service.ServiceId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        draftServiceRecurrences = new(StringComparer.OrdinalIgnoreCase);
+        everyXVisitDraftServices = new(StringComparer.OrdinalIgnoreCase);
+        serviceFilter = "";
+        editorExpanded = true;
+        packagesExpanded = true;
+    }
+
+    private void HidePackageEditor()
+    {
+        packageForm = new();
+        selectedServiceRecurrences = new(StringComparer.OrdinalIgnoreCase);
+        draftServiceRecurrences = new(StringComparer.OrdinalIgnoreCase);
+        everyXVisitServices = new(StringComparer.OrdinalIgnoreCase);
+        everyXVisitDraftServices = new(StringComparer.OrdinalIgnoreCase);
+        serviceFilter = "";
+        editorExpanded = false;
+    }
+
+    private void TogglePackagePanel() => packagesExpanded = !packagesExpanded;
+
+    private string GetSelectedServiceRecurrence(string serviceId) =>
+        selectedServiceRecurrences.TryGetValue(serviceId, out var recurrence) ? recurrence : "Every Visit";
+
+    private void ChooseService(string serviceId)
+    {
+        selectedServiceRecurrences[serviceId] = draftServiceRecurrences.TryGetValue(serviceId, out var recurrence)
+            ? recurrence
+            : "Every Visit";
+        if (everyXVisitDraftServices.Contains(serviceId))
+        {
+            everyXVisitServices.Add(serviceId);
+        }
+        else
+        {
+            everyXVisitServices.Remove(serviceId);
+        }
+    }
+
+    private void RemoveSelectedService(string serviceId)
+    {
+        selectedServiceRecurrences.Remove(serviceId);
+        everyXVisitServices.Remove(serviceId);
+    }
+
+    private void SetServiceRecurrenceMode(string serviceId, bool isSelected, ChangeEventArgs args)
+    {
+        var recurrences = isSelected ? selectedServiceRecurrences : draftServiceRecurrences;
+        var everyXVisits = isSelected ? everyXVisitServices : everyXVisitDraftServices;
+        if (args.Value?.ToString() == EveryXVisitsMode)
+        {
+            everyXVisits.Add(serviceId);
+            recurrences[serviceId] = NormalizeEveryXVisits(recurrences.GetValueOrDefault(serviceId));
+            return;
+        }
+
+        everyXVisits.Remove(serviceId);
+        recurrences[serviceId] = "Every Visit";
+    }
+
+    private void SetServiceEveryXVisits(string serviceId, bool isSelected, ChangeEventArgs args)
+    {
+        var recurrences = isSelected ? selectedServiceRecurrences : draftServiceRecurrences;
+        var visitCount = int.TryParse(args.Value?.ToString(), out var parsed) && parsed > 0 ? parsed : 1;
+        recurrences[serviceId] = $"Every {visitCount} Visits";
+    }
+
+    private IReadOnlyList<ServiceChoice> BuildAvailableServices()
+    {
+        var companyServices = catalog?.ServiceGroups
+            .SelectMany(group => group.Services.Select(service => new ServiceChoice(service, group.Category.Name, "Service Client")))
+            .Where(choice => choice.Service.IsActive)
+            .ToList() ?? [];
+        var globalServices = globalCatalog?.ServiceGroups
+            .SelectMany(group => group.Services.Select(service => new ServiceChoice(service, group.Category.Name, "Global")))
+            .Where(choice => choice.Service.IsActive)
+            .ToList() ?? [];
+
+        return companyServices
+            .Concat(globalServices)
+            .GroupBy(choice => choice.Service.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(choice => choice.Service.Name)
+            .ToList();
+    }
+
+    private bool MatchesServiceFilter(ServiceChoice choice)
+    {
+        if (string.IsNullOrWhiteSpace(serviceFilter))
+        {
+            return true;
+        }
+
+        var filter = serviceFilter.Trim();
+        return choice.Service.Name.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+            choice.CategoryName.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+            choice.ScopeLabel.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+            choice.Service.Description.Contains(filter, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private IReadOnlyList<ServicePackage> GetFilteredPackages()
+    {
+        var rows = packages?.Where(MatchesFilter) ?? [];
+        rows = sortColumn switch
+        {
+            PackageSortColumn.Active => sortDescending ? rows.OrderByDescending(package => package.IsActive) : rows.OrderBy(package => package.IsActive),
+            PackageSortColumn.Recurrence => sortDescending ? rows.OrderByDescending(package => package.Recurrence) : rows.OrderBy(package => package.Recurrence),
+            PackageSortColumn.Description => sortDescending ? rows.OrderByDescending(package => package.Description) : rows.OrderBy(package => package.Description),
+            PackageSortColumn.Cost => sortDescending ? rows.OrderByDescending(package => package.Cost) : rows.OrderBy(package => package.Cost),
+            _ => sortDescending ? rows.OrderByDescending(package => package.Name) : rows.OrderBy(package => package.Name)
+        };
+
+        return rows.ToList();
+    }
+
+    private bool MatchesFilter(ServicePackage servicePackage)
+    {
+        if (string.IsNullOrWhiteSpace(packageFilter))
+        {
+            return true;
+        }
+
+        var filter = packageFilter.Trim();
+        return (servicePackage.IsActive ? "active" : "inactive").Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+            servicePackage.Name.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+            servicePackage.Recurrence.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+            servicePackage.Description.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+            servicePackage.Cost.ToString("C").Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+            GetPackageServices(servicePackage).Contains(filter, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void SortPackages(PackageSortColumn column)
+    {
+        if (sortColumn == column)
+        {
+            sortDescending = !sortDescending;
+        }
+        else
+        {
+            sortColumn = column;
+            sortDescending = false;
+        }
+    }
+
+    private string GetSortIndicator(PackageSortColumn column) =>
+        sortColumn == column ? (sortDescending ? "v" : "^") : "";
+
+    private string GetPackageServices(ServicePackage servicePackage)
+    {
+        var serviceNames = servicePackage.Services.Select(service =>
+        {
+            var name = AvailableServices.FirstOrDefault(choice => string.Equals(choice.Service.Id, service.ServiceId, StringComparison.OrdinalIgnoreCase))?.Service.Name
+                ?? service.ServiceId;
+            return $"{name} ({service.Recurrence})";
+        });
+
+        return string.Join(", ", serviceNames);
+    }
+
+    private string GetPackageRowKey()
+    {
+        if (packageForm.IsEditing)
+        {
+            return packageForm.Id;
+        }
+
+        return CreateSlug(packageForm.Name);
+    }
+
+    private static string CreateSlug(string value)
+    {
+        var chars = value.Trim().ToLowerInvariant()
+            .Select(ch => char.IsLetterOrDigit(ch) ? ch : '-')
+            .ToArray();
+        return string.Join('-', new string(chars).Split('-', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    private static bool GetChecked(ChangeEventArgs args) => args.Value is bool value && value;
+
+    private RenderFragment ServiceRecurrenceEditor(string serviceId, bool isSelected) => @<div class="inline-control-group">
+        <select class="form-control compact-select" value="@GetServiceRecurrenceMode(serviceId, isSelected)" @onchange="args => SetServiceRecurrenceMode(serviceId, isSelected, args)">
+            <option value="Every Visit">Every Visit</option>
+            <option value="@EveryXVisitsMode">Every X Visits</option>
+        </select>
+        @if (GetEveryXVisitSet(isSelected).Contains(serviceId))
+        {
+            <input class="form-control tiny-input" type="number" min="1" value="@GetEveryXVisitCount(serviceId, isSelected)" @onchange="args => SetServiceEveryXVisits(serviceId, isSelected, args)" />
+        }
+    </div>;
+
+    private string GetServiceRecurrenceMode(string serviceId, bool isSelected) =>
+        GetEveryXVisitSet(isSelected).Contains(serviceId) || IsEveryXVisits(GetServiceRecurrence(serviceId, isSelected))
+            ? EveryXVisitsMode
+            : "Every Visit";
+
+    private int GetEveryXVisitCount(string serviceId, bool isSelected)
+    {
+        var recurrence = GetServiceRecurrence(serviceId, isSelected);
+        var parts = recurrence.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2 && int.TryParse(parts[1], out var visitCount) && visitCount > 0 ? visitCount : 1;
+    }
+
+    private string GetServiceRecurrence(string serviceId, bool isSelected)
+    {
+        var recurrences = isSelected ? selectedServiceRecurrences : draftServiceRecurrences;
+        return recurrences.TryGetValue(serviceId, out var recurrence) ? recurrence : "Every Visit";
+    }
+
+    private HashSet<string> GetEveryXVisitSet(bool isSelected) =>
+        isSelected ? everyXVisitServices : everyXVisitDraftServices;
+
+    private static bool IsEveryXVisits(string recurrence) =>
+        recurrence.StartsWith("Every ", StringComparison.OrdinalIgnoreCase) &&
+        recurrence.EndsWith(" Visits", StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeEveryXVisits(string? recurrence) =>
+        IsEveryXVisits(recurrence ?? "") ? recurrence! : "Every 1 Visits";
+
+    private static readonly string[] PackageRecurrenceOptions =
+    [
+        "Weekly",
+        "Bi-Weekly",
+        "Monthly",
+        "Bi-Monthly",
+        "Half-Yearly",
+        "Yearly"
+    ];
+
+    private const string EveryXVisitsMode = "Every X Visits";
+
+    private sealed record ServiceChoice(ServiceOffering Service, string CategoryName, string ScopeLabel);
+
+    private enum PackageSortColumn
+    {
+        Active,
+        Name,
+        Recurrence,
+        Description,
+        Cost
+    }
+
+    private sealed class ServicePackageForm
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Recurrence { get; set; } = "Weekly";
+        public string Description { get; set; } = "";
+        public decimal Cost { get; set; }
+        public bool IsActive { get; set; } = true;
+        public bool IsEditing => !string.IsNullOrWhiteSpace(Id);
+
+        public static ServicePackageForm FromPackage(ServicePackage servicePackage) => new()
+        {
+            Id = servicePackage.Id,
+            Name = servicePackage.Name,
+            Recurrence = servicePackage.Recurrence,
+            Description = servicePackage.Description,
+            Cost = servicePackage.Cost,
+            IsActive = servicePackage.IsActive
+        };
+    }
+}

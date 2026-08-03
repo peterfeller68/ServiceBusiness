@@ -86,6 +86,8 @@ builder.Services.AddScoped<ClientPortalService>();
 builder.Services.AddScoped<OnboardingService>();
 builder.Services.AddScoped<UserProfileService>();
 builder.Services.AddScoped<IndependentHomeOwnerService>();
+builder.Services.AddScoped<InvoicingJobService>();
+builder.Services.AddScoped<EmailJobService>();
 
 var app = builder.Build();
 
@@ -109,13 +111,15 @@ app.UseAuthorization();
 
 app.UseAntiforgery();
 
-app.MapGet("/auth/google", (HttpContext httpContext, IConfiguration configuration, string? returnUrl) =>
+app.MapGet("/auth/google", async (HttpContext httpContext, IConfiguration configuration, string? returnUrl) =>
 {
     if (string.IsNullOrWhiteSpace(configuration["Authentication:Google:ClientId"]) ||
         string.IsNullOrWhiteSpace(configuration["Authentication:Google:ClientSecret"]))
     {
         return Results.BadRequest("Google Auth is not configured. Set Authentication:Google:ClientId and Authentication:Google:ClientSecret.");
     }
+
+    await httpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
 
     var safeReturnUrl = GetSafeReturnUrl(returnUrl);
     return Results.Challenge(
@@ -177,6 +181,33 @@ app.MapGet("/auth/test-signin", async (
         return Results.BadRequest("Only test users can skip Google authentication.");
     }
 
+    await httpContext.SignInAsync(
+        CookieAuthenticationDefaults.AuthenticationScheme,
+        BuildAppPrincipal(overview.User, overview.AuthenticationSkipped));
+
+    return Results.Redirect(GetAppRedirectUrl(httpContext, returnUrl));
+});
+
+app.MapGet("/auth/registration-signin", async (
+    HttpContext httpContext,
+    IConfiguration configuration,
+    OnboardingService onboardingService,
+    string userId,
+    string? returnUrl,
+    CancellationToken cancellationToken) =>
+{
+    var overview = await onboardingService.GetAccessOverviewAsync(userId, cancellationToken);
+    var authenticatedUserId = httpContext.User.FindFirstValue(ServiceBusinessClaimTypes.AppUserId);
+    var canCompleteRegistration =
+        string.Equals(authenticatedUserId, overview.User.Id, StringComparison.OrdinalIgnoreCase) ||
+        (SystemSettingsConfiguration.IsDevTestEnabled(configuration) && overview.User.IsTestUser);
+
+    if (!canCompleteRegistration)
+    {
+        return Results.Unauthorized();
+    }
+
+    await httpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     await httpContext.SignInAsync(
         CookieAuthenticationDefaults.AuthenticationScheme,
         BuildAppPrincipal(overview.User, overview.AuthenticationSkipped));

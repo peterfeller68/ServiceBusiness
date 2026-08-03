@@ -20,10 +20,11 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
     private readonly List<MaterialCategory> materialCategories = [];
     private readonly List<PoolEquipmentCategory> poolEquipmentCategories = [];
     private readonly List<ServiceOffering> services = [];
+    private readonly List<ServicePackage> servicePackages = [];
     private readonly List<Material> materials = [];
     private readonly List<PoolEquipmentItem> poolEquipmentItems = [];
     private readonly List<ServiceVisit> visits = [];
-    private readonly List<VisitCompletion> completions = [];
+    private readonly List<Invoice> invoices = [];
     private readonly List<EmailLogEntry> emailLogs = [];
     private SystemSettings systemSettings;
 
@@ -78,6 +79,12 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
     public Task<IndependentHomeOwnerProfile?> GetIndependentHomeOwnerProfileAsync(string userId, CancellationToken cancellationToken = default) =>
         Task.FromResult(independentHomeOwnerProfiles.FirstOrDefault(p => p.UserId == userId));
 
+    public Task<IReadOnlyList<IndependentHomeOwnerProfile>> GetIndependentHomeOwnerProfilesAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<IndependentHomeOwnerProfile>>(independentHomeOwnerProfiles
+            .OrderBy(p => p.HomeAddress)
+            .ThenBy(p => p.UserId)
+            .ToList());
+
     public Task<IReadOnlyList<HomeOwnerPoolEquipmentPhoto>> GetHomeOwnerPoolEquipmentPhotosAsync(string userId, CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<HomeOwnerPoolEquipmentPhoto>>(homeOwnerPoolEquipmentPhotos
             .Where(p => p.UserId == userId)
@@ -100,6 +107,9 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
     public Task<IReadOnlyList<ServiceOffering>> GetServicesAsync(string companyId, CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<ServiceOffering>>(services.Where(s => s.CompanyId == companyId).ToList());
 
+    public Task<IReadOnlyList<ServicePackage>> GetServicePackagesAsync(string companyId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<ServicePackage>>(servicePackages.Where(p => p.CompanyId == companyId).ToList());
+
     public Task<IReadOnlyList<Material>> GetMaterialsAsync(string companyId, CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<Material>>(materials.Where(m => m.CompanyId == companyId).ToList());
 
@@ -108,6 +118,9 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
 
     public Task<IReadOnlyList<ServiceVisit>> GetVisitsByDateAsync(string companyId, DateOnly date, CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<ServiceVisit>>(visits.Where(v => v.CompanyId == companyId && v.ScheduledDate == date).OrderBy(v => v.ServiceWindowStart).ToList());
+
+    public Task<IReadOnlyList<ServiceVisit>> GetVisitsAsync(string companyId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<ServiceVisit>>(visits.Where(v => v.CompanyId == companyId).OrderBy(v => v.ScheduledDate).ThenBy(v => v.ServiceWindowStart).ToList());
 
     public Task<IReadOnlyList<ServiceVisit>> GetVisitsForUserByDateAsync(string companyId, string userId, DateOnly date, CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<ServiceVisit>>(visits.Where(v => v.CompanyId == companyId && v.AssignedUserId == userId && v.ScheduledDate == date).OrderBy(v => v.RouteOrder).ToList());
@@ -118,8 +131,11 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
     public Task<ServiceVisit?> GetVisitAsync(string companyId, string visitId, CancellationToken cancellationToken = default) =>
         Task.FromResult(visits.FirstOrDefault(v => v.CompanyId == companyId && v.Id == visitId));
 
-    public Task<VisitCompletion?> GetVisitCompletionAsync(string companyId, string visitId, CancellationToken cancellationToken = default) =>
-        Task.FromResult(completions.FirstOrDefault(c => c.CompanyId == companyId && c.VisitId == visitId));
+    public Task<IReadOnlyList<Invoice>> GetInvoicesAsync(string companyId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<Invoice>>(invoices.Where(i => i.CompanyId == companyId).OrderByDescending(i => i.CreatedUtc).ToList());
+
+    public Task<Invoice?> GetInvoiceAsync(string companyId, string invoiceId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(invoices.FirstOrDefault(i => i.CompanyId == companyId && i.InvoiceId == invoiceId));
 
     public Task<IReadOnlyList<EmailLogEntry>> GetEmailLogsAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<EmailLogEntry>>(emailLogs.OrderByDescending(e => e.CreatedUtc).ToList());
@@ -150,6 +166,12 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
             existing => existing.CompanyId == membership.CompanyId &&
                 existing.UserId == membership.UserId &&
                 existing.Role == membership.Role);
+        return Task.CompletedTask;
+    }
+
+    public Task UpsertClientTypeAsync(ClientType clientType, CancellationToken cancellationToken = default)
+    {
+        Upsert(clientTypes, clientType, existing => existing.CompanyId == clientType.CompanyId && existing.Id == clientType.Id);
         return Task.CompletedTask;
     }
 
@@ -185,6 +207,31 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
         return Task.CompletedTask;
     }
 
+    public Task<UserDeletionResult> DeleteUserAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var rowsDeleted = 0;
+
+        lock (sync)
+        {
+            rowsDeleted += users.RemoveAll(existing => existing.Id == userId);
+            rowsDeleted += memberships.RemoveAll(existing => existing.UserId == userId);
+            rowsDeleted += independentHomeOwnerProfiles.RemoveAll(existing => existing.UserId == userId);
+            rowsDeleted += homeOwnerPoolEquipmentPhotos.RemoveAll(existing => existing.UserId == userId);
+            rowsDeleted += independentHomeOwnerServiceHistory.RemoveAll(existing => existing.UserId == userId);
+            rowsDeleted += serviceCategories.RemoveAll(existing => existing.CompanyId == userId);
+            rowsDeleted += services.RemoveAll(existing => existing.CompanyId == userId);
+            rowsDeleted += materialCategories.RemoveAll(existing => existing.CompanyId == userId);
+            rowsDeleted += materials.RemoveAll(existing => existing.CompanyId == userId);
+            rowsDeleted += poolEquipmentCategories.RemoveAll(existing => existing.Scope == EquipmentScope.HomeOwner && existing.ScopeOwnerId == userId);
+            rowsDeleted += poolEquipmentItems.RemoveAll(existing => existing.Scope == EquipmentScope.HomeOwner && existing.ScopeOwnerId == userId);
+            rowsDeleted += visits.RemoveAll(existing => string.Equals(existing.AssignedUserId, userId, StringComparison.OrdinalIgnoreCase));
+            rowsDeleted += invoices.RemoveAll(existing => existing.CompanyClientId == userId);
+            rowsDeleted += emailLogs.RemoveAll(existing => string.Equals(existing.RecipientUserId, userId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return Task.FromResult(new UserDeletionResult(userId, rowsDeleted));
+    }
+
     public Task UpsertIndependentHomeOwnerServiceHistoryItemAsync(IndependentHomeOwnerServiceHistoryItem item, CancellationToken cancellationToken = default)
     {
         Upsert(independentHomeOwnerServiceHistory, item, existing => existing.UserId == item.UserId && existing.Id == item.Id);
@@ -215,6 +262,12 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
         return Task.CompletedTask;
     }
 
+    public Task UpsertServicePackageAsync(ServicePackage servicePackage, CancellationToken cancellationToken = default)
+    {
+        Upsert(servicePackages, servicePackage, existing => existing.CompanyId == servicePackage.CompanyId && existing.Id == servicePackage.Id);
+        return Task.CompletedTask;
+    }
+
     public Task UpsertMaterialAsync(Material material, CancellationToken cancellationToken = default)
     {
         Upsert(materials, material, existing => existing.CompanyId == material.CompanyId && existing.Id == material.Id);
@@ -237,6 +290,26 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
         return Task.CompletedTask;
     }
 
+    public Task DeleteServicePackageAsync(string companyId, string packageId, CancellationToken cancellationToken = default)
+    {
+        lock (sync)
+        {
+            servicePackages.RemoveAll(existing => existing.CompanyId == companyId && existing.Id == packageId);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task DeleteVisitAsync(string companyId, string visitId, CancellationToken cancellationToken = default)
+    {
+        lock (sync)
+        {
+            visits.RemoveAll(existing => existing.CompanyId == companyId && existing.Id == visitId);
+        }
+
+        return Task.CompletedTask;
+    }
+
     public Task DeletePoolEquipmentItemAsync(EquipmentScope scope, string scopeOwnerId, string itemId, CancellationToken cancellationToken = default)
     {
         lock (sync)
@@ -253,9 +326,9 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
         return Task.CompletedTask;
     }
 
-    public Task UpsertVisitCompletionAsync(VisitCompletion completion, CancellationToken cancellationToken = default)
+    public Task UpsertInvoiceAsync(Invoice invoice, CancellationToken cancellationToken = default)
     {
-        Upsert(completions, completion, existing => existing.CompanyId == completion.CompanyId && existing.VisitId == completion.VisitId);
+        Upsert(invoices, invoice, existing => existing.CompanyId == invoice.CompanyId && existing.InvoiceId == invoice.InvoiceId);
         return Task.CompletedTask;
     }
 
@@ -345,14 +418,13 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
         ]);
 
         clientTypes.AddRange([
-            new("weekly", "clearwater", "Weekly Maintenance", BillingFrequency.Weekly, 145m, true),
-            new("ffs", "clearwater", "Fee For Service", BillingFrequency.FeeForService, 0m, true)
+            BusinessClientTypeReferenceData.HomeOwner("clearwater")
         ]);
 
         clients.AddRange([
-            new("client-1", "clearwater", "Diaz Residence", "Elena Diaz", "elena@example.com", "555-0111", "1142 Palm View Dr, Phoenix, AZ", "Gate code 2468. Equipment is on left side yard.", "weekly", null, true),
-            new("client-2", "clearwater", "Nguyen Residence", "Ben Nguyen", "ben@example.com", "555-0112", "89 Desert Bloom Ln, Phoenix, AZ", "Use side entrance. Dogs are inside during service window.", "weekly", 165m, true),
-            new("client-3", "clearwater", "Patel Residence", "Mina Patel", "mina@example.com", "555-0113", "720 Citrus Way, Phoenix, AZ", "Text before arrival.", "ffs", null, true)
+            new("client-1", "clearwater", "Diaz Residence", "Elena Diaz", "elena@example.com", "555-0111", "1142 Palm View Dr, Phoenix, AZ", "Gate code 2468. Equipment is on left side yard.", BusinessClientTypeReferenceData.HomeOwnerId, null, true),
+            new("client-2", "clearwater", "Nguyen Residence", "Ben Nguyen", "ben@example.com", "555-0112", "89 Desert Bloom Ln, Phoenix, AZ", "Use side entrance. Dogs are inside during service window.", BusinessClientTypeReferenceData.HomeOwnerId, 165m, true),
+            new("client-3", "clearwater", "Patel Residence", "Mina Patel", "mina@example.com", "555-0113", "720 Citrus Way, Phoenix, AZ", "Text before arrival.", BusinessClientTypeReferenceData.HomeOwnerId, null, true)
         ]);
 
         AddIndependentHomeOwnerSeed(
@@ -396,6 +468,57 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
             new("mat-chlorine", "clearwater", "mat-cat-chemicals", "Chlorine", "lb", 3.50m, 6.00m, true, true),
             new("mat-acid", "clearwater", "mat-cat-chemicals", "Muriatic Acid", "gal", 7.00m, 12.00m, true, true),
             new("mat-tabs", "clearwater", "mat-cat-chemicals", "Tabs", "each", 1.25m, 2.50m, true, true)
+        ]);
+
+        serviceCategories.AddRange([
+            new("pool-cleaning", GlobalCatalogScope.Pool, "Pool Cleaning", "Global pool cleaning service templates.", true, true),
+            new("landscape-maintenance", GlobalCatalogScope.Landscape, "Landscape Maintenance", "Global landscape maintenance service templates.", true, true)
+        ]);
+
+        materialCategories.AddRange([
+            new("chlorine", GlobalCatalogScope.Pool, "Chlorine", "Global pool chemical material catalog.", true, true),
+            new("plant-care", GlobalCatalogScope.Landscape, "Plant Care", "Global landscape material catalog.", true, true)
+        ]);
+
+        services.AddRange([
+            new("pool-cleaning-standard-service", GlobalCatalogScope.Pool, "pool-cleaning", "Standard Service", "Skim pool surface, empty baskets, brush walls, test water, and inspect equipment.", 45, 0m, true, true),
+            new("pool-cleaning-chemical-only-service", GlobalCatalogScope.Pool, "pool-cleaning", "Chemical Only Service", "Test and balance water chemistry without physical cleaning.", 45, 0m, true, true),
+            new("landscape-maintenance-standard-yard-service", GlobalCatalogScope.Landscape, "landscape-maintenance", "Standard Yard Service", "Mow, edge, blow hardscapes, and inspect irrigation zones.", 45, 0m, true, true),
+            new("landscape-maintenance-seasonal-cleanup", GlobalCatalogScope.Landscape, "landscape-maintenance", "Seasonal Cleanup", "Trim shrubs, clear debris, and refresh visible planting areas.", 45, 0m, true, true)
+        ]);
+
+        servicePackages.AddRange([
+            new(
+                "pool-service-level-1",
+                GlobalCatalogScope.Pool,
+                "Pool Service Level 1",
+                "Weekly",
+                "Starter global pool care package.",
+                129m,
+                true,
+                [
+                    new("pool-cleaning-standard-service", "Every Visit"),
+                    new("pool-cleaning-chemical-only-service", "Every 4 Visits")
+                ]),
+            new(
+                "landscape-service-level-1",
+                GlobalCatalogScope.Landscape,
+                "Landscape Service Level 1",
+                "Weekly",
+                "Starter global landscape care package.",
+                149m,
+                true,
+                [
+                    new("landscape-maintenance-standard-yard-service", "Every Visit"),
+                    new("landscape-maintenance-seasonal-cleanup", "Every 12 Visits")
+                ])
+        ]);
+
+        materials.AddRange([
+            new("bioguard-3-in-trichlor-tablets-50-lb-tab-50", GlobalCatalogScope.Pool, "chlorine", "3-in Trichlor Tablets 50 lb", "Each", 0m, 0m, true, true, "BioGuard", "TAB-50"),
+            new("hth-1-in-chlorine-tablets-25-lb-cl-125", GlobalCatalogScope.Pool, "chlorine", "1-in Chlorine Tablets 25 lb", "Each", 0m, 0m, true, true, "HTH", "CL-125"),
+            new("scotts-turf-builder-lawn-food-32-lb-tb-32", GlobalCatalogScope.Landscape, "plant-care", "Turf Builder Lawn Food 32 lb", "Each", 0m, 0m, true, true, "Scotts", "TB-32"),
+            new("miracle-gro-all-purpose-plant-food-mg-5", GlobalCatalogScope.Landscape, "plant-care", "All Purpose Plant Food", "Each", 0m, 0m, true, true, "Miracle-Gro", "MG-5")
         ]);
 
         AddEquipmentSeed(
@@ -509,19 +632,9 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
         visits.AddRange([
             new("visit-1", "clearwater", "client-1", "demo-user-1", today, new TimeOnly(8, 0), new TimeOnly(10, 0), VisitStatus.Assigned, ["svc-basic", "svc-chem"], 1, "Check chlorine levels closely.", null, null),
             new("visit-2", "clearwater", "client-2", "demo-user-1", today, new TimeOnly(10, 0), new TimeOnly(12, 0), VisitStatus.Assigned, ["svc-basic"], 2, "Customer requested photo after service in future phase.", null, null),
-            new("visit-3", "clearwater", "client-3", null, today, new TimeOnly(13, 0), new TimeOnly(15, 0), VisitStatus.Scheduled, ["svc-filter"], 0, "Needs assignment.", null, null),
-            new("visit-4", "clearwater", "client-1", "demo-user-1", today.AddDays(-7), new TimeOnly(8, 0), new TimeOnly(10, 0), VisitStatus.Completed, ["svc-basic", "svc-chem"], 1, "", new DateTimeOffset(today.AddDays(-7).ToDateTime(new TimeOnly(8, 15), DateTimeKind.Local)), new DateTimeOffset(today.AddDays(-7).ToDateTime(new TimeOnly(9, 0), DateTimeKind.Local)))
+            new("visit-3", "clearwater", "client-3", null, today, new TimeOnly(13, 0), new TimeOnly(15, 0), VisitStatus.New, ["svc-filter"], 0, "Needs assignment.", null, null),
+            new("visit-4", "clearwater", "client-1", "demo-user-1", today.AddDays(-7), new TimeOnly(8, 0), new TimeOnly(10, 0), VisitStatus.Completed, ["svc-basic", "svc-chem"], 1, "", new DateTimeOffset(today.AddDays(-7).ToDateTime(new TimeOnly(8, 15), DateTimeKind.Local)), new DateTimeOffset(today.AddDays(-7).ToDateTime(new TimeOnly(9, 0), DateTimeKind.Local)), CompletedByUserId: "demo-user-1", CompletedServiceIds: ["svc-basic", "svc-chem"], MaterialsUsed: [new("mat-chlorine", 2)], NotesToBusinessClient: "Pool cleaned and chemicals balanced.", InternalNotes: "Slight algae starting near steps.")
         ]);
-
-        completions.Add(new(
-            "visit-4",
-            "clearwater",
-            "demo-user-1",
-            ["svc-basic", "svc-chem"],
-            [new("mat-chlorine", 2)],
-            "Pool cleaned and chemicals balanced.",
-            "Slight algae starting near steps.",
-            DateTimeOffset.Now.AddDays(-7)));
     }
 
     private void AddSeedCompany(
@@ -564,13 +677,12 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
         ]);
 
         clientTypes.AddRange([
-            new($"{companyId}-recurring", companyId, "Recurring Service", BillingFrequency.Monthly, companyTypeId == "pool" ? 185m : 240m, true),
-            new($"{companyId}-ffs", companyId, "Fee For Service", BillingFrequency.FeeForService, 0m, true)
+            BusinessClientTypeReferenceData.HomeOwner(companyId)
         ]);
 
         clients.AddRange([
-            new($"{companyId}-home-1", companyId, $"{companyName} Test Home 1", "Client Contact 1", $"client-home-1@{companyId}.com", "555-0221", "101 Test Loop", "Use side gate.", $"{companyId}-recurring", null, true),
-            new($"{companyId}-home-2", companyId, $"{companyName} Test Home 2", "Client Contact 2", $"client-home-2@{companyId}.com", "555-0222", "202 Sample Way", "Text before arrival.", $"{companyId}-ffs", 210m, true)
+            new($"{companyId}-home-1", companyId, $"{companyName} Test Home 1", "Client Contact 1", $"client-home-1@{companyId}.com", "555-0221", "101 Test Loop", "Use side gate.", BusinessClientTypeReferenceData.HomeOwnerId, null, true),
+            new($"{companyId}-home-2", companyId, $"{companyName} Test Home 2", "Client Contact 2", $"client-home-2@{companyId}.com", "555-0222", "202 Sample Way", "Text before arrival.", BusinessClientTypeReferenceData.HomeOwnerId, 210m, true)
         ]);
 
         var serviceCategoryId = $"{companyId}-service-core";
@@ -601,6 +713,18 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
                 true,
                 true));
         }
+
+        servicePackages.Add(new(
+            $"{companyId}-standard-package",
+            companyId,
+            $"{companyName} Standard Package",
+            "Weekly",
+            $"Default service package for {companyName}.",
+            serviceSeed.FirstOrDefault().Price,
+            true,
+            serviceSeed.Take(3)
+                .Select(item => new ServicePackageService($"{companyId}-{item.Id}", "Every Visit"))
+                .ToList()));
 
         foreach (var (item, index) in materialSeed.Select((item, index) => (item, index)))
         {

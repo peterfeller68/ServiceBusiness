@@ -26,10 +26,11 @@ public sealed class AzureStorageTableInitializer(IConfiguration configuration, I
         "MaterialCategories",
         "PoolEquipmentCategories",
         "Services",
+        "ServicePackages",
         "Materials",
         "PoolEquipmentItems",
         "ServiceVisits",
-        "VisitCompletions",
+        "Invoices",
         "EmailLogs"
     ];
 

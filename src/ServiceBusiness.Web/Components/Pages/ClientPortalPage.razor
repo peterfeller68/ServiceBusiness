@@ -29,7 +29,7 @@ else
                 <div>
                     <strong>@item.Visit.CompletedUtc?.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</strong>
                     <p>@item.Client.DisplayName · Completed by @item.AssignedUser?.DisplayName</p>
-                    <small>@item.Completion?.CustomerNotes</small>
+                    <small>@item.Visit.NotesToBusinessClient</small>
                 </div>
                 <span class="status-pill">@item.Visit.Status</span>
             </article>

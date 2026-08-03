@@ -7,25 +7,45 @@ The landing page should include a picture of a nice pool with waterfall in a lus
 The user can then either Sign In or Register to access the full features of the service business.
 The only menu option available when no one is signed in is Help
 
-### 1.1 Register
+## 1.1 Register
 When a user clicks on the "Register" button, they should be taken to a registration page where they can create an account.
 They need to register as either a business owner, business employee, business client or home owner.
+
 Once they pick that, they will authenticate using a gmail account and then taken to a page where they can fill out the necessary information to complete their registration.
+If the System is in DevTest Mode, have a button to skip the Google Auth, similar to the Sign-In functionality.
 
-If they register as a business owner, they will be taken to a page where they can create their business profile and set up their services.
+### 1.1.1 Business Owner
+Once the registration is complete, navigate to the Business Owner Dashboard. 
+From the Dashboard they can create their business profile and set up their services.
+Ensure that all needed menu options are available under Settings.
 
-If they register as a business employee, they will be given a dropdown to choose which business they want to be associated with and then taken to a page where they can fill out their profile information and set up their account settings.
-They will not have access to the service until the business owner approves their account. Once approved, they will be able to access the features corresponding to their role.
+## 1.1.2 Business Employee
+They will be given a dropdown to choose which business they want to be associated with and then taken to a page where they can 
+fill out their profile information and set up their account settings. Once the registration is complete, navigate to the Business Employee Dashboard.
+They will have access to the Dashboard, which will indicate that their registration is pending Business Owner Approval.
+Once approved, they will be able to access the features corresponding to their role.
+Ensure that all needed menu options are available under Settings.
 
-If they register as a business client, they will be given a dropdown to choose which business they want to be associated with and then taken to a page where they can fill out their profile information and set up their account settings.
-They will not have access to the service until the business owner approves their account. Once approved, they will be able to access the features corresponding to their role.
+## 1.1.3 Business Client
+They will be given a dropdown to choose which business they want to be associated with.
+Then they need to choose which Business Client, they need to be associated with. This drop down will be a list of Addresses.
+Then they are taken to a page where they can fill out their profile information and set up their account settings. 
+Once the registration is complete, navigate to the Business Client Dashboard.
+They will have access to the Dashboard, which will indicate that their registration is pending Business Owner Approval.
+Once approved, they will be able to access the features corresponding to their role.
+Ensure that all needed menu options are available under Settings.
 
-If they register as a home owner, they need to provide their home address.
+## 1.1.4 Independent Home Owner
+During registration the home owner needs to provide his address
+Once the registration is complete, navigate to the Independent Home Owner Dashboard. From the Dashboard they can create their profile and set up their pool equipment 
+and services.
+Ensure that all needed menu options are available under Settings.
 
 Current implementation:
 
 - `/register` supports Business Owner, Business User, Business Client, and Independent Homeowner account types.
-- Business User and Business Client registrations require a selected business and create pending company memberships.
+- Business User registrations require a selected business and create pending company memberships.
+- Business Client registrations require a selected business plus a selected Business Client address from that business's active client records; the pending membership stores the selected Business Client id so approval grants access to the correct client/home.
 - Independent Homeowner registration does not require a business selection or approval.
 - Independent Homeowner registration captures home address and access notes.
 - Independent Homeowner registration creates an active user account with no company membership, stores an owner profile, and seeds owner-scoped pool equipment starter records.
@@ -124,31 +144,88 @@ Current implementation:
 
 ## 1.10 Dashboard
 Once a user has successfully authenticated, they should be taken to a dashboard page. The Dashboard will be different by persona.
+All Dashboard panels are collapsable.
 
 ### 1.10.1 System Administrator
+The first row is titled System Health
+A row of panels each indicating the count of entities. 
+The first row of panels consist of:
+- Service Clients, Business Clients, Users, Pool Equipment, Pool Configurations, Materials, Services, Service Packages
+The second row is titled Approvals
+The second row will be a collapsible panel of Pending approvals. Provide an approve all button.
+- Columns: Name, Email, Company, User Type, Approved Toggle switch
+The third row of panels is titled System Workspaces. Each panel will include a one sentence Description. Clicking on the panel will navigate to the appropriate editing page.
+- Service Clients, Business Clients, Users, Pool Equipment, Pool Configurations, Materials, Services, Service Packages
 
-### 1.10.2 Company Admin or Owner
-When a company admin logs in he will be redirected to the Dashboard.
-That user needs access to all pages under Settings.
-On the dashboard there should be a row of tiles for Customers, Employees, Pool Equipment, Materials and Services. Each should show a count.
-Under the Workspace there will be a row of tiles is for work that needs to be completed. Pending Employee Approvals, Pending Custoemr Approvals. Each should show a count.
-Clicking the Pending .... Approval buttons will bring up a panel with all unapproved requests. A request shall be approved using a toggle button.
-Noting else should be on the Dashboard at the moment
+### 1.10.2 Business Owner
+The first row is titled System Health
+A row of panels each indicating the count of entities. 
+The first row of panels consist of:
+- Business Clients, Users, Pool Configurations, Materials, Services, Service Packages
+The second row is titled Approvals
+The second row will be a collapsible panel of Pending approvals. It should list all approvals for the business. Provide an approve all button.
+- Columns: Name, Email, User Type, Approved Toggle switch
 
-### 1.10.3 Company User or Employee
+The third row is titled "Unscheduled and Scheduled Visits"
+- It needs to contain the data that is found in New Visits of /visits. This allows the business owner to quickly and conveniently assign these visits.
 
-### 1.10.4 Company Client User or Service Recipient
+The fourth row of panels is titled System Workspaces. Each panel will include a one sentence Description. Clicking on the panel will navigate to the appropriate editing page.
+- Business Clients, Users, Materials, Services, Service Packages
+- Allow edits and deletes
+
+### 1.10.3 Business Employee
+The first row is titled "Assigned Visits Today". This panel needs to be collapseble, but expanded on open.
+- Allow the ability to mark a visit complete in a simple manner
+- Allow edits as described above.
+
+The first row is titled "Upcoming Visits". This panel needs to be collapseble, but expanded on open.
+- No edit allowed, just view/only
+
+The first row is titled "Recently Completed Visits". This panel needs to be collapseble, but collapsed on open.
+- Allow the ability to mark a visit as In Progress in a simple manner
+- Allow edits as described above.
+
+### 1.10.4 Business Client
+The first row is titled Upcoming Visits. This panel needs to be collapseble, but expanded on open.
+The individual rows are editable, however, only the Notes To Service Provider field. 
+- Actions: Edit (icon)
+
+The second row shows the Service Package. This panel needs to be collapseble, and collapsed on open. 
+
+The third row is titled Pool Configuration. This panel needs to be collapseble, and collapsed on open. 
+It will list out the current pool configuration.
+Columns: Category, Manufacturer, Equipment, Comment
+Actions: Info (icon) - when choosing the info action, list all aother attributes for the Pool Equipment item
+
+The fourth row is Completed Visits. This panel needs to be collapseble, and collapsed on open. 
+It will list out all Services provided to the Business Client, and the services the user added him/herself.
+- List the services ordered by Date descending
+- Ability to add a record - The only records that can be edited or deleted are the ones added by the Business Client himself.
+  - When adding a record, pre-fill the Performed By to HomeOwner
+- Columns: Date/Time, Service, Performed By, Notes
+- Actions: Edit, Delete - icons
 
 ### 1.10.5 Independent Homeowner User
+The Dashboard for the Independent HomeOwner should consist of the following collapsible panels:
+Pool Equipment
+Columns: Category, Manufacturer, Equipment, Comment
+Actions: Info (icon) - when choosing the info action, list all aother attributes for the Pool Equipment item
+
+Service History
+- Ability to add a record
+- Columns: Date/Time, Service, Notes
+- Actions: Edit, Delete - icons
+
 
 Current implementation:
 
 - Authenticated users land on `/dashboard`, which shows persona-aware workspace access based on the signed-in user's company memberships or independent homeowner profile.
-- Company admins can open the company dashboard at `/company`.
-- The company admin dashboard shows setup tiles for Customers, Employees, Pool Equipment in Pool mode, Materials, and Services.
-- The company admin dashboard shows work tiles for Pending Employee Approvals and Pending Customer Approvals.
-- Clicking a pending approval tile expands an approval panel scoped to that request type; pending users can be approved with the toggle or rejected from the action column.
-- Independent homeowners with no company memberships see an independent homeowner workspace and, in Pool mode, a Pool Equipment action.
+- System Administrators see a `/dashboard` with `System Health`, collapsible `Approvals` with approve-all support, and `System Workspaces` panels for Service Clients, Business Clients, Users, Pool Equipment, Pool Configurations, Materials, Services, and Service Packages.
+- Business Owners see a `/dashboard` with `System Health` panels for Business Clients, Users, Pool Configurations, Materials, Services, and Service Packages, collapsible business-scoped `Approvals` with approve-all support, an `Unscheduled and Scheduled Visits` panel for New/Unscheduled/Scheduled visits from the visit scheduler, inline employee assignment with an assign action, and `System Workspaces` panels for Business Clients, Users, Materials, Services, and Service Packages.
+- Business Employees see `/dashboard` visit panels for `Assigned Visits Today`, `Upcoming Visits`, and `Recently Completed Visits`. Today's visits can be marked complete from the dashboard, upcoming visits are read-only, and recently completed visits can be moved back to In Progress from the dashboard.
+- Company admins can still open the focused company dashboard at `/company`.
+- Business Clients see collapsible `/dashboard` panels ordered as Upcoming Visits, Service Package, Pool Configuration, and Completed Visits. Upcoming Visits is expanded by default and allows editing only Notes To Service Provider plus visit info. Service Package, Pool Configuration, and Completed Visits are collapsed by default; the Service Package panel shows the package assigned to their Business Client record, falling back to the service client package when needed, including recurrence, cost, description, and included services. Completed Visits is the visit history surface, and the duplicate Business Client Service History dashboard panel is not shown.
+- Independent Homeowners with no company memberships see collapsible Pool Equipment and Service History panels on `/dashboard`; Pool Equipment shows Category, Manufacturer, Equipment, and Comment with an info action, and Service History supports add/edit/delete icon actions.
 
 
 # 2. Email Support
@@ -316,9 +393,10 @@ Required routes:
 - Dashboard -> /dashboard
 - Settings / Customers -> /clients
 - Settings / Users -> /company/users
-- Settings / Catalog / Pool Equipment -> /catalog/poolequipment
+- Settings / Catalog / Pool Configuration -> /catalog/......
 - Settings / Catalog / Materials -> /catalog/materials
 - Settings / Catalog / Services -> /catalog/services
+- Settings / Catalog / Service Packages -> /catalog/......
 - Reports -> /reports
 - Help -> /help
 
@@ -662,29 +740,52 @@ Current implementation:
 - The Test Users page supports General Test User records with no associated business.
 
 # 12. System Settings
+There will be two types of system settings. Settings stored in appsettings.json, which configure the appservice via AppService 
+Settings, and ones stored in the Database.
+
+## 12.1 AppSettings.json
 Only the system administrator will have access to the System Settings.
 
-## 12.1 System Mode
+### 12.1.1 System Mode
 There should be a setting called SystemMode, with two possible values {Pool, Landscape}
-
-### 12.1.1
 If the SystemMode is Pool, then show the current Pool graphic, and name the application PoolShark.
-
-### 12.1.2
 If the SystemMode is Landscape, then show a graphic of a nicely manicured lawn with Mature Fruit Trees, and name the application TreeShark.
 In Landscape Mode, do not show anything related to Pool Equipment.
 
+### 12.1.2 DevTest Mode
+In DevTest Mode the application allows Google Auth to be skipped. This enables easier testing. The Test Menu in the Navbar 
+is not visible if DevTest is false.
+
+## 12.2 Storage hosted Settings
+These storage hosted Settings will be managed under the Settings/General menu item desribed in Section 14.1.
+
+### 12.2.1 Sys Admin
+No Items at this time
+### 12.2.2 Business Owner
+No Items at this time
+### 12.2.3 Business Employee
+No Items at this time
+### 12.2.4 Business Client
+No Items at this time
+### 12.2.5 Independent Home Owner
+No Items at this time
+
+
 Current implementation:
 
-- `SystemSettings.SystemMode` is persisted in Azure Table Storage and accepts `Pool` or `Landscape`; `SystemSettings:SystemMode` configuration supplies the startup default only when the persisted row is missing.
-- Pool mode names the application `PoolShark` and uses `/images/pool-waterfall-hero.png`.
-- Landscape mode names the application `TreeShark` and uses `/images/landscape-fruit-trees-hero.png`.
-- The system-admin Settings page lets System Administrators edit the active `SystemMode`.
-- Landscape mode hides Pool Equipment navigation links and redirects direct Pool Equipment routes back to the dashboard.
+- `SystemSettings:SystemMode` is read from `appsettings.json` or Azure App Service settings. It accepts `Pool` or `Landscape` and defaults to `Pool` when missing or invalid.
+- `SystemSettings:DevTest` is read from `appsettings.json` or Azure App Service settings. It is enabled only when configured as `true`.
+- Pool mode names the application `PoolShark`, uses `/images/pool-waterfall-hero.png`, and shows Pool Equipment / Pool Configuration features.
+- Landscape mode names the application `TreeShark`, uses `/images/landscape-fruit-trees-hero.png`, hides Pool Equipment navigation links, and redirects direct Pool Equipment routes back to the dashboard.
+- DevTest mode displays the `Skip Google Auth` option on sign-in and registration, allows seeded test users to bypass Google authentication, and shows the collapsible `Test` menu.
+- When DevTest is false, Google Auth cannot be skipped and the `Test` menu is hidden.
+- The `/settings` page displays the configured `SystemMode`, `DevTest`, and active product name for System Administrators as read-only App Service configuration guidance.
+- Section 14 currently gives `Settings / General` no role access, so storage-hosted General settings are not exposed in the navigation.
 
 
 # 13. Test Menu
 As the last menu item in the Nav menu have a collapsible "Test" section.
+The Test Menu shall only be visible in DevTest Mode
 Under the Test menu have a Test Page item with a link to a page called "Test Page". This page will be used for testing purposes and can include various test components and features that are being developed. It will serve as a sandbox environment for testing new functionality and ensuring that it works as expected before being released to production. The Test Page can be accessed by clicking on the "Test" menu item in the navigation menu, and it should be clearly labeled as a testing environment to avoid confusion with the main application features.
 Under the Test menu have a Test Users item with a link to a page called "Test Users". This page will be used for managing test user accounts and their associated data. It will allow developers and testers to create, edit, and delete test user accounts, as well as view their details and activity within the application. The Test Users page can be accessed by clicking on the "Test" menu item in the navigation menu, and it should be clearly labeled as a testing environment to avoid confusion with the main application features. This will help ensure that test user management is organized and easily accessible for testing purposes.
 
@@ -694,3 +795,443 @@ Current implementation:
 - The `Test` section contains `Test Page` and `Test Users` links.
 - `/test` renders a sandbox page with the current session state and a clear testing-environment label.
 - `/test/users` lets System Administrators create and edit test users, and delete/reactivate test users by toggling account status.
+
+
+# 14. Settings
+This describes the Settings Menu from the Navigation bar.
+Each menu item is described in sections 14.1 - 14.8
+
+## 14.0 System Administrator
+This menu item will only be visible to SysAdmin users. The sections below describe the sub-menu items and their functionality.
+
+### 14.0.1 Delete User
+Functionality to delete a user from storage.
+Ask for the user id and then delete any rows in tables associated with this user
+
+### 14.0.2 User Roles
+Allows managing User Roles. 
+
+## 14.0.3 Pool Equipment
+Allows managing Pool Equipment. 
+If the Service is not setup as a pool cleaning service, do not show this menu item.
+
+Features: 
+- Seed Equipment 
+- Manage Equipment Categories 
+  - Create new Category
+  - Allow searching and filtering
+  - Columns: Active (Toggle), Category, Description
+  - Actions: Edit, Delete - shown as icons 
+- Manage Equipment
+  - Create new Equipment
+    - The category for a piece of pool equipment needs to be chosen, but there needs to be support for a Category called Uncategorized
+  - Allow searching and filtering
+  - Columns: Active (Toggle), Manufacturer, Category, Model No, Description
+  - Actions: Edit, Delete - shown as icons 
+All panels shall be collapsible
+
+## 14.1 General
+No Access
+### 14.1.1 Sys Admin
+No Access
+### 14.1.2 Business Owner
+No Access
+### 14.1.3 Business Employee
+No Access
+### 14.1.4 Business Client
+No Access
+### 14.1.5 Independent Home Owner
+No Access
+
+## 14.2 Service Clients
+Allows managing Service Clients. Service Clients are the Businesses that Business Owners create. The are customers of this service.
+The clients listed need to belong to the service. Filter the clients by type. If the Service is setup as a pool cleaning service, only show pool cleaning clients.
+Service clients cannot be created, as they are created via Business Owner Registration
+Columns: Status (Toggle), Name, Type, Service Package (drop down), Email, Phone
+Actions: Edit, Delete - shown as icons 
+rename - old name was Companies
+
+### 14.2.1 Sys Admin
+Full Access
+### 14.2.2 Business Owner
+No Access
+### 14.2.3 Business Employee
+No Access
+### 14.2.4 Business Client
+No Access
+### 14.2.5 Independent Home Owner
+No Access
+
+## 14.3 Business Clients
+Allows managing Business Clients. Business Clients are the Clients or Customers of the Service Clients. They are generally home owners. 
+The business clients listed need to belong to the service. Filter the clients by type. If the Service is setup as a pool cleaning service, only show pool cleaning business clients.
+Business clients are created by the Business Owner
+Columns: Status (Toggle), Client Type, Company, Name, Type, Email, Phone
+Actions: Create, Edit, Delete - shown as icons 
+
+### 14.3.1 Sys Admin
+Full Access. A sys admin can see all clients. 
+Columns: Status (Toggle), Company, Name, Type, Email, Phone
+### 14.3.2 Business Owner
+Full Access. A business owner can only see the clients of his business. 
+Columns: Status (Toggle), Name, Type, Email, Phone
+### 14.3.3 Business Employee
+No Access
+### 14.3.4 Business Client
+No Access
+### 14.3.5 Independent Home Owner
+No Access
+
+## 14.4 Users
+Allows managing Users. 
+Columns: Active (Toggle), Name, Email, Flags, Company, User Type (drop down), Approved (Toggle), Sys Admin (Toggle)
+Actions: Edit - shown as icons 
+Don't allow the logged in user to change his/her Status, Approval Status or User Type
+## 14.4.1 Sys Admin
+Column Access: All
+Action Access: All
+Has access to all users in the system. Users can't be added. The only way users get added into the system is via registration.
+The ID should not be displayed, it must be handled in the background. Only a sys admin sees has the permission to make a user a sysadmin.
+The users listed need to belong to the service. Filter the users by type. If the Service is setup as a pool cleaning service, only show users belonging to pool cleaning clients.
+## 14.4.2 Business Owner
+Columns: Active (Toggle), Name, Email, Flags, User Type, Approved (Toggle)
+Actions: Edit - shown as icons 
+Similar functionality as the Sys Admin with these exceptions:
+Can only see users under associated with company. 
+## 14.4.3 Business Employee
+No Access
+## 14.4.4 Business Client
+No Access
+## 14.4.5 Independent Home Owner
+No Access
+
+## 14.5 Pool Configuration
+Allows the pool configuration for a home owner or business client to be managed
+If the Service is not setup as a pool cleaning service, do not show this menu item.
+
+Features: 
+- Choose Client 
+  - The clients listed need to belong to the service.
+  - Once a client has been chosen, update the Panel text from Choose CLient to the Client Address
+  - Add filtering capability
+  - List all the Business Clients and allow the user to choose one
+    - Columns: Company, Client Address, Client Type (Business Client or Independent Home Owner)
+  - Any configuration changes made will be scoped to that client
+- Configuration
+  - Lists pool equipment owned by the home owner or business client 
+  - Columns: Manufacturer, Name, Category, Model No, Comment (allow in-line edit)
+  - Actions: Edit, Delete, Show Description - use icons
+- Add Pool Equipment
+  - Create new Equipment
+  - Allows searching and filtering
+  - Allows choosing a pievce of equipment which is then added to the Configuration list
+  - Columns: Manufacturer, Name, Category, Model No, Description
+  - Actions: Choose (icon)
+    - A piece of equipment needs to be able to be added to a configuration multiple times. 
+      For example a pump can be used for the Spa and Waterfall. 
+- Equipment Pictures
+  - Allows uploading of pictures and deleting them
+  - Displays pictures and when the user clicks a picture it shows it larger
+
+All panels shall be collapsible
+## 14.5.1 Sys Admin
+Access to all Business Clients or Independent Home Owners
+## 14.5.2 Business Owner
+Access to Business Clients
+- Choose Client
+  - Columns: Client Address
+## 14.5.3 Business Employee
+No Access
+## 14.5.4 Business Client
+No Access
+## 14.5.5 Independent Home Owner
+Access to Configuration, Add Pool Equipment, Equipment Pictures
+
+## 14.6 Materials
+Allows managing Materials. 
+The Materials listed need to belong to the service. Filter the Materials by type. If the Service is setup as a pool cleaning service, only show pool cleaning Materials.
+
+Features: 
+- Seed Materials 
+- Manage Material Categories 
+  - Create new Category
+  - Allow searching and filtering
+  - Columns: Active (Toggle), Category, Description
+  - Actions: Edit, Delete - shown as icons 
+- Manage Materials
+  - Create new Material
+    - The category for a material needs to be chosen, but there needs to be support for a Category called Uncategorized
+  - Allow searching and filtering
+  - Columns: Active (Toggle), Manufacturer, Name, Category, Model No, Unit, Price, Description
+  - Actions: Edit, Delete - shown as icons 
+- Add Materials
+  Allows adding global Materials to the Materials list
+  No functionality to create a Material on this panel
+  - Columns: Name, Category, Description
+  - Actions: Choose - shown as icon
+
+All panels shall be collapsible
+## 14.6.1 Sys Admin
+Access to all features, global scope
+Allow edits and deletes only for all entities.
+## 14.6.2 Business Owner
+Access to Manage Materials and Add Materials. Newly created Materials will only be accessible to the customer. 
+The Business Owner has access to all Global Materials Categories and Materials.
+## 14.6.3 Business Employee
+No Access
+## 14.6.4 Business Client
+No Access
+## 14.6.5 Independent Home Owner
+No Access
+
+## 14.7 Services
+Allows managing Services to be provided. 
+The Services listed need to belong to the service. Filter the Services by type. If the Service is setup as a pool cleaning service, only show pool cleaning Services.
+
+Features: 
+- Seed Services 
+- Manage Service Categories 
+  - Create new Category
+  - Allow searching and filtering
+  - Columns: Active (Toggle), Category, Description
+  - Actions: Edit, Delete - shown as icons 
+- Manage Services
+  - Create new Service
+    - The category for a servicet needs to be chosen, but there needs to be support for a Category called Uncategorized
+  - Allow searching and filtering
+  - Columns: Active (Toggle), Name, Category, Duration, Price, Taxable, Description
+  - Actions: Edit, Delete - shown as icons 
+- Add Services
+  Allows adding global services to the Services list
+  No functionality to create a service on this panel
+  - Columns: Name, Category, Description
+  - Actions: Choose - shown as icon
+
+All panels shall be collapsible
+## 14.7.1 Sys Admin
+Access to Seed Services, Manage Service Categories, Manage Serives. Created Categories and Services will have a global scope. 
+Allow edits and deletes for all entities.
+## 14.7.2 Business Owner
+Access to Manage Services and Add Services. Newly Services will only be accessible to the customer. 
+The Business Owner has access to all Global Service Categories and Services.
+<!--Allow edits and deletes only for entities that do not have a global scope, and disable the buttons for global scoped entities.-->
+## 14.7.3 Business Employee
+No Access
+## 14.7.4 Business Client
+No Access
+## 14.7.5 Independent Home Owner
+Access to Manage Services and Add Services. Created Categories and Services will only be accessible to the home owner. 
+The Independent Home Owner Owner has access to all Global Service Categories and Services.
+Manage Services  
+- Columns: Active (Toggle), Name, Category, Description
+
+## 14.8 Service Packages
+Allows managing Service Packages. 
+The Service Packages listed need to belong to the service. Filter the Service Packages by type. If the Service is setup as a pool cleaning service, only show pool cleaning Service Packages.
+A service package is the service the client will receive. The recurrence of the service package will be defined 
+once a service package is assigned to a business client.
+
+An example Service package is:
+Name: Pool Service Level 1, Recurrence: Weekly, Cost: $129/month
+Services:
+  - Brushing, Recurrence: Every visit
+  - Clean Skimmer and Pump Baskets, Recurrence: Every visit
+  - Backwash Filter, Recurrence: Every 2 weeks
+  - Deep Clean Filter, Recurrence: Twice yearly
+  - Water Test, Recurrence: Monthly
+  
+When creating or modifying a service package, get the individual services from the global and service client services.
+
+- Manage Service Packages 
+  - Create new Service Packages. The Save Button needs to be at the bottom of the chosen services
+  - Allow searching and filtering
+  - Columns: Active (Toggle), Name, Recurrence, Description, Cost
+  - Actions: Edit, Delete - shown as icons 
+  When adding services to a service package, allow searching and filtering of the services
+  - List the service with these columns
+    - Service, Category, Scope, Recurrence (dropdown), Choose icon. When clicking the choose icon add the selected service into 
+      the Service package being constructed
+    - The recurrence dropdown should associated with the package should list the following:
+      - Weekly, Bi-Weekly, Monthly, Bi-Monthly, Half-Yearly, Yearly
+    - The recurrence dropdown associated with the service should list the following:
+      - Every Visit, Every X Visits, where x is a number that can be provided
+
+All panels shall be collapsible
+
+## 14.8.1 Sys Admin
+Access to all features, global scope
+Allow edits and deletes for all entities.
+## 14.8.2 Business Owner
+Access to all features, service client scope 
+Allow edits and deletes for all accessible entities.
+## 14.8.3 Business Employee
+No Access
+## 14.8.4 Business Client
+No Access
+## 14.8.5 Independent Home Owner
+No Access
+
+Current implementation:
+
+- The Settings menu is role-aware. System Administrators, Business Owners, and Independent Home Owners see only the Settings entries allowed for their role; Business Employees and Business Clients do not receive Settings menu access. Pending Business Users and Business Clients see only Home and Help.
+- System Administrators receive a separate `System Administrator` navigation section with `Delete User` at `/admin/delete-user`, `User Roles` at `/admin/roles`, and Pool-mode `Pool Equipment` at `/admin/catalog/poolequipment`. Delete User asks for a user id and a typed `DELETE` confirmation, then physically removes the user, login lookup rows, company memberships, homeowner profile/photos/history, owner-scoped pool equipment, owner-scoped catalog rows, directly assigned visits, and email logs addressed to that user. User Roles manages built-in role display names, descriptions, owner-approval requirements, and permissions.
+- `Settings / General` is not exposed in the navigation for any role. The `/settings` route remains as a read-only System Administrator view of appsettings-backed `SystemMode`, `DevTest`, and product name.
+- System Administrators manage Service Clients at `/admin/service-clients`; the legacy `/admin/companies` route remains available. The page is manage-only, does not expose IDs, does not create service clients, uses active-state toggles, uses icon actions for edit/delete, filters the list by the configured service type, and includes a Service Package dropdown populated from the current service type's global service packages.
+- System Administrators manage Business Clients at `/admin/clients` across all service clients, filtered by the configured service type. Business Owners manage their own Business Clients at `/clients`. Both views hide IDs, show the Business Client Type as `Home Owner`, provide create/edit/archive behavior, show active toggles, use icon actions, and include a Service Package dropdown/column populated from accessible service packages.
+- System Administrators manage Users at `/admin/users`. Users are not created there; the grid hides IDs and shows Status, Name, Email, Flags, Company, User Type, Approved, and Sys Admin with toggle controls/dropdowns and icon edit actions. Company access is filtered by configured service type, unknown company types are not treated as matches, and the logged-in user cannot edit their own user row or change their own active status, approval status, system-admin flag, or user type. Business Owners manage company users at `/company/users` with company-scoped rows, User Type dropdowns, approval/status toggles, icon edit actions, and the same self-change restrictions for active status, approval status, and user type.
+- Pool Equipment catalog management is available only to System Administrators from the `System Administrator` menu at `/admin/catalog/poolequipment`; Business Owners do not see Settings / Pool Equipment, and direct `/catalog/poolequipment` access redirects to the dashboard. It includes seeding for System Administrators, collapsible seed/category/equipment panels, active toggles, filtering/sorting, Uncategorized support, and icon edit/delete actions without exposing copy actions.
+- Pool Configuration is available at `/poolequipment` for System Administrators, Business Owners, and Independent Home Owners in Pool mode. System Administrators get a collapsible client panel with service-type-filtered Business Clients, Independent Home Owners, filter support, and Company, Client Address, and Client Type columns; once selected, the panel title changes to the selected client address. Business Owners get a company-scoped client panel with filter support and Client Address. Configuration changes, owner-scoped equipment, and equipment pictures are saved under the selected client/homeowner scope. Independent Home Owners manage their own configuration directly. The page lists configured equipment with inline-editable Comment, uses icon actions for edit/delete/show-description, supports searchable global equipment selection, allows creating owner-scoped equipment with comments, allows the same global equipment item to be added multiple times by creating a new configured row each time, uses an icon-only Choose action, and provides collapsible equipment-picture upload/delete/zoom behavior.
+- Materials management is available to System Administrators at `/admin/catalog/materials` and Business Owners at `/catalog/materials` per Section 14.6. Seed Materials and Material Category management are System Administrator only. The Materials panel is collapsible, searchable, sortable, uses active toggles, hides IDs, supports Uncategorized, and uses icon edit/delete actions.
+- Business Owner Materials include an `Add Materials` panel for choosing global materials by icon action; that panel does not expose create controls. The material category picker can use global categories, which are copied into the company scope before saving.
+- Services management is available to System Administrators at `/admin/catalog/services`, Business Owners at `/catalog/services`, and Independent Home Owners at `/settings/services` per Section 14.7. Seed Services and Service Category management are System Administrator only. Services are collapsible, searchable, sortable, support Uncategorized, use active toggles, and use icon edit/delete actions.
+- Business Owner and Independent Home Owner Services include an `Add Services` panel for choosing global services by icon action; that panel does not expose create controls. The service category picker can use global categories, which are copied into the owner/company scope before saving. The Independent Home Owner services grid omits price, taxable, and duration fields per the role-specific Section 14.7 requirements.
+- Service Packages management is available to System Administrators at `/admin/catalog/servicepackages` and Business Owners at `/catalog/servicepackages` per Section 14.8. System Administrators manage service-type-specific global packages, while Business Owners manage company-scoped packages. The page uses collapsible management, create/edit forms, filtering, sorting, active toggles, and icon edit/delete actions. Package recurrence is selected from Weekly, Bi-Weekly, Monthly, Bi-Monthly, Half-Yearly, and Yearly. Package services are chosen from a searchable/filterable list of accessible global and service-client services with Service, Category, Scope, recurrence controls, and an icon-only Choose action; chosen services are shown separately, can be removed, support Every Visit or Every X Visits recurrence, and the Save/Cancel buttons sit directly under the Chosen Services section before the Choose Services list.
+- Landscape mode hides Pool Equipment and Pool Configuration Settings links, and direct Pool Equipment routes redirect to the dashboard.
+
+# 15. Visit Scheduling Component
+This section describes the Visit Scheduling Component
+The Visit Scheduling Menu wil be at the Level of the Settings Menu in the Nav bar
+
+- Visit Entity
+  - Visit ID
+  - Visit Type (Service Package Visit, Ad-Hoc Visit). The distinction is that the Ad-Hoc visit will be billed for, the Serive Package Visit 
+    is included in the Monthly Service Package.
+  - Visit Date
+  - Visit Name 
+  - Business Client ID
+  - Assigned To (Business Employee ID)
+  - Notes To Business Client
+  - Notes to Service Client (Business Owner)
+  - Internal Notes
+  - Invoice ID
+  - List of Services to be provided
+  - List of out of scope services that were provided. These will be billed for separately.
+  - List of out of scope materials that were used. These will be billed for separately.
+
+- Visit Status (New, Assigned, In Progress, Complete, Closed)
+  - Keep the visit Status up-to-date based on these rules.
+  - When a visit is created and there is no Visit Date or it's not Assigned -> New
+  - When a visit date is set and it's assigned -> Assigned
+  - Allow the Status to be Set to In Progress or Complete
+  - Only the Business Owner can set the visit to Closed. Only the Business Owner can edit a CLosed Visit
+- Columns: Visit Type, Visit Date, Visit Name, Service Client, Business Client, Assigned To
+
+Features: 
+- The visits shall be shown in four Panels.
+  - Top Panel shoes Unscheduled, and Scheduled Visits. These are incomplete as they need to be assigned to an Employee
+  - Second Panel shows Assigned Visits. These are ready for execution
+  - Third Panel shows recently completed visits. 
+  - Fourth Panel shows Closed visits
+- This visits will be at least partially populated by an automated process that looks at the Business CLients
+  Service Package and when the last visit occurred.
+- Provide the ability to add an ad-hoc visit by adding a Create button on the Top Panel
+  - When creating a visit allow adding multiple Services from the global and business scoped services 
+  - Next to each service have a choose button. When a service is chosen, add it before the list of services assigned to the visit.
+    Put the save button below the chosen serices. 
+    This should work the same way as it does when creating a service package.
+- Allow assigning the visit to a Business Employee, or Business Owner
+
+- Actions: Edit, Delete, Info - shown as icons 
+  - The info button will show all information of the visit  
+
+## 15.1 Sys Admin
+Access to all visits
+Show only visits for the service (Pool or Landscape)
+Allow edits and deletes for all entities.
+See section ### 1.10.1 for Dashboard impact
+
+## 15.2 Business Owner
+Access to all visits
+Show only visits for the service client
+Allow edits and deletes for accessible  entities.
+- Columns: Visit Type, Visit Date, Visit Name, Business Client, Assigned To
+See section ### 1.10.2 for Dashboard impact
+
+## 15.3 Business Employee
+Actions: Complete Visit (icon), Edit Visit (icon), Info (icon)
+
+The following edits are available:
+- Notes To Business Client
+- Notes to Service Client (Business Owner)
+- Internal Notes
+- Ability to set each service in the visit as complete or not complete
+- Ability to add other services that were done. These are outside the scope of the service package visit and will be billed for separately.
+
+When a Business Employee edits a visit to add additional services to a visit, the page should work the same way as when a 
+business owner creates a visit. The service can be chosen with a check mark, and the Save Visit button is below the chosen 
+services.
+
+See section ### 1.10.3 for Dashboard impact
+
+## 15.4 Business Client
+Actions: Edit Visit (icon), Info (icon)
+A Business client can only update the Notes To Service Provider field. 
+See section ### 1.10.4 for Dashboard impact
+
+## 15.5 Independent Home Owner
+No Access
+
+Current implementation:
+
+- Visit scheduling is implemented on `/visits` for Business Owners, `/admin/visits` for System Administrators, and the legacy `/schedule` route. The navigation includes a top-level `Visit Scheduling` section alongside Settings; it is visible to System Administrators, Business Owners, and Business Employees only. Independent Home Owners and Business Clients do not receive the scheduling menu.
+- Visits carry the Section 15 visit metadata: visit type, visit date, visit name, business client, assigned employee/owner, notes to the business client, notes to the service client, internal notes, invoice id, planned services, completed planned services, and out-of-scope service/material collections. Visit status is normalized from the saved visit data: no visit date or no assigned user is `New`, a visit date with an assigned user is `Assigned`, and `In Progress`, `Complete`, and `Closed` can be set explicitly. Completing a visit no longer assigns a placeholder invoice id; completed visits remain available for invoice creation until the invoicing service creates an invoice.
+- The Visit Scheduling page shows the required four panels: Unscheduled and Scheduled Visits, Assigned Visits, Recently Completed Visits, and Closed Visits. The create/edit form supports ad-hoc and package visits, business-client selection, assignment to active business employees or business owners, status updates through the Section 15 statuses, and service-client/global services. Services are chosen through a filtered Choose Services grid with icon-only Choose actions; chosen services appear above the chooser, can be removed, and the Save/Cancel buttons sit directly below the Chosen Services section.
+- System Administrators see service-client columns and service-type-filtered service clients. Business Owners see only their own service client and omit the service-client column. Both roles can edit visits, delete incomplete non-closed visits, close completed visits, and open the icon-driven info dialog for the full visit detail set.
+- Business Owners see New/Unscheduled/Scheduled visits on `/dashboard` in the `Unscheduled and Scheduled Visits` panel and can assign those visits to active business employees without leaving the dashboard; `/visits` remains the detailed scheduling workspace. Business Employees see collapsible `/dashboard` panels for today's assigned visits, future assigned visits, and recently completed visits. Today's and upcoming panels are expanded by default, while recently completed is collapsed by default. Today's visits can be completed from the dashboard, upcoming visits are view-only, and completed visits can be moved back to In Progress. Employee edit actions support Notes To Business Client, Notes To Service Client, Internal Notes, completed planned-service selection, and added out-of-scope services; visit info actions show the full visit detail set. `/field` remains the detailed route execution workspace. Completing a visit updates the `ServiceVisit` status and stores completion details directly on the visit, including completed timestamp, completed-by user, completed service ids, material usage, notes, and invoice id; the separate `VisitCompletions` table is no longer used. Business Clients see Upcoming Visits and Completed Visits panels on `/dashboard`, with completed and closed visits shown only in Completed Visits; the separate Business Client Service History dashboard panel has been removed because it duplicated Completed Visits. The only editable Business Client visit field is Notes To Service Provider, saved back to the visit's service-client notes. Independent Home Owners have no visit scheduling access.
+
+
+# 16. Invoices
+
+An invoice will go through a status workflow
+New -> Invoiced -> Paid
+
+## 16.1 Invoice Attributes
+1. Invoice GUID - unique value across all Service Clients
+2. Invoice ID - RowKey - This will be an incrementing value by Service Client
+3. If this invoice was part of a service package service, the Service Package ID
+4. List of additional services, not covered by the Service Package, and the amount
+5. List of Materials, not covered by the Service Package, the unit and amounts
+6. The total Cost
+7. Status
+8. InvoiceHtml
+
+Current implementation:
+
+- `Invoice` records are modeled with a unique `InvoiceGuid`, service-client-scoped incrementing `InvoiceId`, company/client/visit references, optional service package id, additional service lines, material lines, total cost, `New/Invoiced/Paid` status, generated invoice HTML, and created timestamp.
+- Invoices are persisted through `IServiceBusinessStore` in memory and Azure Tables using the `Invoices` table, partitioned by service client and keyed by `InvoiceId`.
+- Business Owners can review their invoices at `/invoices`; System Administrators can review service-type-filtered invoices at `/admin/invoices`. The invoice page lists invoice id, service client where applicable, business client, visit, total, status, and an info action with the invoice detail and generated HTML. Authorized users can move invoice status forward through the workflow from `New` to `Invoiced` to `Paid`.
+
+# 17. Web Jobs
+This section describes the background jobs that will be running as part of the service
+
+## 17.1 Invoicing Service
+This section will desribe the functionality of the invoicing service.
+
+### 17.1.1 Invoice Creation
+Any service that was completed and does not have an Invoice ID will be picked up and an invoice will be created.
+An invoice should be nicely formatted in HTML 
+Once the invoice has been completed save it to the Email Log table, with a status of New.
+
+Current implementation:
+
+- `InvoicingJobService.CreateInvoicesForCompletedVisitsAsync` scans active service clients for completed visits with no `InvoiceId`. For each matching visit, it creates an invoice, stores it, updates the visit with the generated incrementing invoice id, and writes an `EmailLogEntry` with `EmailType` `Invoice`, HTML body, service-client sender, recipient, and `New` status.
+- Ad-hoc visit planned services are billed on the invoice. Service package visit planned services are treated as included, while out-of-scope services and out-of-scope materials are billed separately. Invoice HTML includes the service client, business client, visit, line items, and total.
+
+## 17.2 Emailing Service
+This section will describe the functionality of the emailing service.
+
+A table will contain emails to be sent with the following fields
+From, To, cc, Subject, Body, Status, SendDate, FailedMessage
+
+The status will be either (New, Sent, Failed)
+
+### 17.2.1 Send Email
+The service will pick up emails from the EmailLog table in a New status and send them out. Once successfully sent out, 
+update the status to Sent. If the send failed, set the status to Failed and record the FailedMessage.
+
+If the service is running in test mode, simply update the Status to Sent.
+
+Current implementation:
+
+- `EmailLogEntry` includes from, recipient/to, cc, subject, body, status, sent date, and failure reason fields; existing notification logging continues to use the same table.
+- `EmailJobService.ProcessNewEmailLogsAsync` processes `EmailLogEntry` rows with `New` status. In DevTest mode it marks them `Sent` without external delivery. Outside DevTest it marks valid-recipient rows `Sent` and invalid-recipient rows `Failed` with a failure message. This application service is the callable Web Job boundary for the emailing workflow.

@@ -22,7 +22,7 @@ The app also registers a custom `ServiceBusiness` activity source and meter for 
 - `CompleteVisit` activity
 - `SendEmailNotification` activity
 - `servicebusiness.account_approval_decisions` counter
-- `servicebusiness.visit_completions` counter
+- `servicebusiness.completed_visits` counter
 - `servicebusiness.email_notifications` counter
 
 Business telemetry tags include company ID, visit ID, role, decision, email type, recipient test-user flag, and email status where applicable.

@@ -30,28 +30,24 @@ else
 {
     <div class="metric-grid">
         <div class="metric">
-            <span>Companies</span>
-            <strong>@companies.Count</strong>
-        </div>
-        <div class="metric">
-            <span>Company Types</span>
-            <strong>@companyTypes.Count</strong>
+            <span>Service Clients</span>
+            <strong>@FilteredCompanies.Count</strong>
         </div>
         <div class="metric">
             <span>Users</span>
-            <strong>@userOverview.TotalUsers</strong>
+            <strong>@FilteredUserRows.Count</strong>
         </div>
         <div class="metric">
             <span>System Admins</span>
-            <strong>@userOverview.SystemAdmins</strong>
+            <strong>@FilteredUserRows.Count(row => row.User.IsSystemAdmin)</strong>
         </div>
         <div class="metric">
             <span>Pending Access</span>
-            <strong>@userOverview.PendingMemberships</strong>
+            <strong>@FilteredUserRows.Sum(row => row.PendingMembershipCount)</strong>
         </div>
         <div class="metric">
             <span>Disabled Users</span>
-            <strong>@userOverview.DisabledUsers</strong>
+            <strong>@FilteredUserRows.Count(row => row.User.Status == UserStatus.Disabled)</strong>
         </div>
         <div class="metric">
             <span>Email Logs</span>
@@ -62,16 +58,20 @@ else
     <section class="section">
         <h2>Management Pages</h2>
         <div class="quick-link-grid">
-            <a class="row-card quick-link" href="admin/companies">
-                <strong>Companies</strong>
-                <p>Manage tenant companies and company types.</p>
+            <a class="row-card quick-link" href="admin/service-clients">
+                <strong>Service Clients</strong>
+                <p>Manage registered business customers for the current service type.</p>
+            </a>
+            <a class="row-card quick-link" href="admin/clients">
+                <strong>Business Clients</strong>
+                <p>Manage homeowner and customer records across service clients.</p>
             </a>
             <a class="row-card quick-link" href="admin/users">
                 <strong>Users</strong>
                 <p>Manage registered users, status, and system-admin access.</p>
             </a>
             <a class="row-card quick-link" href="admin/roles">
-                <strong>Roles</strong>
+                <strong>User Roles</strong>
                 <p>Edit built-in role metadata and permissions.</p>
             </a>
             <a class="row-card quick-link" href="admin/catalog/materials">
@@ -96,6 +96,8 @@ else
     private IReadOnlyList<EmailLogEntry>? emailLogs;
     private PlatformUserManagementOverview? userOverview;
     private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
+    private IReadOnlyList<Company> FilteredCompanies => companies?.Where(CompanyMatchesMode).OrderBy(company => company.Name).ToList() ?? [];
+    private IReadOnlyList<UserManagementRow> FilteredUserRows => userOverview?.Users.Where(UserMatchesMode).ToList() ?? [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -106,4 +108,31 @@ else
         emailLogs = await PlatformAdminService.GetEmailLogsAsync();
         userOverview = await PlatformAdminService.GetUserManagementOverviewAsync();
     }
+
+    private bool UserMatchesMode(UserManagementRow row)
+    {
+        if (row.User.IsSystemAdmin || row.CompanyAccess.Count == 0)
+        {
+            return true;
+        }
+
+        return row.CompanyAccess.Any(access => CompanyMatchesMode(access.Company));
+    }
+
+    private bool CompanyMatchesMode(Company company)
+    {
+        var type = companyTypes?.FirstOrDefault(t => string.Equals(t.Id, company.CompanyTypeId, StringComparison.OrdinalIgnoreCase));
+        if (type is null)
+        {
+            return true;
+        }
+
+        var searchable = $"{type.Id} {type.Name} {type.Description}";
+        return appMode.IsPoolMode
+            ? ContainsAny(searchable, "pool", "clean")
+            : ContainsAny(searchable, "landscape", "lawn", "yard", "tree");
+    }
+
+    private static bool ContainsAny(string value, params string[] terms) =>
+        terms.Any(term => value.Contains(term, StringComparison.OrdinalIgnoreCase));
 }

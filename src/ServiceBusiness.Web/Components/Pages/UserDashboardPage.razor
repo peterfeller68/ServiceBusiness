@@ -6,6 +6,8 @@
 @inject IndependentHomeOwnerService HomeOwnerService
 @inject PlatformAdminService PlatformAdminService
 @inject CompanyAdminService CompanyAdminService
+@inject ClientPortalService ClientPortalService
+@inject FieldWorkService FieldWorkService
 @inject ICurrentUserContext CurrentUser
 @inject ServiceBusiness.Web.ApplicationModeService ApplicationMode
 
@@ -64,8 +66,8 @@ else if (IsIndependentHomeOwner)
                                     <th>Category</th>
                                     <th>Manufacturer</th>
                                     <th>Equipment</th>
-                                    <th>Model No</th>
-                                    <th>Description</th>
+                                    <th>Comment</th>
+                                    <th class="actions">Action</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -77,8 +79,12 @@ else if (IsIndependentHomeOwner)
                                             <td>@group.Category.Name</td>
                                             <td>@item.Manufacturer</td>
                                             <td>@item.Name</td>
-                                            <td>@item.ModelNo</td>
-                                            <td>@item.Description</td>
+                                            <td>@item.Comment</td>
+                                            <td class="actions">
+                                                <button class="icon-button icon-only" type="button" title="Show equipment info" aria-label="Show equipment info" @onclick="() => ShowEquipmentInfo(item)">
+                                                    <span class="action-icon info-icon" aria-hidden="true"></span>
+                                                </button>
+                                            </td>
                                         </tr>
                                     }
                                 }
@@ -178,6 +184,46 @@ else if (IsIndependentHomeOwner)
         </section>
     }
 }
+else if (IsPendingApprovalOnly)
+{
+    <section class="dashboard-hero" style="background-image: linear-gradient(90deg, rgba(13, 30, 26, .68), rgba(13, 30, 26, .22)), url('@appMode.HeroImageUrl');">
+        <div>
+            <p class="eyebrow">@appMode.ProductCategory</p>
+            <h1>Pending Approval</h1>
+        </div>
+    </section>
+
+    <section class="page-header">
+        <div>
+            <p class="eyebrow">Dashboard</p>
+            <h1>Waiting for business owner approval</h1>
+            <p class="lede">Your access request has been submitted. Features unlock after the business owner approves your account.</p>
+        </div>
+    </section>
+
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>Pending Access</h2>
+        </div>
+        <div class="management-panel-body">
+            <div class="data-list">
+                @foreach (var access in PendingApprovalAccess)
+                {
+                    <article class="row-card">
+                        <div>
+                            <strong>@access.Company.Name</strong>
+                            <p>@GetRoleDescription(access.Role)</p>
+                            <small>Access is pending; a business owner must approve it before features unlock.</small>
+                        </div>
+                        <div class="row-actions">
+                            <span class="status-pill">@access.Status</span>
+                        </div>
+                    </article>
+                }
+            </div>
+        </div>
+    </section>
+}
 else if (IsSystemAdmin)
 {
     <section class="dashboard-hero" style="background-image: linear-gradient(90deg, rgba(13, 30, 26, .68), rgba(13, 30, 26, .22)), url('@appMode.HeroImageUrl');">
@@ -201,53 +247,87 @@ else if (IsSystemAdmin)
     }
     else
     {
-        <div class="metric-grid">
-            <a class="metric metric-button" href="admin/companies">
-                <span>Companies</span>
-                <strong>@companies.Count</strong>
-            </a>
-            <a class="metric metric-button" href="admin/companies">
-                <span>Company Types</span>
-                <strong>@companyTypes.Count</strong>
-            </a>
-            <a class="metric metric-button" href="admin/users">
-                <span>Active Users</span>
-                <strong>@userOverview.ActiveUsers</strong>
-            </a>
-            <a class="metric metric-button" href="admin/users">
-                <span>Pending Access</span>
-                <strong>@userOverview.PendingMemberships</strong>
-            </a>
-            <a class="metric metric-button" href="admin/users">
-                <span>Disabled Users</span>
-                <strong>@userOverview.DisabledUsers</strong>
-            </a>
-            <a class="metric metric-button" href="admin/email-log">
-                <span>Email Logs</span>
-                <strong>@emailLogs.Count</strong>
-            </a>
-        </div>
+        <section class="section">
+            <h2>System Health</h2>
+            <div class="metric-grid">
+                <a class="metric metric-button" href="admin/service-clients">
+                    <span>Service Clients</span>
+                    <strong>@FilteredCompanies.Count</strong>
+                </a>
+                <a class="metric metric-button" href="admin/clients">
+                    <span>Business Clients</span>
+                    <strong>@SystemBusinessClientCount</strong>
+                </a>
+                <a class="metric metric-button" href="admin/users">
+                    <span>Users</span>
+                    <strong>@FilteredSystemUsers.Count</strong>
+                </a>
+                @if (appMode.IsPoolMode)
+                {
+                    <a class="metric metric-button" href="admin/catalog/poolequipment">
+                        <span>Pool Equipment</span>
+                        <strong>@SystemPoolEquipmentCount</strong>
+                    </a>
+                    <a class="metric metric-button" href="poolequipment">
+                        <span>Pool Configurations</span>
+                        <strong>@SystemPoolConfigurationCount</strong>
+                    </a>
+                }
+                <a class="metric metric-button" href="admin/catalog/materials">
+                    <span>Materials</span>
+                    <strong>@SystemMaterialCount</strong>
+                </a>
+                <a class="metric metric-button" href="admin/catalog/services">
+                    <span>Services</span>
+                    <strong>@SystemServiceCount</strong>
+                </a>
+                <a class="metric metric-button" href="admin/catalog/servicepackages">
+                    <span>Service Packages</span>
+                    <strong>@SystemServicePackageCount</strong>
+                </a>
+            </div>
+        </section>
+
+        <section class="management-panel">
+            <div class="management-panel-header">
+                <h2>Approvals</h2>
+                <div class="management-panel-actions">
+                    <button class="button primary" type="button" @onclick="ApproveAllSystemRequestsAsync" disabled="@(SystemPendingRequests.Count == 0)">Approve All</button>
+                    <button class="icon-button" type="button" title="Toggle approvals" @onclick="ToggleApprovalsPanel">@(approvalsExpanded ? "^" : "v")</button>
+                </div>
+            </div>
+            @if (approvalsExpanded)
+            {
+                <div class="management-panel-body">
+                    @SystemApprovalsTable()
+                </div>
+            }
+        </section>
 
         <section class="section">
-            <h2>System workspaces</h2>
+            <h2>System Workspaces</h2>
             <div class="quick-link-grid">
-                <a class="row-card quick-link" href="admin/companies">
-                    <strong>Companies</strong>
-                    <p>Tenant companies, company types, and setup state.</p>
+                <a class="row-card quick-link" href="admin/service-clients">
+                    <strong>Service Clients</strong>
+                    <p>Registered service clients and setup state.</p>
+                </a>
+                <a class="row-card quick-link" href="admin/clients">
+                    <strong>Business Clients</strong>
+                    <p>Homeowner and customer records across service clients.</p>
                 </a>
                 <a class="row-card quick-link" href="admin/users">
                     <strong>Users</strong>
                     <p>User status, system-admin access, and pending memberships.</p>
-                </a>
-                <a class="row-card quick-link" href="admin/roles">
-                    <strong>Roles</strong>
-                    <p>Role definitions and permission labels.</p>
                 </a>
                 @if (appMode.IsPoolMode)
                 {
                     <a class="row-card quick-link" href="admin/catalog/poolequipment">
                         <strong>Pool Equipment</strong>
                         <p>Global equipment categories and equipment models.</p>
+                    </a>
+                    <a class="row-card quick-link" href="poolequipment">
+                        <strong>Pool Configurations</strong>
+                        <p>Choose a client and manage configured pool equipment.</p>
                     </a>
                 }
                 <a class="row-card quick-link" href="admin/catalog/materials">
@@ -257,6 +337,10 @@ else if (IsSystemAdmin)
                 <a class="row-card quick-link" href="admin/catalog/services">
                     <strong>Services</strong>
                     <p>Global service categories and service catalog items.</p>
+                </a>
+                <a class="row-card quick-link" href="admin/catalog/servicepackages">
+                    <strong>Service Packages</strong>
+                    <p>Global service packages for the current service type.</p>
                 </a>
             </div>
         </section>
@@ -279,57 +363,108 @@ else if (IsBusinessOwner)
         </div>
     </section>
 
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <div class="notice success">@message</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="notice error">@errorMessage</div>
+    }
+
     @if (companyDashboard is null)
     {
         <p>Loading business dashboard...</p>
     }
     else
     {
-        <div class="metric-grid">
-            <a class="metric metric-button" href="clients">
-                <span>Customers</span>
-                <strong>@companyDashboard.CustomerCount</strong>
-            </a>
-            <a class="metric metric-button" href="company/users">
-                <span>Employees</span>
-                <strong>@companyDashboard.EmployeeCount</strong>
-            </a>
-            <a class="metric metric-button" href="catalog/poolequipment">
-                <span>Equipment</span>
-                <strong>@companyDashboard.EquipmentCount</strong>
-            </a>
-            <a class="metric metric-button" href="catalog/materials">
-                <span>Materials</span>
-                <strong>@companyDashboard.MaterialCount</strong>
-            </a>
-            <a class="metric metric-button" href="catalog/services">
-                <span>Services</span>
-                <strong>@companyDashboard.ServiceCount</strong>
-            </a>
-            <a class="metric metric-button" href="company/users">
-                <span>Pending Access</span>
-                <strong>@companyDashboard.PendingAccessRequests.Count</strong>
-            </a>
-        </div>
+        <section class="section">
+            <h2>System Health</h2>
+            <div class="metric-grid">
+                <a class="metric metric-button" href="clients">
+                    <span>Business Clients</span>
+                    <strong>@companyDashboard.CustomerCount</strong>
+                </a>
+                <a class="metric metric-button" href="company/users">
+                    <span>Users</span>
+                    <strong>@companyDashboard.EmployeeCount</strong>
+                </a>
+                @if (appMode.IsPoolMode)
+                {
+                    <a class="metric metric-button" href="poolequipment">
+                        <span>Pool Configurations</span>
+                        <strong>@companyDashboard.CustomerCount</strong>
+                    </a>
+                }
+                <a class="metric metric-button" href="catalog/materials">
+                    <span>Materials</span>
+                    <strong>@companyDashboard.MaterialCount</strong>
+                </a>
+                <a class="metric metric-button" href="catalog/services">
+                    <span>Services</span>
+                    <strong>@companyDashboard.ServiceCount</strong>
+                </a>
+                <a class="metric metric-button" href="catalog/servicepackages">
+                    <span>Service Packages</span>
+                    <strong>@BusinessOwnerServicePackageCount</strong>
+                </a>
+            </div>
+        </section>
+
+        <section class="management-panel">
+            <div class="management-panel-header">
+                <h2>Approvals</h2>
+                <div class="management-panel-actions">
+                    <button class="button primary" type="button" @onclick="ApproveAllBusinessRequestsAsync" disabled="@(companyDashboard.PendingAccessRequests.Count == 0)">Approve All</button>
+                    <button class="icon-button" type="button" title="Toggle approvals" @onclick="ToggleApprovalsPanel">@(approvalsExpanded ? "^" : "v")</button>
+                </div>
+            </div>
+            @if (approvalsExpanded)
+            {
+                <div class="management-panel-body">
+                    @BusinessApprovalsTable()
+                </div>
+            }
+        </section>
+
+        <section class="management-panel">
+            <div class="management-panel-header">
+                <h2>Unscheduled and Scheduled Visits</h2>
+                <div class="management-panel-actions">
+                    <button class="icon-button" type="button" title="Toggle visits" @onclick="ToggleBusinessOwnerVisitsPanel">@(businessOwnerVisitsExpanded ? "^" : "v")</button>
+                </div>
+            </div>
+            @if (businessOwnerVisitsExpanded)
+            {
+                <div class="management-panel-body">
+                    @BusinessOwnerPendingVisitsTable()
+                </div>
+            }
+        </section>
 
         <section class="section">
-            <h2>Business workspaces</h2>
+            <h2>System Workspaces</h2>
             <div class="quick-link-grid">
                 <a class="row-card quick-link" href="clients">
-                    <strong>Customers</strong>
+                    <strong>Business Clients</strong>
                     <p>Create and manage customer records.</p>
                 </a>
-                <a class="row-card quick-link" href="schedule">
-                    <strong>Schedule</strong>
-                    <p>Plan service work and assign visits.</p>
-                </a>
                 <a class="row-card quick-link" href="company/users">
-                    <strong>Company Users</strong>
+                    <strong>Users</strong>
                     <p>Approve access and maintain team roles.</p>
                 </a>
-                <a class="row-card quick-link" href="catalog">
-                    <strong>Catalog</strong>
-                    <p>Manage service, material, and equipment catalogs.</p>
+                <a class="row-card quick-link" href="catalog/materials">
+                    <strong>Materials</strong>
+                    <p>Manage material categories and items.</p>
+                </a>
+                <a class="row-card quick-link" href="catalog/services">
+                    <strong>Services</strong>
+                    <p>Manage service categories and offerings.</p>
+                </a>
+                <a class="row-card quick-link" href="catalog/servicepackages">
+                    <strong>Service Packages</strong>
+                    <p>Manage service packages and included services.</p>
                 </a>
             </div>
         </section>
@@ -348,29 +483,81 @@ else if (IsBusinessClient)
         <div>
             <p class="eyebrow">Client Dashboard</p>
             <h1>@overview.User.DisplayName</h1>
-            <p class="lede">Your pool equipment, account information, and service history.</p>
+            <p class="lede">Your pool equipment, account information, and visits.</p>
         </div>
     </section>
 
-    <section class="section">
-        <h2>Client workspaces</h2>
-        <div class="quick-link-grid">
-            @if (appMode.IsPoolMode)
-            {
-                <a class="row-card quick-link" href="poolequipment">
-                    <strong>Pool Equipment</strong>
-                    <p>View equipment connected to your service account.</p>
-                </a>
-            }
-            <a class="row-card quick-link" href="profile">
-                <strong>General Info</strong>
-                <p>Review your profile, contact details, and notification settings.</p>
-            </a>
-            <a class="row-card quick-link" href="client-portal">
-                <strong>Service History</strong>
-                <p>Review completed service visits and customer-facing account details.</p>
-            </a>
+    @BusinessClientDashboardContent()
+}
+else if (IsBusinessEmployee)
+{
+    <section class="dashboard-hero" style="background-image: linear-gradient(90deg, rgba(13, 30, 26, .68), rgba(13, 30, 26, .22)), url('@appMode.HeroImageUrl');">
+        <div>
+            <p class="eyebrow">Business Employee</p>
+            <h1>Assigned Visits</h1>
         </div>
+    </section>
+
+    <section class="page-header">
+        <div>
+            <p class="eyebrow">Dashboard</p>
+            <p class="lede">Today, upcoming work, and recently completed visits.</p>
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <div class="notice success">@message</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="notice error">@errorMessage</div>
+    }
+
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>Assigned Visits Today</h2>
+            <div class="management-panel-actions">
+                <button class="icon-button" type="button" title="Toggle assigned visits today" @onclick="ToggleBusinessEmployeeTodayPanel">@(businessEmployeeTodayExpanded ? "^" : "v")</button>
+            </div>
+        </div>
+        @if (businessEmployeeTodayExpanded)
+        {
+            <div class="management-panel-body">
+                @BusinessEmployeeVisitsTable(businessEmployeeTodayVisits, true, false, true, "No assigned visits for today.")
+            </div>
+        }
+    </section>
+
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>Upcoming Visits</h2>
+            <div class="management-panel-actions">
+                <button class="icon-button" type="button" title="Toggle upcoming visits" @onclick="ToggleBusinessEmployeeUpcomingPanel">@(businessEmployeeUpcomingExpanded ? "^" : "v")</button>
+            </div>
+        </div>
+        @if (businessEmployeeUpcomingExpanded)
+        {
+            <div class="management-panel-body">
+                @BusinessEmployeeVisitsTable(businessEmployeeUpcomingVisits, false, false, false, "No upcoming assigned visits.")
+            </div>
+        }
+    </section>
+
+    <section class="management-panel">
+        <div class="management-panel-header">
+            <h2>Recently Completed Visits</h2>
+            <div class="management-panel-actions">
+                <button class="icon-button" type="button" title="Toggle recently completed visits" @onclick="ToggleBusinessEmployeeCompletedPanel">@(businessEmployeeCompletedExpanded ? "^" : "v")</button>
+            </div>
+        </div>
+        @if (businessEmployeeCompletedExpanded)
+        {
+            <div class="management-panel-body">
+                @BusinessEmployeeVisitsTable(businessEmployeeCompletedVisits, false, true, true, "No recently completed visits.")
+            </div>
+        }
     </section>
 }
 else
@@ -469,6 +656,185 @@ else
     </section>
 }
 
+@if (dashboardEquipmentInfo is not null)
+{
+    <div class="photo-modal-backdrop" @onclick="CloseEquipmentInfo">
+        <div class="photo-modal" @onclick:stopPropagation="true">
+            <div class="photo-modal-header">
+                <strong>@dashboardEquipmentInfo.Name</strong>
+                <button class="icon-button icon-only" type="button" title="Close equipment info" aria-label="Close equipment info" @onclick="CloseEquipmentInfo">x</button>
+            </div>
+            <div class="data-list">
+                <article class="row-card"><strong>Manufacturer</strong><p>@dashboardEquipmentInfo.Manufacturer</p></article>
+                <article class="row-card"><strong>Model No</strong><p>@dashboardEquipmentInfo.ModelNo</p></article>
+                <article class="row-card"><strong>Description</strong><p>@(string.IsNullOrWhiteSpace(dashboardEquipmentInfo.Description) ? "No description available." : dashboardEquipmentInfo.Description)</p></article>
+                <article class="row-card"><strong>Comment</strong><p>@dashboardEquipmentInfo.Comment</p></article>
+            </div>
+        </div>
+    </div>
+}
+
+@if (dashboardVisitInfo is not null)
+{
+    <div class="photo-modal-backdrop" @onclick="CloseVisitInfo">
+        <div class="photo-modal" @onclick:stopPropagation="true">
+            <div class="photo-modal-header">
+                <strong>@DisplayVisitName(dashboardVisitInfo)</strong>
+                <button class="icon-button icon-only" type="button" title="Close visit info" aria-label="Close visit info" @onclick="CloseVisitInfo">x</button>
+            </div>
+            <div class="data-list">
+                <article class="row-card"><strong>ID</strong><p>@dashboardVisitInfo.Id</p></article>
+                <article class="row-card"><strong>Service Client</strong><p>@dashboardVisitInfo.CompanyId</p></article>
+                <article class="row-card"><strong>Business Client</strong><p>@GetDashboardVisitClientName(dashboardVisitInfo)</p></article>
+                <article class="row-card"><strong>Assigned To</strong><p>@(string.IsNullOrWhiteSpace(dashboardVisitInfo.AssignedUserId) ? "-" : dashboardVisitInfo.AssignedUserId)</p></article>
+                <article class="row-card"><strong>Visit Type</strong><p>@DisplayVisitType(dashboardVisitInfo.VisitType)</p></article>
+                <article class="row-card"><strong>Visit Date</strong><p>@DisplayVisitDate(dashboardVisitInfo)</p></article>
+                <article class="row-card"><strong>Window</strong><p>@dashboardVisitInfo.ServiceWindowStart.ToString("t") - @dashboardVisitInfo.ServiceWindowEnd.ToString("t")</p></article>
+                <article class="row-card"><strong>Status</strong><p>@DisplayVisitStatus(dashboardVisitInfo.Status)</p></article>
+                <article class="row-card"><strong>Route Order</strong><p>@dashboardVisitInfo.RouteOrder</p></article>
+                <article class="row-card"><strong>Planned Services</strong><p>@GetDashboardServiceNames(dashboardVisitInfo.PlannedServiceIds)</p></article>
+                <article class="row-card"><strong>Completed Services</strong><p>@GetDashboardServiceNames(dashboardVisitInfo.CompletedServiceIds ?? [])</p></article>
+                <article class="row-card"><strong>Out-of-Scope Services</strong><p>@GetDashboardServiceNames(dashboardVisitInfo.OutOfScopeServiceIds ?? [])</p></article>
+                <article class="row-card"><strong>Out-of-Scope Materials</strong><p>@GetMaterialUsageText(dashboardVisitInfo.OutOfScopeMaterials ?? [])</p></article>
+                <article class="row-card"><strong>Materials Used</strong><p>@GetMaterialUsageText(dashboardVisitInfo.MaterialsUsed ?? [])</p></article>
+                <article class="row-card"><strong>Started</strong><p>@(dashboardVisitInfo.StartedUtc?.ToLocalTime().ToString("g") ?? "-")</p></article>
+                <article class="row-card"><strong>Completed</strong><p>@(dashboardVisitInfo.CompletedUtc?.ToLocalTime().ToString("g") ?? "-")</p></article>
+                <article class="row-card"><strong>Completed By</strong><p>@(string.IsNullOrWhiteSpace(dashboardVisitInfo.CompletedByUserId) ? "-" : dashboardVisitInfo.CompletedByUserId)</p></article>
+                <article class="row-card"><strong>Notes</strong><p>@(string.IsNullOrWhiteSpace(dashboardVisitInfo.Notes) ? "-" : dashboardVisitInfo.Notes)</p></article>
+                <article class="row-card"><strong>Notes To Business Client</strong><p>@(string.IsNullOrWhiteSpace(dashboardVisitInfo.NotesToBusinessClient) ? "-" : dashboardVisitInfo.NotesToBusinessClient)</p></article>
+                <article class="row-card"><strong>Notes To Service Client</strong><p>@(string.IsNullOrWhiteSpace(dashboardVisitInfo.NotesToServiceClient) ? "-" : dashboardVisitInfo.NotesToServiceClient)</p></article>
+                <article class="row-card"><strong>Internal Notes</strong><p>@(string.IsNullOrWhiteSpace(dashboardVisitInfo.InternalNotes) ? "-" : dashboardVisitInfo.InternalNotes)</p></article>
+                <article class="row-card"><strong>Invoice</strong><p>@(string.IsNullOrWhiteSpace(dashboardVisitInfo.InvoiceId) ? "-" : dashboardVisitInfo.InvoiceId)</p></article>
+            </div>
+        </div>
+    </div>
+}
+
+@if (businessEmployeeVisitForm is not null)
+{
+    <div class="photo-modal-backdrop" @onclick="CancelBusinessEmployeeVisitEdit">
+        <div class="photo-modal" @onclick:stopPropagation="true">
+            <div class="photo-modal-header">
+                <strong>Edit @DisplayVisitName(businessEmployeeVisitForm.Visit)</strong>
+                <button class="icon-button icon-only" type="button" title="Close visit editor" aria-label="Close visit editor" @onclick="CancelBusinessEmployeeVisitEdit">x</button>
+            </div>
+            <EditForm Model="businessEmployeeVisitForm" OnValidSubmit="SaveBusinessEmployeeVisitEditAsync" FormName="business-employee-visit-editor">
+                <div class="form-grid">
+                    <label class="wide">
+                        Notes To Business Client
+                        <InputTextArea class="form-control" @bind-Value="businessEmployeeVisitForm.NotesToBusinessClient" />
+                    </label>
+                    <label class="wide">
+                        Notes To Service Client
+                        <InputTextArea class="form-control" @bind-Value="businessEmployeeVisitForm.NotesToServiceClient" />
+                    </label>
+                    <label class="wide">
+                        Internal Notes
+                        <InputTextArea class="form-control" @bind-Value="businessEmployeeVisitForm.InternalNotes" />
+                    </label>
+                </div>
+
+                <h3>Planned Services</h3>
+                <div class="management-table-wrap">
+                    <table class="management-table">
+                        <thead>
+                            <tr>
+                                <th>Complete</th>
+                                <th>Service</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var serviceId in businessEmployeeVisitForm.Visit.PlannedServiceIds)
+                            {
+                                <tr>
+                                    <td>
+                                        <label class="switch-control" title="Toggle completed service">
+                                            <input type="checkbox" checked="@businessEmployeeVisitForm.CompletedServiceIds.Contains(serviceId, StringComparer.OrdinalIgnoreCase)" @onchange="args => SetBusinessEmployeeCompletedService(serviceId, IsChecked(args))" />
+                                            <span></span>
+                                        </label>
+                                    </td>
+                                    <td>@GetDashboardServiceName(serviceId)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <h3>Other Services Done</h3>
+                @if (businessEmployeeVisitForm.OutOfScopeServiceIds.Count == 0)
+                {
+                    <p>No other services chosen for this visit.</p>
+                }
+                else
+                {
+                    <div class="management-table-wrap">
+                        <table class="management-table">
+                            <thead>
+                                <tr>
+                                    <th>Service</th>
+                                    <th>Description</th>
+                                    <th class="actions">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var serviceId in businessEmployeeVisitForm.OutOfScopeServiceIds)
+                                {
+                                    var service = GetDashboardService(serviceId);
+                                    <tr>
+                                        <td>@(service?.Name ?? serviceId)</td>
+                                        <td>@(service?.Description ?? "")</td>
+                                        <td class="actions">
+                                            <button class="icon-button icon-only danger" type="button" title="Remove service" aria-label="Remove service" @onclick="() => RemoveBusinessEmployeeOutOfScopeService(serviceId)">
+                                                <span class="action-icon delete-icon" aria-hidden="true"></span>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+
+                <div class="form-actions">
+                    <button class="button primary" type="submit">Save Visit</button>
+                    <button class="button" type="button" @onclick="CancelBusinessEmployeeVisitEdit">Cancel</button>
+                </div>
+
+                <h3>Choose Services</h3>
+                <label class="wide">
+                    Filter services
+                    <input class="form-control" @bind="businessEmployeeVisitForm.ServiceFilter" @bind:event="oninput" />
+                </label>
+                <div class="management-table-wrap">
+                    <table class="management-table">
+                        <thead>
+                            <tr>
+                                <th>Service</th>
+                                <th>Description</th>
+                                <th class="actions">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var service in BusinessEmployeeFilteredOutOfScopeServices)
+                            {
+                                <tr>
+                                    <td>@service.Name</td>
+                                    <td>@service.Description</td>
+                                    <td class="actions">
+                                        <button class="icon-button icon-only" type="button" title="Choose service" aria-label="Choose service" @onclick="() => ChooseBusinessEmployeeOutOfScopeService(service.Id)">
+                                            <span class="action-icon choose-icon" aria-hidden="true"></span>
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
 @code {
     private UserAccessOverview? overview;
     private IndependentHomeOwnerDashboard? homeOwnerDashboard;
@@ -480,9 +846,44 @@ else
     private IReadOnlyList<EmailLogEntry>? emailLogs;
     private PlatformUserManagementOverview? userOverview;
     private CompanyDashboard? companyDashboard;
+    private IReadOnlyList<BusinessClientManagementRow> systemBusinessClients = [];
+    private PoolEquipmentOverview? systemPoolEquipment;
+    private IReadOnlyList<PoolConfigurationClientRow> systemPoolConfigurationClients = [];
+    private CatalogOverview? systemCatalog;
+    private CatalogOverview? businessClientGlobalCatalog;
+    private IReadOnlyList<ServicePackage> systemServicePackages = [];
+    private IReadOnlyList<ServicePackage> businessOwnerServicePackages = [];
+    private IReadOnlyList<ServiceVisit> businessOwnerVisits = [];
+    private IReadOnlyList<CompanyUserManagementRow> businessOwnerEmployees = [];
+    private IReadOnlyList<CompanyClient> businessOwnerClients = [];
+    private Dictionary<string, string> businessOwnerVisitAssignees = new(StringComparer.OrdinalIgnoreCase);
+    private ServicePackage? businessClientServicePackage;
+    private PoolEquipmentOverview? businessClientPoolEquipment;
+    private IReadOnlyList<ServiceVisit> businessClientVisits = [];
+    private Dictionary<string, string> businessClientVisitNotes = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<ServiceHistoryItem> businessEmployeeTodayVisits = [];
+    private IReadOnlyList<ServiceHistoryItem> businessEmployeeUpcomingVisits = [];
+    private IReadOnlyList<ServiceHistoryItem> businessEmployeeCompletedVisits = [];
+    private IReadOnlyList<ServiceOffering> businessEmployeeServices = [];
+    private string businessEmployeeCompanyId = "";
+    private IReadOnlyList<ServiceOffering> businessClientServices = [];
+    private CompanyClient? businessClient;
+    private PoolEquipmentItem? dashboardEquipmentInfo;
+    private ServiceVisit? dashboardVisitInfo;
+    private BusinessEmployeeVisitForm? businessEmployeeVisitForm;
     private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
     private bool poolEquipmentExpanded = true;
+    private bool servicePackageExpanded = true;
     private bool serviceHistoryExpanded = true;
+    private bool approvalsExpanded = true;
+    private bool businessOwnerVisitsExpanded = true;
+    private bool businessClientUpcomingExpanded = true;
+    private bool businessClientServicePackageExpanded;
+    private bool businessClientPoolConfigurationExpanded;
+    private bool businessClientCompletedExpanded;
+    private bool businessEmployeeTodayExpanded = true;
+    private bool businessEmployeeUpcomingExpanded = true;
+    private bool businessEmployeeCompletedExpanded;
     private bool serviceHistoryEditorExpanded;
     private string? message;
     private string? errorMessage;
@@ -490,13 +891,75 @@ else
     private bool IsIndependentHomeOwner => overview is not null && !IsSystemAdmin && overview.Companies.Count == 0;
     private CompanyAccess? BusinessOwnerAccess => overview?.Companies.FirstOrDefault(c => c.Status == MembershipStatus.Active && c.Role == CompanyRole.CompanyAdmin);
     private CompanyAccess? BusinessClientAccess => overview?.Companies.FirstOrDefault(c => c.Status == MembershipStatus.Active && c.Role == CompanyRole.CompanyClientUser);
+    private CompanyAccess? BusinessEmployeeAccess => overview?.Companies.FirstOrDefault(c => c.Status == MembershipStatus.Active && c.Role == CompanyRole.CompanyUser);
     private bool IsBusinessOwner => BusinessOwnerAccess is not null;
     private bool IsBusinessClient => BusinessClientAccess is not null;
+    private bool IsBusinessEmployee => BusinessEmployeeAccess is not null;
+    private IReadOnlyList<CompanyAccess> PendingApprovalAccess => overview?.Companies
+        .Where(access => access.Status == MembershipStatus.Pending)
+        .ToList() ?? [];
+    private bool IsPendingApprovalOnly => overview is not null &&
+        !IsSystemAdmin &&
+        !IsIndependentHomeOwner &&
+        !overview.Companies.Any(access => access.Status == MembershipStatus.Active) &&
+        PendingApprovalAccess.Count > 0;
     private IReadOnlyList<ServiceOffering> HomeOwnerServices => homeOwnerCatalog?.ServiceGroups
         .SelectMany(group => group.Services)
         .Where(service => service.IsActive)
         .OrderBy(service => service.Name)
         .ToList() ?? [];
+    private IReadOnlyList<Company> FilteredCompanies => companies?.Where(CompanyMatchesMode).OrderBy(company => company.Name).ToList() ?? [];
+    private IReadOnlyList<UserManagementRow> FilteredSystemUsers => userOverview?.Users.Where(UserMatchesMode).ToList() ?? [];
+    private IReadOnlyList<DashboardApprovalRow> SystemPendingRequests => FilteredSystemUsers
+        .SelectMany(row => row.CompanyAccess
+            .Where(access => access.Status == MembershipStatus.Pending && CompanyMatchesMode(access.Company))
+            .Select(access => new DashboardApprovalRow(row.User, access.Company, access.Role)))
+        .OrderBy(row => row.User.DisplayName)
+        .ToList();
+    private int SystemBusinessClientCount => systemBusinessClients.Count(row => CompanyMatchesMode(row.Company));
+    private int SystemPoolEquipmentCount => systemPoolEquipment?.CategoryGroups.SelectMany(group => group.Items).Count(item => item.IsActive) ?? 0;
+    private int SystemPoolConfigurationCount => systemPoolConfigurationClients.Count;
+    private int SystemMaterialCount => systemCatalog?.MaterialGroups.SelectMany(group => group.Materials).Count(material => material.IsActive) ?? 0;
+    private int SystemServiceCount => systemCatalog?.ServiceGroups.SelectMany(group => group.Services).Count(service => service.IsActive) ?? 0;
+    private int SystemServicePackageCount => systemServicePackages.Count(package => package.IsActive);
+    private int BusinessOwnerServicePackageCount => businessOwnerServicePackages.Count(package => package.IsActive);
+    private IReadOnlyList<ServiceVisit> BusinessOwnerPendingVisits => businessOwnerVisits
+        .Where(visit => visit.Status is VisitStatus.New or VisitStatus.Unscheduled or VisitStatus.Scheduled)
+        .OrderBy(visit => visit.ScheduledDate == default ? DateOnly.MaxValue : visit.ScheduledDate)
+        .ThenBy(visit => visit.ServiceWindowStart)
+        .ThenBy(visit => visit.VisitName)
+        .ToList();
+    private IReadOnlyList<ServiceOffering> BusinessClientServices => businessClientServices
+        .Where(service => service.IsActive)
+        .OrderBy(service => service.Name)
+        .ToList();
+    private IReadOnlyList<ServiceOffering> BusinessClientAvailableServices => BusinessClientServices
+        .Concat(businessClientGlobalCatalog?.ServiceGroups.SelectMany(group => group.Services).Where(service => service.IsActive) ?? [])
+        .GroupBy(service => service.Id, StringComparer.OrdinalIgnoreCase)
+        .Select(group => group.First())
+        .ToList();
+    private IReadOnlyList<ServiceOffering> BusinessEmployeeFilteredOutOfScopeServices
+    {
+        get
+        {
+            if (businessEmployeeVisitForm is null)
+            {
+                return [];
+            }
+
+            var plannedIds = businessEmployeeVisitForm.Visit.PlannedServiceIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var chosenIds = businessEmployeeVisitForm.OutOfScopeServiceIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var services = businessEmployeeServices.Where(service => !plannedIds.Contains(service.Id) && !chosenIds.Contains(service.Id));
+            if (!string.IsNullOrWhiteSpace(businessEmployeeVisitForm.ServiceFilter))
+            {
+                services = services.Where(service =>
+                    service.Name.Contains(businessEmployeeVisitForm.ServiceFilter, StringComparison.OrdinalIgnoreCase) ||
+                    service.Description.Contains(businessEmployeeVisitForm.ServiceFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return services.OrderBy(service => service.Name).ToList();
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -508,6 +971,15 @@ else
             companies = await PlatformAdminService.GetCompaniesAsync();
             emailLogs = await PlatformAdminService.GetEmailLogsAsync();
             userOverview = await PlatformAdminService.GetUserManagementOverviewAsync();
+            systemBusinessClients = await PlatformAdminService.GetBusinessClientManagementRowsAsync();
+            systemPoolEquipment = appMode.IsPoolMode
+                ? await CompanyAdminService.GetPoolEquipmentOverviewAsync(EquipmentScope.Global, "global")
+                : null;
+            systemPoolConfigurationClients = appMode.IsPoolMode
+                ? await PlatformAdminService.GetPoolConfigurationClientsAsync()
+                : [];
+            systemCatalog = await CompanyAdminService.GetCatalogOverviewAsync(appMode.GlobalCatalogCompanyId);
+            systemServicePackages = await CompanyAdminService.GetServicePackagesAsync(appMode.GlobalCatalogCompanyId);
         }
         else if (IsIndependentHomeOwner)
         {
@@ -517,9 +989,416 @@ else
         }
         else if (BusinessOwnerAccess is not null)
         {
-            companyDashboard = await CompanyAdminService.GetDashboardAsync(BusinessOwnerAccess.Company.Id, DateOnly.FromDateTime(DateTime.Today));
+            await LoadBusinessOwnerDashboardAsync();
+        }
+        else if (IsBusinessEmployee)
+        {
+            await LoadBusinessEmployeeDashboardAsync();
+        }
+        else if (IsBusinessClient)
+        {
+            await LoadBusinessClientDashboardAsync();
         }
     }
+
+    private RenderFragment SystemApprovalsTable() => @<div>
+        @if (SystemPendingRequests.Count == 0)
+        {
+            <p>No pending approvals.</p>
+        }
+        else
+        {
+            <div class="management-table-wrap">
+                <table class="management-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Company</th>
+                            <th>User Type</th>
+                            <th>Approved</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var request in SystemPendingRequests)
+                        {
+                            <tr>
+                                <td>@request.User.DisplayName</td>
+                                <td>@request.User.Email</td>
+                                <td>@request.Company.Name</td>
+                                <td>@GetRoleDescription(request.Role)</td>
+                                <td>
+                                    <label class="switch-control" title="Approve access">
+                                        <input type="checkbox" @onchange="args => ApproveSystemRequestAsync(request, IsChecked(args))" />
+                                        <span></span>
+                                    </label>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>;
+
+    private RenderFragment BusinessApprovalsTable() => @<div>
+        @if (companyDashboard?.PendingAccessRequests.Count == 0)
+        {
+            <p>No pending approvals.</p>
+        }
+        else if (companyDashboard is not null)
+        {
+            <div class="management-table-wrap">
+                <table class="management-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>User Type</th>
+                            <th>Approved</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var request in companyDashboard.PendingAccessRequests)
+                        {
+                            <tr>
+                                <td>@request.User.DisplayName</td>
+                                <td>@request.User.Email</td>
+                                <td>@request.Role.DisplayName</td>
+                                <td>
+                                    <label class="switch-control" title="Approve access">
+                                        <input type="checkbox" @onchange="args => ApproveBusinessRequestAsync(request, IsChecked(args))" />
+                                        <span></span>
+                                    </label>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>;
+
+    private RenderFragment BusinessClientDashboardContent() => @<div>
+        @if (businessClientPoolEquipment is null)
+        {
+            <p>Loading client dashboard...</p>
+        }
+        else
+        {
+            <section class="management-panel">
+                <div class="management-panel-header">
+                    <h2>Upcoming Visits</h2>
+                    <div class="management-panel-actions">
+                        <button class="icon-button" type="button" title="Toggle upcoming visits" @onclick="ToggleBusinessClientUpcomingPanel">@(businessClientUpcomingExpanded ? "^" : "v")</button>
+                    </div>
+                </div>
+                @if (businessClientUpcomingExpanded)
+                {
+                    <div class="management-panel-body">
+                        @BusinessClientVisitsTable(BusinessClientUpcomingVisits, editableNotes: true)
+                    </div>
+                }
+            </section>
+
+            <section class="management-panel">
+                <div class="management-panel-header">
+                    <h2>Service Package</h2>
+                    <div class="management-panel-actions">
+                        <button class="icon-button" type="button" title="Toggle service package" @onclick="ToggleBusinessClientServicePackagePanel">@(businessClientServicePackageExpanded ? "^" : "v")</button>
+                    </div>
+                </div>
+                @if (businessClientServicePackageExpanded)
+                {
+                    <div class="management-panel-body">
+                        @BusinessClientServicePackagePanel()
+                    </div>
+                }
+            </section>
+
+            <section class="management-panel">
+                <div class="management-panel-header">
+                    <h2>Pool Configuration</h2>
+                    <div class="management-panel-actions">
+                        <button class="icon-button" type="button" title="Toggle pool configuration" @onclick="ToggleBusinessClientPoolConfigurationPanel">@(businessClientPoolConfigurationExpanded ? "^" : "v")</button>
+                    </div>
+                </div>
+                @if (businessClientPoolConfigurationExpanded)
+                {
+                    <div class="management-panel-body">
+                        @PoolEquipmentTable(businessClientPoolEquipment)
+                    </div>
+                }
+            </section>
+
+            <section class="management-panel">
+                <div class="management-panel-header">
+                    <h2>Completed Visits</h2>
+                    <div class="management-panel-actions">
+                        <button class="icon-button" type="button" title="Toggle completed visits" @onclick="ToggleBusinessClientCompletedPanel">@(businessClientCompletedExpanded ? "^" : "v")</button>
+                    </div>
+                </div>
+                @if (businessClientCompletedExpanded)
+                {
+                    <div class="management-panel-body">
+                        @BusinessClientVisitsTable(BusinessClientCompletedVisits, editableNotes: false)
+                    </div>
+                }
+            </section>
+        }
+    </div>;
+
+    private RenderFragment PoolEquipmentTable(PoolEquipmentOverview equipment) => @<div class="management-table-wrap">
+        <table class="management-table">
+            <thead>
+                <tr>
+                    <th>Category</th>
+                    <th>Manufacturer</th>
+                    <th>Equipment</th>
+                    <th>Comment</th>
+                    <th class="actions">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var group in equipment.CategoryGroups)
+                {
+                    @foreach (var item in group.Items)
+                    {
+                        <tr>
+                            <td>@group.Category.Name</td>
+                            <td>@item.Manufacturer</td>
+                            <td>@item.Name</td>
+                            <td>@item.Comment</td>
+                            <td class="actions">
+                                <button class="icon-button icon-only" type="button" title="Show equipment info" aria-label="Show equipment info" @onclick="() => ShowEquipmentInfo(item)">
+                                    <span class="action-icon info-icon" aria-hidden="true"></span>
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>;
+
+    private RenderFragment BusinessClientServicePackagePanel() => @<div>
+        @if (businessClientServicePackage is null)
+        {
+            <p>No service package has been assigned.</p>
+        }
+        else
+        {
+            <div class="metric-grid">
+                <div class="metric">
+                    <span>Name</span>
+                    <strong>@businessClientServicePackage.Name</strong>
+                </div>
+                <div class="metric">
+                    <span>Recurrence</span>
+                    <strong>@businessClientServicePackage.Recurrence</strong>
+                </div>
+                <div class="metric">
+                    <span>Cost</span>
+                    <strong>@businessClientServicePackage.Cost.ToString("C")</strong>
+                </div>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(businessClientServicePackage.Description))
+            {
+                <p>@businessClientServicePackage.Description</p>
+            }
+            <div class="management-table-wrap">
+                <table class="management-table">
+                    <thead>
+                        <tr>
+                            <th>Service</th>
+                            <th>Recurrence</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var packageService in businessClientServicePackage.Services)
+                        {
+                            <tr>
+                                <td>@GetBusinessClientPackageServiceName(packageService.ServiceId)</td>
+                                <td>@packageService.Recurrence</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>;
+
+    private RenderFragment BusinessClientVisitsTable(IReadOnlyList<ServiceVisit> rows, bool editableNotes) => @<div>
+        @if (rows.Count == 0)
+        {
+            <p>No visits in this panel.</p>
+        }
+        else
+        {
+            <div class="management-table-wrap">
+                <table class="management-table">
+                    <thead>
+                        <tr>
+                            <th>Visit Type</th>
+                            <th>Visit Date</th>
+                            <th>Visit Name</th>
+                            <th>Status</th>
+                            <th>Notes To Service Provider</th>
+                            <th class="actions">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var visit in rows)
+                        {
+                            <tr>
+                                <td>@DisplayVisitType(visit.VisitType)</td>
+                                <td>@DisplayVisitDate(visit)</td>
+                                <td>@DisplayVisitName(visit)</td>
+                                <td>@DisplayVisitStatus(visit.Status)</td>
+                                <td>
+                                    @if (editableNotes)
+                                    {
+                                        <input class="form-control" value="@GetBusinessClientVisitNote(visit)" @oninput="args => SetBusinessClientVisitNote(visit.Id, args.Value?.ToString() ?? string.Empty)" />
+                                    }
+                                    else
+                                    {
+                                        @visit.NotesToServiceClient
+                                    }
+                                </td>
+                                <td class="actions">
+                                    @if (editableNotes)
+                                    {
+                                        <button class="icon-button icon-only" type="button" title="Save notes" aria-label="Save notes" @onclick="() => SaveBusinessClientVisitNotesAsync(visit)">
+                                            <span class="action-icon check-icon" aria-hidden="true"></span>
+                                        </button>
+                                    }
+                                    <button class="icon-button icon-only" type="button" title="Show visit info" aria-label="Show visit info" @onclick="() => ShowVisitInfo(visit)">
+                                        <span class="action-icon info-icon" aria-hidden="true"></span>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>;
+
+    private RenderFragment BusinessOwnerPendingVisitsTable() => @<div>
+        @if (BusinessOwnerPendingVisits.Count == 0)
+        {
+            <p>No unscheduled or scheduled visits need assignment.</p>
+        }
+        else
+        {
+            <div class="management-table-wrap">
+                <table class="management-table">
+                    <thead>
+                        <tr>
+                            <th>Visit Type</th>
+                            <th>Visit Date</th>
+                            <th>Visit Name</th>
+                            <th>Business Client</th>
+                            <th>Assigned To</th>
+                            <th>Status</th>
+                            <th class="actions">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var visit in BusinessOwnerPendingVisits)
+                        {
+                            <tr>
+                                <td>@DisplayVisitType(visit.VisitType)</td>
+                                <td>@DisplayVisitDate(visit)</td>
+                                <td>@DisplayVisitName(visit)</td>
+                                <td>@GetBusinessOwnerClientName(visit)</td>
+                                <td>
+                                    <select class="form-control compact-control" value="@GetBusinessOwnerVisitAssignee(visit)" @onchange="args => SetBusinessOwnerVisitAssignee(visit.Id, args.Value?.ToString() ?? string.Empty)">
+                                        <option value="">Unassigned</option>
+                                        @foreach (var employee in businessOwnerEmployees)
+                                        {
+                                            <option value="@employee.User.Id">@employee.User.DisplayName</option>
+                                        }
+                                    </select>
+                                </td>
+                                <td>@DisplayVisitStatus(visit.Status)</td>
+                                <td class="actions">
+                                    <button class="icon-button icon-only" type="button" title="Assign visit" aria-label="Assign visit" disabled="@string.IsNullOrWhiteSpace(GetBusinessOwnerVisitAssignee(visit))" @onclick="() => AssignBusinessOwnerVisitAsync(visit)">
+                                        <span class="action-icon check-icon" aria-hidden="true"></span>
+                                    </button>
+                                    <a class="icon-button icon-only" href="visits" title="Edit visit" aria-label="Edit visit">
+                                        <span class="action-icon edit-icon" aria-hidden="true"></span>
+                                    </a>
+                                    <button class="icon-button icon-only" type="button" title="Show visit info" aria-label="Show visit info" @onclick="() => ShowVisitInfo(visit)">
+                                        <span class="action-icon info-icon" aria-hidden="true"></span>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>;
+
+    private RenderFragment BusinessEmployeeVisitsTable(IReadOnlyList<ServiceHistoryItem> rows, bool allowComplete, bool allowReopen, bool allowEdit, string emptyText) => @<div>
+        @if (rows.Count == 0)
+        {
+            <p>@emptyText</p>
+        }
+        else
+        {
+            <div class="management-table-wrap">
+                <table class="management-table">
+                    <thead>
+                        <tr>
+                            <th>Visit Date</th>
+                            <th>Visit Name</th>
+                            <th>Business Client</th>
+                            <th>Status</th>
+                            <th>Notes</th>
+                            <th class="actions">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in rows)
+                        {
+                            <tr>
+                                <td>@DisplayVisitDate(item.Visit)</td>
+                                <td>@DisplayVisitName(item.Visit)</td>
+                                <td>@item.Client.DisplayName</td>
+                                <td>@DisplayVisitStatus(item.Visit.Status)</td>
+                                <td>@item.Visit.NotesToBusinessClient</td>
+                                <td class="actions">
+                                    @if (allowComplete)
+                                    {
+                                        <button class="icon-button icon-only" type="button" title="Complete visit" aria-label="Complete visit" @onclick="() => CompleteBusinessEmployeeVisitAsync(item.Visit)">
+                                            <span class="action-icon check-icon" aria-hidden="true"></span>
+                                        </button>
+                                    }
+                                    @if (allowReopen)
+                                    {
+                                        <button class="icon-button icon-only" type="button" title="Mark in progress" aria-label="Mark in progress" @onclick="() => ReopenBusinessEmployeeVisitAsync(item.Visit)">
+                                            <span class="action-icon edit-icon" aria-hidden="true"></span>
+                                        </button>
+                                    }
+                                    @if (allowEdit)
+                                    {
+                                        <button class="icon-button icon-only" type="button" title="Edit visit" aria-label="Edit visit" @onclick="() => EditBusinessEmployeeVisit(item.Visit)">
+                                            <span class="action-icon edit-icon" aria-hidden="true"></span>
+                                        </button>
+                                    }
+                                    <button class="icon-button icon-only" type="button" title="Show visit info" aria-label="Show visit info" @onclick="() => ShowVisitInfo(item.Visit)">
+                                        <span class="action-icon info-icon" aria-hidden="true"></span>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>;
 
     private async Task SaveHomeOwnerServiceItemAsync()
     {
@@ -578,6 +1457,305 @@ else
         }
     }
 
+    private async Task LoadBusinessClientDashboardAsync()
+    {
+        businessClientPoolEquipment = appMode.IsPoolMode
+            ? await ClientPortalService.GetCurrentUserPoolEquipmentOverviewAsync()
+            : new PoolEquipmentOverview([]);
+        businessClientVisits = await ClientPortalService.GetCurrentUserVisitsAsync();
+        businessClientVisitNotes = businessClientVisits.ToDictionary(visit => visit.Id, visit => visit.NotesToServiceClient, StringComparer.OrdinalIgnoreCase);
+        businessClientServices = await ClientPortalService.GetCurrentUserServicesAsync();
+        businessClient = await ClientPortalService.GetCurrentUserClientAsync();
+        businessClientGlobalCatalog = await CompanyAdminService.GetCatalogOverviewAsync(appMode.GlobalCatalogCompanyId);
+        businessClientServicePackage = await ClientPortalService.GetCurrentUserServicePackageAsync(appMode.GlobalCatalogCompanyId);
+    }
+
+    private async Task LoadBusinessOwnerDashboardAsync()
+    {
+        var companyId = BusinessOwnerAccess?.Company.Id ?? "";
+        if (string.IsNullOrWhiteSpace(companyId))
+        {
+            return;
+        }
+
+        companyDashboard = await CompanyAdminService.GetDashboardAsync(companyId, DateOnly.FromDateTime(DateTime.Today));
+        businessOwnerServicePackages = await CompanyAdminService.GetServicePackagesAsync(companyId);
+        businessOwnerVisits = await CompanyAdminService.GetVisitsAsync(companyId);
+        businessOwnerClients = (await CompanyAdminService.GetClientsAsync(companyId))
+            .Where(client => client.IsActive)
+            .OrderBy(client => client.DisplayName)
+            .ToList();
+        businessOwnerEmployees = (await CompanyAdminService.GetCompanyUserManagementOverviewAsync(companyId)).Users
+            .Where(row => row.Membership.Role == CompanyRole.CompanyUser && row.Membership.Status == MembershipStatus.Active)
+            .OrderBy(row => row.User.DisplayName)
+            .ToList();
+        businessOwnerVisitAssignees = businessOwnerVisits.ToDictionary(
+            visit => visit.Id,
+            visit => visit.AssignedUserId ?? string.Empty,
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    private async Task LoadBusinessEmployeeDashboardAsync()
+    {
+        businessEmployeeCompanyId = BusinessEmployeeAccess?.Company.Id ?? "";
+        if (string.IsNullOrWhiteSpace(businessEmployeeCompanyId))
+        {
+            businessEmployeeTodayVisits = [];
+            businessEmployeeUpcomingVisits = [];
+            businessEmployeeCompletedVisits = [];
+            businessEmployeeServices = [];
+            return;
+        }
+
+        businessEmployeeTodayVisits = await FieldWorkService.GetTodayAssignedVisitsAsync(businessEmployeeCompanyId);
+        businessEmployeeUpcomingVisits = await FieldWorkService.GetUpcomingAssignedVisitsAsync(businessEmployeeCompanyId);
+        businessEmployeeCompletedVisits = await FieldWorkService.GetRecentlyCompletedAssignedVisitsAsync(businessEmployeeCompanyId);
+        var companyServices = await CompanyAdminService.GetServicesAsync(businessEmployeeCompanyId);
+        var globalCatalog = await CompanyAdminService.GetCatalogOverviewAsync(appMode.GlobalCatalogCompanyId);
+        businessEmployeeServices = companyServices
+            .Concat(globalCatalog.ServiceGroups.SelectMany(group => group.Services))
+            .Where(service => service.IsActive)
+            .GroupBy(service => service.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(service => service.Name)
+            .ToList();
+    }
+
+    private async Task RunBusinessClientActionAsync(Func<Task> action)
+    {
+        message = null;
+        errorMessage = null;
+
+        try
+        {
+            await action();
+            await LoadBusinessClientDashboardAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private async Task SaveBusinessClientVisitNotesAsync(ServiceVisit visit)
+    {
+        await RunBusinessClientActionAsync(async () =>
+        {
+            await ClientPortalService.UpdateCurrentUserVisitServiceProviderNotesAsync(
+                visit.Id,
+                GetBusinessClientVisitNote(visit));
+            message = "Visit notes were saved.";
+        });
+    }
+
+    private async Task CompleteBusinessEmployeeVisitAsync(ServiceVisit visit)
+    {
+        message = null;
+        errorMessage = null;
+        try
+        {
+            await FieldWorkService.CompleteVisitAsync(
+                businessEmployeeCompanyId,
+                visit.Id,
+                visit.PlannedServiceIds,
+                [],
+                visit.NotesToBusinessClient,
+                visit.InternalNotes);
+            message = "Visit was marked complete.";
+            await LoadBusinessEmployeeDashboardAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private async Task ReopenBusinessEmployeeVisitAsync(ServiceVisit visit)
+    {
+        message = null;
+        errorMessage = null;
+        try
+        {
+            await FieldWorkService.MarkVisitInProgressAsync(businessEmployeeCompanyId, visit.Id);
+            message = "Visit was marked in progress.";
+            await LoadBusinessEmployeeDashboardAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private void EditBusinessEmployeeVisit(ServiceVisit visit)
+    {
+        businessEmployeeVisitForm = BusinessEmployeeVisitForm.FromVisit(visit);
+    }
+
+    private void CancelBusinessEmployeeVisitEdit()
+    {
+        businessEmployeeVisitForm = null;
+    }
+
+    private async Task SaveBusinessEmployeeVisitEditAsync()
+    {
+        if (businessEmployeeVisitForm is null)
+        {
+            return;
+        }
+
+        message = null;
+        errorMessage = null;
+        try
+        {
+            await FieldWorkService.UpdateAssignedVisitDetailsAsync(
+                businessEmployeeCompanyId,
+                businessEmployeeVisitForm.Visit.Id,
+                businessEmployeeVisitForm.NotesToBusinessClient,
+                businessEmployeeVisitForm.NotesToServiceClient,
+                businessEmployeeVisitForm.InternalNotes,
+                businessEmployeeVisitForm.CompletedServiceIds,
+                businessEmployeeVisitForm.OutOfScopeServiceIds);
+            businessEmployeeVisitForm = null;
+            message = "Visit details were saved.";
+            await LoadBusinessEmployeeDashboardAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private void SetBusinessEmployeeCompletedService(string serviceId, bool isComplete)
+    {
+        if (businessEmployeeVisitForm is null)
+        {
+            return;
+        }
+
+        var ids = businessEmployeeVisitForm.CompletedServiceIds.ToList();
+        ids.RemoveAll(id => string.Equals(id, serviceId, StringComparison.OrdinalIgnoreCase));
+        if (isComplete)
+        {
+            ids.Add(serviceId);
+        }
+
+        businessEmployeeVisitForm.CompletedServiceIds = ids;
+    }
+
+    private void ChooseBusinessEmployeeOutOfScopeService(string serviceId)
+    {
+        if (businessEmployeeVisitForm is null)
+        {
+            return;
+        }
+
+        var ids = businessEmployeeVisitForm.OutOfScopeServiceIds.ToList();
+        if (!ids.Contains(serviceId, StringComparer.OrdinalIgnoreCase))
+        {
+            ids.Add(serviceId);
+        }
+
+        businessEmployeeVisitForm.OutOfScopeServiceIds = ids;
+    }
+
+    private void RemoveBusinessEmployeeOutOfScopeService(string serviceId)
+    {
+        if (businessEmployeeVisitForm is null)
+        {
+            return;
+        }
+
+        var ids = businessEmployeeVisitForm.OutOfScopeServiceIds.ToList();
+        ids.RemoveAll(id => string.Equals(id, serviceId, StringComparison.OrdinalIgnoreCase));
+        businessEmployeeVisitForm.OutOfScopeServiceIds = ids;
+    }
+
+    private async Task AssignBusinessOwnerVisitAsync(ServiceVisit visit)
+    {
+        message = null;
+        errorMessage = null;
+        try
+        {
+            var assignee = GetBusinessOwnerVisitAssignee(visit);
+            await CompanyAdminService.AssignVisitAsync(visit.CompanyId, visit.Id, assignee);
+            message = "Visit was assigned.";
+            await LoadBusinessOwnerDashboardAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private async Task ApproveSystemRequestAsync(DashboardApprovalRow request, bool isApproved)
+    {
+        if (!isApproved)
+        {
+            return;
+        }
+
+        await PlatformAdminService.SetCompanyMembershipApprovalAsync(request.Company.Id, request.User.Id, request.Role, true);
+        userOverview = await PlatformAdminService.GetUserManagementOverviewAsync();
+    }
+
+    private async Task ApproveAllSystemRequestsAsync()
+    {
+        foreach (var request in SystemPendingRequests.ToList())
+        {
+            await PlatformAdminService.SetCompanyMembershipApprovalAsync(request.Company.Id, request.User.Id, request.Role, true);
+        }
+
+        userOverview = await PlatformAdminService.GetUserManagementOverviewAsync();
+        message = "All pending system approvals were approved.";
+    }
+
+    private async Task ApproveBusinessRequestAsync(AccessRequest request, bool isApproved)
+    {
+        if (!isApproved)
+        {
+            return;
+        }
+
+        await CompanyAdminService.DecideAccessRequestAsync(request.Company.Id, request.User.Id, request.Membership.Role, MembershipStatus.Active);
+        companyDashboard = await CompanyAdminService.GetDashboardAsync(request.Company.Id, DateOnly.FromDateTime(DateTime.Today));
+    }
+
+    private async Task ApproveAllBusinessRequestsAsync()
+    {
+        if (companyDashboard is null)
+        {
+            return;
+        }
+
+        foreach (var request in companyDashboard.PendingAccessRequests.ToList())
+        {
+            await CompanyAdminService.DecideAccessRequestAsync(request.Company.Id, request.User.Id, request.Membership.Role, MembershipStatus.Active);
+        }
+
+        companyDashboard = await CompanyAdminService.GetDashboardAsync(companyDashboard.Company.Id, DateOnly.FromDateTime(DateTime.Today));
+        message = "All pending business approvals were approved.";
+    }
+
     private void ShowCreateHomeOwnerServiceItem()
     {
         ResetServiceHistoryForm();
@@ -607,6 +1785,34 @@ else
 
     private void ToggleServiceHistoryPanel() => serviceHistoryExpanded = !serviceHistoryExpanded;
 
+    private void ToggleServicePackagePanel() => servicePackageExpanded = !servicePackageExpanded;
+
+    private void ToggleApprovalsPanel() => approvalsExpanded = !approvalsExpanded;
+
+    private void ToggleBusinessOwnerVisitsPanel() => businessOwnerVisitsExpanded = !businessOwnerVisitsExpanded;
+
+    private void ToggleBusinessClientUpcomingPanel() => businessClientUpcomingExpanded = !businessClientUpcomingExpanded;
+
+    private void ToggleBusinessClientServicePackagePanel() => businessClientServicePackageExpanded = !businessClientServicePackageExpanded;
+
+    private void ToggleBusinessClientPoolConfigurationPanel() => businessClientPoolConfigurationExpanded = !businessClientPoolConfigurationExpanded;
+
+    private void ToggleBusinessClientCompletedPanel() => businessClientCompletedExpanded = !businessClientCompletedExpanded;
+
+    private void ToggleBusinessEmployeeTodayPanel() => businessEmployeeTodayExpanded = !businessEmployeeTodayExpanded;
+
+    private void ToggleBusinessEmployeeUpcomingPanel() => businessEmployeeUpcomingExpanded = !businessEmployeeUpcomingExpanded;
+
+    private void ToggleBusinessEmployeeCompletedPanel() => businessEmployeeCompletedExpanded = !businessEmployeeCompletedExpanded;
+
+    private void ShowEquipmentInfo(PoolEquipmentItem item) => dashboardEquipmentInfo = item;
+
+    private void CloseEquipmentInfo() => dashboardEquipmentInfo = null;
+
+    private void ShowVisitInfo(ServiceVisit visit) => dashboardVisitInfo = visit;
+
+    private void CloseVisitInfo() => dashboardVisitInfo = null;
+
     private string GetServiceHistoryName(IndependentHomeOwnerServiceHistoryItem item)
     {
         if (!string.IsNullOrWhiteSpace(item.ServiceName))
@@ -617,6 +1823,118 @@ else
         return HomeOwnerServices.FirstOrDefault(service => string.Equals(service.Id, item.ServiceId, StringComparison.OrdinalIgnoreCase))?.Name
             ?? "Service";
     }
+
+    private string GetBusinessClientPackageServiceName(string serviceId) =>
+        BusinessClientAvailableServices.FirstOrDefault(service => string.Equals(service.Id, serviceId, StringComparison.OrdinalIgnoreCase))?.Name
+        ?? serviceId;
+
+    private IReadOnlyList<ServiceVisit> BusinessClientUpcomingVisits => businessClientVisits
+        .Where(visit => visit.Status != VisitStatus.Completed && visit.Status != VisitStatus.Closed && visit.Status != VisitStatus.Canceled && visit.Status != VisitStatus.Skipped)
+        .OrderBy(visit => visit.ScheduledDate == default ? DateOnly.MaxValue : visit.ScheduledDate)
+        .ThenBy(visit => visit.ServiceWindowStart)
+        .ToList();
+
+    private IReadOnlyList<ServiceVisit> BusinessClientCompletedVisits => businessClientVisits
+        .Where(visit => visit.Status is VisitStatus.Completed or VisitStatus.Closed)
+        .OrderByDescending(visit => visit.CompletedUtc ?? new DateTimeOffset(visit.ScheduledDate == default ? DateTime.MinValue : visit.ScheduledDate.ToDateTime(TimeOnly.MinValue)))
+        .ToList();
+
+    private string GetBusinessClientVisitNote(ServiceVisit visit) =>
+        businessClientVisitNotes.TryGetValue(visit.Id, out var note) ? note : visit.NotesToServiceClient;
+
+    private void SetBusinessClientVisitNote(string visitId, string notes) =>
+        businessClientVisitNotes[visitId] = notes;
+
+    private string GetBusinessOwnerVisitAssignee(ServiceVisit visit) =>
+        businessOwnerVisitAssignees.TryGetValue(visit.Id, out var assignee) ? assignee : visit.AssignedUserId ?? string.Empty;
+
+    private void SetBusinessOwnerVisitAssignee(string visitId, string assignee) =>
+        businessOwnerVisitAssignees[visitId] = assignee;
+
+    private string GetBusinessOwnerClientName(ServiceVisit visit) =>
+        businessOwnerClients.FirstOrDefault(client => string.Equals(client.Id, visit.CompanyClientId, StringComparison.OrdinalIgnoreCase))?.DisplayName
+        ?? visit.CompanyClientId;
+
+    private string GetDashboardVisitClientName(ServiceVisit visit) =>
+        businessOwnerClients.FirstOrDefault(client => string.Equals(client.Id, visit.CompanyClientId, StringComparison.OrdinalIgnoreCase))?.DisplayName
+        ?? businessClient?.DisplayName
+        ?? businessEmployeeTodayVisits.Concat(businessEmployeeUpcomingVisits).Concat(businessEmployeeCompletedVisits)
+            .FirstOrDefault(item => string.Equals(item.Visit.Id, visit.Id, StringComparison.OrdinalIgnoreCase))?.Client.DisplayName
+        ?? visit.CompanyClientId;
+
+    private ServiceOffering? GetDashboardService(string serviceId) =>
+        businessEmployeeServices
+            .Concat(BusinessClientAvailableServices)
+            .FirstOrDefault(service => string.Equals(service.Id, serviceId, StringComparison.OrdinalIgnoreCase));
+
+    private string GetDashboardServiceName(string serviceId) =>
+        GetDashboardService(serviceId)?.Name ?? serviceId;
+
+    private string GetDashboardServiceNames(IReadOnlyList<string> serviceIds)
+    {
+        var names = serviceIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(GetDashboardServiceName)
+            .ToList();
+        return names.Count == 0 ? "-" : string.Join(", ", names);
+    }
+
+    private static string GetMaterialUsageText(IReadOnlyList<MaterialUsage> materials)
+    {
+        if (materials.Count == 0)
+        {
+            return "-";
+        }
+
+        return string.Join(", ", materials.Select(material => $"{material.MaterialId} ({material.Quantity})"));
+    }
+
+    private static string DisplayVisitName(ServiceVisit visit) =>
+        string.IsNullOrWhiteSpace(visit.VisitName) ? "Service Visit" : visit.VisitName;
+
+    private static string DisplayVisitDate(ServiceVisit visit) =>
+        visit.ScheduledDate == default ? "Unscheduled" : visit.ScheduledDate.ToString("d");
+
+    private static string DisplayVisitType(VisitType visitType) => visitType switch
+    {
+        VisitType.AdHocVisit => "Ad-Hoc Visit",
+        _ => "Service Package Visit"
+    };
+
+    private static string DisplayVisitStatus(VisitStatus status) => status switch
+    {
+        VisitStatus.Assigned => "Assigned to Employee",
+        VisitStatus.InProgress => "In Progress",
+        VisitStatus.Completed => "Complete",
+        VisitStatus.Unscheduled or VisitStatus.Scheduled => "New",
+        _ => status.ToString()
+    };
+
+    private bool UserMatchesMode(UserManagementRow row)
+    {
+        if (row.User.IsSystemAdmin || row.CompanyAccess.Count == 0)
+        {
+            return true;
+        }
+
+        return row.CompanyAccess.Any(access => access.Status != MembershipStatus.Removed && CompanyMatchesMode(access.Company));
+    }
+
+    private bool CompanyMatchesMode(Company company)
+    {
+        var type = companyTypes?.FirstOrDefault(t => string.Equals(t.Id, company.CompanyTypeId, StringComparison.OrdinalIgnoreCase));
+        var searchable = type is null
+            ? company.CompanyTypeId
+            : $"{company.CompanyTypeId} {type.Name} {type.Description}";
+        return appMode.IsPoolMode
+            ? searchable.Contains("pool", StringComparison.OrdinalIgnoreCase)
+            : ContainsAny(searchable, "landscape", "landscaping", "lawn", "yard", "tree");
+    }
+
+    private static bool ContainsAny(string value, params string[] terms) =>
+        terms.Any(term => value.Contains(term, StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsChecked(ChangeEventArgs args) => args.Value is bool value && value;
 
     private static string GetRoleDescription(CompanyRole role) => role switch
     {
@@ -656,6 +1974,32 @@ else
     }
 
     private sealed record FeatureLink(string Label, string Href);
+
+    private sealed record DashboardApprovalRow(
+        AppUser User,
+        Company Company,
+        CompanyRole Role);
+
+    private sealed class BusinessEmployeeVisitForm
+    {
+        public ServiceVisit Visit { get; set; } = null!;
+        public string NotesToBusinessClient { get; set; } = "";
+        public string NotesToServiceClient { get; set; } = "";
+        public string InternalNotes { get; set; } = "";
+        public IReadOnlyList<string> CompletedServiceIds { get; set; } = [];
+        public IReadOnlyList<string> OutOfScopeServiceIds { get; set; } = [];
+        public string ServiceFilter { get; set; } = "";
+
+        public static BusinessEmployeeVisitForm FromVisit(ServiceVisit visit) => new()
+        {
+            Visit = visit,
+            NotesToBusinessClient = visit.NotesToBusinessClient,
+            NotesToServiceClient = visit.NotesToServiceClient,
+            InternalNotes = visit.InternalNotes,
+            CompletedServiceIds = visit.CompletedServiceIds ?? [],
+            OutOfScopeServiceIds = visit.OutOfScopeServiceIds ?? []
+        };
+    }
 
     private sealed class ServiceHistoryForm
     {

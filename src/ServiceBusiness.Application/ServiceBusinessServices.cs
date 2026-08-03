@@ -1,6 +1,35 @@
+using System.Net;
 using ServiceBusiness.Domain;
 
 namespace ServiceBusiness.Application;
+
+public static class BusinessClientTypeReferenceData
+{
+    public const string HomeOwnerId = "home-owner";
+    public const string HomeOwnerName = "Home Owner";
+
+    public static ClientType HomeOwner(string companyId) =>
+        new(HomeOwnerId, companyId, HomeOwnerName, BillingFrequency.FeeForService, 0m, true);
+
+    public static async Task<IReadOnlyList<ClientType>> EnsureForCompanyAsync(
+        IServiceBusinessStore store,
+        string companyId,
+        CancellationToken cancellationToken = default)
+    {
+        var clientTypes = await store.GetClientTypesAsync(companyId, cancellationToken);
+        var homeOwner = clientTypes.FirstOrDefault(type => string.Equals(type.Id, HomeOwnerId, StringComparison.OrdinalIgnoreCase));
+        if (homeOwner is null || !homeOwner.IsActive || !string.Equals(homeOwner.Name, HomeOwnerName, StringComparison.Ordinal))
+        {
+            homeOwner = HomeOwner(companyId);
+            await store.UpsertClientTypeAsync(homeOwner, cancellationToken);
+        }
+
+        return clientTypes
+            .Where(type => !string.Equals(type.Id, HomeOwnerId, StringComparison.OrdinalIgnoreCase))
+            .Prepend(homeOwner)
+            .ToList();
+    }
+}
 
 public sealed class TenantAuthorizationService(IServiceBusinessStore store, ICurrentUserContext currentUser)
 {
@@ -88,13 +117,21 @@ public sealed class PlatformAdminService(IServiceBusinessStore store, TenantAuth
 
     public async Task<SystemSettings> GetSystemSettingsAsync(CancellationToken cancellationToken = default)
     {
-        await authorization.RequireSystemAdminAsync(cancellationToken);
+        var actor = await authorization.RequireCurrentUserAsync(cancellationToken);
+        if (!actor.IsSystemAdmin)
+        {
+            throw new UnauthorizedAccessException("System administrator access is required.");
+        }
         return await store.GetSystemSettingsAsync(cancellationToken);
     }
 
     public async Task<SystemSettings> UpdateSystemModeAsync(SystemMode systemMode, CancellationToken cancellationToken = default)
     {
-        await authorization.RequireSystemAdminAsync(cancellationToken);
+        var actor = await authorization.RequireCurrentUserAsync(cancellationToken);
+        if (!actor.IsSystemAdmin)
+        {
+            throw new UnauthorizedAccessException("System administrator access is required.");
+        }
 
         var currentSettings = await store.GetSystemSettingsAsync(cancellationToken);
         var settings = currentSettings with { SystemMode = systemMode };
@@ -152,6 +189,18 @@ public sealed class PlatformAdminService(IServiceBusinessStore store, TenantAuth
             throw new InvalidOperationException("Company type was not found.");
         }
 
+        if (!string.IsNullOrWhiteSpace(company.ServicePackageId))
+        {
+            var companyType = companyTypes.First(t => t.Id == company.CompanyTypeId);
+            var globalCatalogCompanyId = GlobalCatalogScope.For(GetSystemModeForCompanyType(companyType));
+            var servicePackageExists = (await store.GetServicePackagesAsync(globalCatalogCompanyId, cancellationToken))
+                .Any(package => package.IsActive && string.Equals(package.Id, company.ServicePackageId, StringComparison.OrdinalIgnoreCase));
+            if (!servicePackageExists)
+            {
+                throw new InvalidOperationException("Service package was not found.");
+            }
+        }
+
         await store.UpsertCompanyAsync(company with
         {
             Id = CreateSlug(company.Id),
@@ -159,8 +208,17 @@ public sealed class PlatformAdminService(IServiceBusinessStore store, TenantAuth
             Name = company.Name.Trim(),
             BusinessEmail = company.BusinessEmail.Trim().ToLowerInvariant(),
             BusinessPhone = string.IsNullOrWhiteSpace(company.BusinessPhone) ? "" : company.BusinessPhone.Trim(),
-            TimeZone = string.IsNullOrWhiteSpace(company.TimeZone) ? "America/Los_Angeles" : company.TimeZone.Trim()
+            TimeZone = string.IsNullOrWhiteSpace(company.TimeZone) ? "America/Los_Angeles" : company.TimeZone.Trim(),
+            ServicePackageId = string.IsNullOrWhiteSpace(company.ServicePackageId) ? null : company.ServicePackageId.Trim()
         }, cancellationToken);
+    }
+
+    private static SystemMode GetSystemModeForCompanyType(CompanyType companyType)
+    {
+        var searchable = $"{companyType.Id} {companyType.Name} {companyType.Description}";
+        return PlatformContainsAny(searchable, "landscape", "landscaping", "lawn", "yard", "tree")
+            ? SystemMode.Landscape
+            : SystemMode.Pool;
     }
 
     public async Task SetCompanyStatusAsync(
@@ -174,6 +232,180 @@ public sealed class PlatformAdminService(IServiceBusinessStore store, TenantAuth
             ?? throw new InvalidOperationException("Company was not found.");
 
         await store.UpsertCompanyAsync(company with { Status = status }, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<BusinessClientManagementRow>> GetBusinessClientManagementRowsAsync(CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireSystemAdminAsync(cancellationToken);
+
+        var companies = await store.GetCompaniesAsync(cancellationToken);
+        var rows = new List<BusinessClientManagementRow>();
+
+        foreach (var company in companies.OrderBy(c => c.Name))
+        {
+            var clientTypes = await store.GetClientTypesAsync(company.Id, cancellationToken);
+            var clients = await store.GetClientsAsync(company.Id, cancellationToken);
+
+            rows.AddRange(clients
+                .OrderBy(client => client.DisplayName)
+                .Select(client => new BusinessClientManagementRow(
+                    company,
+                    client,
+                    clientTypes.FirstOrDefault(type => string.Equals(type.Id, client.ClientTypeId, StringComparison.OrdinalIgnoreCase)))));
+        }
+
+        return rows;
+    }
+
+    public async Task<IReadOnlyList<PoolConfigurationClientRow>> GetPoolConfigurationClientsAsync(CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireSystemAdminAsync(cancellationToken);
+
+        var companies = await store.GetCompaniesAsync(cancellationToken);
+        var companyTypes = await store.GetCompanyTypesAsync(cancellationToken);
+        var settings = await store.GetSystemSettingsAsync(cancellationToken);
+        var visibleCompanyTypeIds = companyTypes
+            .Where(type => type.IsActive && PlatformCompanyTypeMatchesSystemMode(type, settings.SystemMode))
+            .Select(type => type.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var rows = new List<PoolConfigurationClientRow>();
+
+        foreach (var company in companies
+            .Where(company => visibleCompanyTypeIds.Contains(company.CompanyTypeId))
+            .OrderBy(c => c.Name))
+        {
+            var clients = await store.GetClientsAsync(company.Id, cancellationToken);
+            rows.AddRange(clients
+                .Where(client => client.IsActive)
+                .OrderBy(client => client.ServiceAddress)
+                .ThenBy(client => client.DisplayName)
+                .Select(client => new PoolConfigurationClientRow(
+                    client.Id,
+                    company.Name,
+                    client.ServiceAddress,
+                    "Business Client")));
+        }
+
+        var homeOwnerProfiles = await store.GetIndependentHomeOwnerProfilesAsync(cancellationToken);
+        rows.AddRange(homeOwnerProfiles
+            .OrderBy(profile => profile.HomeAddress)
+            .ThenBy(profile => profile.UserId)
+            .Select(profile => new PoolConfigurationClientRow(
+                profile.UserId,
+                "",
+                string.IsNullOrWhiteSpace(profile.HomeAddress) ? profile.UserId : profile.HomeAddress,
+                "Independent Home Owner")));
+
+        return rows
+            .OrderBy(row => row.CompanyName)
+            .ThenBy(row => row.ClientAddress)
+            .ToList();
+    }
+
+    private static bool PlatformCompanyTypeMatchesSystemMode(CompanyType type, SystemMode systemMode)
+    {
+        var searchable = $"{type.Id} {type.Name} {type.Description}";
+        return systemMode == SystemMode.Pool
+            ? searchable.Contains("pool", StringComparison.OrdinalIgnoreCase)
+            : PlatformContainsAny(searchable, "landscape", "landscaping", "lawn", "yard", "tree");
+    }
+
+    private static bool PlatformContainsAny(string value, params string[] terms) =>
+        terms.Any(term => value.Contains(term, StringComparison.OrdinalIgnoreCase));
+
+    public async Task<IReadOnlyList<ClientType>> GetClientTypesForCompanyAsync(string companyId, CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireSystemAdminAsync(cancellationToken);
+        return await BusinessClientTypeReferenceData.EnsureForCompanyAsync(store, companyId, cancellationToken);
+    }
+
+    public async Task UpsertBusinessClientAsync(CompanyClient client, CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireSystemAdminAsync(cancellationToken);
+        await ValidateClientAsync(client, cancellationToken);
+        await store.UpsertClientAsync(NormalizeClient(client), cancellationToken);
+    }
+
+    private async Task ValidateClientAsync(CompanyClient client, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(client.Id))
+        {
+            throw new InvalidOperationException("Business client ID is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(client.CompanyId))
+        {
+            throw new InvalidOperationException("Service client is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(client.DisplayName))
+        {
+            throw new InvalidOperationException("Business client name is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(client.PrimaryContactName))
+        {
+            throw new InvalidOperationException("Primary contact is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(client.Email) || !client.Email.Contains('@', StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Business client email must be valid.");
+        }
+
+        if (string.IsNullOrWhiteSpace(client.ServiceAddress))
+        {
+            throw new InvalidOperationException("Service address is required.");
+        }
+
+        var company = await store.GetCompanyAsync(client.CompanyId, cancellationToken);
+        if (company is null)
+        {
+            throw new InvalidOperationException("Service client was not found.");
+        }
+
+        var clientTypes = await BusinessClientTypeReferenceData.EnsureForCompanyAsync(store, client.CompanyId, cancellationToken);
+        if (!clientTypes.Any(t => t.Id == client.ClientTypeId && t.IsActive))
+        {
+            throw new InvalidOperationException("An active business client type is required.");
+        }
+
+        await ValidateBusinessClientServicePackageAsync(client, cancellationToken);
+    }
+
+    private static CompanyClient NormalizeClient(CompanyClient client) => client with
+    {
+        Id = CreateSlug(client.Id),
+        CompanyId = client.CompanyId.Trim(),
+        DisplayName = client.DisplayName.Trim(),
+        PrimaryContactName = client.PrimaryContactName.Trim(),
+        Email = client.Email.Trim().ToLowerInvariant(),
+        Phone = string.IsNullOrWhiteSpace(client.Phone) ? "" : client.Phone.Trim(),
+        ServiceAddress = client.ServiceAddress.Trim(),
+        AccessNotes = string.IsNullOrWhiteSpace(client.AccessNotes) ? "" : client.AccessNotes.Trim(),
+        ClientTypeId = client.ClientTypeId.Trim(),
+        ServicePackageId = string.IsNullOrWhiteSpace(client.ServicePackageId) ? null : client.ServicePackageId.Trim()
+    };
+
+    private async Task ValidateBusinessClientServicePackageAsync(CompanyClient client, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(client.ServicePackageId))
+        {
+            return;
+        }
+
+        var company = await store.GetCompanyAsync(client.CompanyId, cancellationToken)
+            ?? throw new InvalidOperationException("Service client was not found.");
+        var companyType = (await store.GetCompanyTypesAsync(cancellationToken))
+            .FirstOrDefault(type => string.Equals(type.Id, company.CompanyTypeId, StringComparison.OrdinalIgnoreCase));
+        var globalCatalogCompanyId = GlobalCatalogScope.For(companyType is null ? SystemMode.Pool : GetSystemModeForCompanyType(companyType));
+        var allowedPackages = (await store.GetServicePackagesAsync(company.Id, cancellationToken))
+            .Concat(await store.GetServicePackagesAsync(globalCatalogCompanyId, cancellationToken));
+
+        if (!allowedPackages.Any(package => package.IsActive && string.Equals(package.Id, client.ServicePackageId, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException("Service package was not found.");
+        }
     }
 
     public async Task<IReadOnlyList<EmailLogEntry>> GetEmailLogsAsync(CancellationToken cancellationToken = default)
@@ -309,6 +541,134 @@ public sealed class PlatformAdminService(IServiceBusinessStore store, TenantAuth
         }
 
         await store.UpsertUserAsync(user with { Status = status }, cancellationToken);
+    }
+
+    public async Task<UserDeletionResult> DeleteUserAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var actor = await authorization.RequireCurrentUserAsync(cancellationToken);
+        if (!actor.IsSystemAdmin)
+        {
+            throw new UnauthorizedAccessException("System administrator access is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new InvalidOperationException("User ID is required.");
+        }
+
+        var normalizedUserId = userId.Trim();
+        if (string.Equals(actor.Id, normalizedUserId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("You cannot delete the currently signed-in system administrator.");
+        }
+
+        var user = await store.GetUserAsync(normalizedUserId, cancellationToken)
+            ?? throw new InvalidOperationException("User was not found.");
+
+        if (user.IsSystemAdmin)
+        {
+            await EnsureAnotherActiveSystemAdminExistsAsync(user.Id, cancellationToken);
+        }
+
+        return await store.DeleteUserAsync(user.Id, cancellationToken);
+    }
+
+    public async Task SetCompanyMembershipApprovalAsync(
+        string companyId,
+        string userId,
+        CompanyRole role,
+        bool isApproved,
+        CancellationToken cancellationToken = default)
+    {
+        var actor = await authorization.RequireCurrentUserAsync(cancellationToken);
+        if (!actor.IsSystemAdmin)
+        {
+            throw new UnauthorizedAccessException("System administrator access is required.");
+        }
+
+        var memberships = await store.GetMembershipsForCompanyAsync(companyId, cancellationToken);
+        var membership = memberships.FirstOrDefault(m => m.UserId == userId && m.Role == role)
+            ?? throw new InvalidOperationException("Company user membership was not found.");
+
+        var nextStatus = isApproved ? MembershipStatus.Active : MembershipStatus.Inactive;
+        if (membership.Status == MembershipStatus.Pending && !isApproved)
+        {
+            nextStatus = MembershipStatus.Rejected;
+        }
+
+        if (membership.Role == CompanyRole.CompanyAdmin && nextStatus != MembershipStatus.Active)
+        {
+            EnsureAnotherActiveCompanyAdminExists(memberships, userId);
+        }
+
+        await store.UpsertMembershipAsync(membership with
+        {
+            Status = nextStatus,
+            DecidedUtc = DateTimeOffset.UtcNow,
+            DecidedByUserId = actor.Id
+        }, cancellationToken);
+    }
+
+    public async Task UpdateCompanyMembershipRoleAsync(
+        string companyId,
+        string userId,
+        CompanyRole currentRole,
+        CompanyRole newRole,
+        CancellationToken cancellationToken = default)
+    {
+        var actor = await authorization.RequireCurrentUserAsync(cancellationToken);
+        if (!actor.IsSystemAdmin)
+        {
+            throw new UnauthorizedAccessException("System administrator access is required.");
+        }
+
+        if (string.Equals(actor.Id, userId, StringComparison.OrdinalIgnoreCase) && currentRole != newRole)
+        {
+            throw new InvalidOperationException("A system admin cannot change their own user type.");
+        }
+
+        var memberships = await store.GetMembershipsForCompanyAsync(companyId, cancellationToken);
+        var membership = memberships.FirstOrDefault(m => m.UserId == userId && m.Role == currentRole)
+            ?? throw new InvalidOperationException("Company user membership was not found.");
+
+        if (membership.Status is not MembershipStatus.Active and not MembershipStatus.Inactive)
+        {
+            throw new InvalidOperationException("Only approved company users can have roles updated.");
+        }
+
+        if (currentRole == newRole)
+        {
+            return;
+        }
+
+        if (currentRole == CompanyRole.CompanyAdmin)
+        {
+            EnsureAnotherActiveCompanyAdminExists(memberships, userId);
+        }
+
+        await store.UpsertMembershipAsync(membership with
+        {
+            Status = MembershipStatus.Removed,
+            DecidedUtc = DateTimeOffset.UtcNow,
+            DecidedByUserId = actor.Id
+        }, cancellationToken);
+
+        var replacement = memberships.FirstOrDefault(m => m.UserId == userId && m.Role == newRole);
+        await store.UpsertMembershipAsync((replacement ?? new CompanyMembership(
+            companyId,
+            userId,
+            newRole,
+            membership.Status,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow,
+            actor.Id,
+            membership.CompanyClientId)) with
+        {
+            Status = membership.Status,
+            DecidedUtc = DateTimeOffset.UtcNow,
+            DecidedByUserId = actor.Id,
+            CompanyClientId = membership.CompanyClientId
+        }, cancellationToken);
     }
 
     public async Task UpdateUserAsync(
@@ -504,6 +864,21 @@ public sealed class PlatformAdminService(IServiceBusinessStore store, TenantAuth
         if (users.Count(u => u.IsSystemAdmin && u.Status == UserStatus.Active && u.Id != excludedUserId) == 0)
         {
             throw new InvalidOperationException("At least one active system admin is required.");
+        }
+    }
+
+    private static void EnsureAnotherActiveCompanyAdminExists(
+        IReadOnlyList<CompanyMembership> memberships,
+        string userId)
+    {
+        var anotherAdminExists = memberships.Any(m =>
+            m.UserId != userId &&
+            m.Role == CompanyRole.CompanyAdmin &&
+            m.Status == MembershipStatus.Active);
+
+        if (!anotherAdminExists)
+        {
+            throw new InvalidOperationException("At least one active company admin is required.");
         }
     }
 
@@ -867,28 +1242,51 @@ public sealed class CompanyAdminService(
 
     public async Task<IReadOnlyList<CompanyClient>> GetClientsAsync(string companyId, CancellationToken cancellationToken = default)
     {
-        await authorization.RequireCompanyRoleAsync(companyId, CompanyRole.CompanyAdmin, cancellationToken);
+        await authorization.RequireSystemAdminOrAnyCompanyRoleAsync(companyId, [CompanyRole.CompanyAdmin], cancellationToken);
         return await store.GetClientsAsync(companyId, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<PoolConfigurationClientRow>> GetPoolConfigurationClientsAsync(string companyId, CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireCompanyRoleAsync(companyId, CompanyRole.CompanyAdmin, cancellationToken);
+
+        var clients = await store.GetClientsAsync(companyId, cancellationToken);
+        return clients
+            .Where(client => client.IsActive)
+            .OrderBy(client => client.ServiceAddress)
+            .ThenBy(client => client.DisplayName)
+            .Select(client => new PoolConfigurationClientRow(
+                client.Id,
+                "",
+                client.ServiceAddress,
+                "Business Client"))
+            .ToList();
     }
 
     public async Task<IReadOnlyList<ClientType>> GetClientTypesAsync(string companyId, CancellationToken cancellationToken = default)
     {
         await authorization.RequireCompanyRoleAsync(companyId, CompanyRole.CompanyAdmin, cancellationToken);
-        return await store.GetClientTypesAsync(companyId, cancellationToken);
+        return await BusinessClientTypeReferenceData.EnsureForCompanyAsync(store, companyId, cancellationToken);
     }
 
     public async Task UpsertClientAsync(CompanyClient client, CancellationToken cancellationToken = default)
     {
         await authorization.RequireCompanyRoleAsync(client.CompanyId, CompanyRole.CompanyAdmin, cancellationToken);
 
+        await ValidateClientAsync(client, cancellationToken);
+        await store.UpsertClientAsync(NormalizeClient(client), cancellationToken);
+    }
+
+    private async Task ValidateClientAsync(CompanyClient client, CancellationToken cancellationToken)
+    {
         if (string.IsNullOrWhiteSpace(client.Id))
         {
-            throw new InvalidOperationException("Customer ID is required.");
+            throw new InvalidOperationException("Business client ID is required.");
         }
 
         if (string.IsNullOrWhiteSpace(client.DisplayName))
         {
-            throw new InvalidOperationException("Customer name is required.");
+            throw new InvalidOperationException("Business client name is required.");
         }
 
         if (string.IsNullOrWhiteSpace(client.PrimaryContactName))
@@ -898,7 +1296,7 @@ public sealed class CompanyAdminService(
 
         if (string.IsNullOrWhiteSpace(client.Email) || !client.Email.Contains('@', StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("Customer email must be valid.");
+            throw new InvalidOperationException("Business client email must be valid.");
         }
 
         if (string.IsNullOrWhiteSpace(client.ServiceAddress))
@@ -906,13 +1304,60 @@ public sealed class CompanyAdminService(
             throw new InvalidOperationException("Service address is required.");
         }
 
-        var clientTypes = await store.GetClientTypesAsync(client.CompanyId, cancellationToken);
+        var clientTypes = await BusinessClientTypeReferenceData.EnsureForCompanyAsync(store, client.CompanyId, cancellationToken);
         if (!clientTypes.Any(t => t.Id == client.ClientTypeId && t.IsActive))
         {
-            throw new InvalidOperationException("An active customer type is required.");
+            throw new InvalidOperationException("An active business client type is required.");
         }
 
-        await store.UpsertClientAsync(client, cancellationToken);
+        await ValidateBusinessClientServicePackageAsync(client, cancellationToken);
+    }
+
+    private static CompanyClient NormalizeClient(CompanyClient client) => client with
+    {
+        Id = CreateSlug(client.Id),
+        CompanyId = client.CompanyId.Trim(),
+        DisplayName = client.DisplayName.Trim(),
+        PrimaryContactName = client.PrimaryContactName.Trim(),
+        Email = client.Email.Trim().ToLowerInvariant(),
+        Phone = string.IsNullOrWhiteSpace(client.Phone) ? "" : client.Phone.Trim(),
+        ServiceAddress = client.ServiceAddress.Trim(),
+        AccessNotes = string.IsNullOrWhiteSpace(client.AccessNotes) ? "" : client.AccessNotes.Trim(),
+        ClientTypeId = client.ClientTypeId.Trim(),
+        ServicePackageId = string.IsNullOrWhiteSpace(client.ServicePackageId) ? null : client.ServicePackageId.Trim()
+    };
+
+    private async Task ValidateBusinessClientServicePackageAsync(CompanyClient client, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(client.ServicePackageId))
+        {
+            return;
+        }
+
+        var company = await store.GetCompanyAsync(client.CompanyId, cancellationToken)
+            ?? throw new InvalidOperationException("Service client was not found.");
+        var companyType = (await store.GetCompanyTypesAsync(cancellationToken))
+            .FirstOrDefault(type => string.Equals(type.Id, company.CompanyTypeId, StringComparison.OrdinalIgnoreCase));
+        var globalCatalogCompanyId = GlobalCatalogScope.For(companyType is null ? SystemMode.Pool : GetSystemModeForCompanyType(companyType));
+        var allowedPackages = (await store.GetServicePackagesAsync(company.Id, cancellationToken))
+            .Concat(await store.GetServicePackagesAsync(globalCatalogCompanyId, cancellationToken));
+
+        if (!allowedPackages.Any(package => package.IsActive && string.Equals(package.Id, client.ServicePackageId, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException("Service package was not found.");
+        }
+    }
+
+    private static SystemMode GetSystemModeForCompanyType(CompanyType companyType)
+    {
+        var searchable = $"{companyType.Id} {companyType.Name} {companyType.Description}";
+        return searchable.Contains("landscape", StringComparison.OrdinalIgnoreCase) ||
+            searchable.Contains("landscaping", StringComparison.OrdinalIgnoreCase) ||
+            searchable.Contains("lawn", StringComparison.OrdinalIgnoreCase) ||
+            searchable.Contains("yard", StringComparison.OrdinalIgnoreCase) ||
+            searchable.Contains("tree", StringComparison.OrdinalIgnoreCase)
+                ? SystemMode.Landscape
+                : SystemMode.Pool;
     }
 
     public async Task<IReadOnlyList<ServiceOffering>> GetServicesAsync(string companyId, CancellationToken cancellationToken = default)
@@ -949,6 +1394,36 @@ public sealed class CompanyAdminService(
         var items = await store.GetPoolEquipmentItemsAsync(scope, scopeOwnerId, cancellationToken);
 
         return new PoolEquipmentOverview(BuildPoolEquipmentGroups(scope, scopeOwnerId, categories, items));
+    }
+
+    public async Task<IReadOnlyList<HomeOwnerPoolEquipmentPhoto>> GetPoolConfigurationPhotosAsync(string scopeOwnerId, CancellationToken cancellationToken = default)
+    {
+        await RequireEquipmentAccessAsync(EquipmentScope.HomeOwner, scopeOwnerId, manage: false, cancellationToken);
+        return await store.GetHomeOwnerPoolEquipmentPhotosAsync(scopeOwnerId, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<HomeOwnerPoolEquipmentPhoto>> AddPoolConfigurationPhotosAsync(
+        string scopeOwnerId,
+        IReadOnlyList<HomeOwnerPoolEquipmentPhoto> photos,
+        CancellationToken cancellationToken = default)
+    {
+        await RequireEquipmentAccessAsync(EquipmentScope.HomeOwner, scopeOwnerId, manage: true, cancellationToken);
+        foreach (var photo in photos)
+        {
+            await store.UpsertHomeOwnerPoolEquipmentPhotoAsync(scopeOwnerId, photo, cancellationToken);
+        }
+
+        return await store.GetHomeOwnerPoolEquipmentPhotosAsync(scopeOwnerId, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<HomeOwnerPoolEquipmentPhoto>> DeletePoolConfigurationPhotoAsync(
+        string scopeOwnerId,
+        string photoId,
+        CancellationToken cancellationToken = default)
+    {
+        await RequireEquipmentAccessAsync(EquipmentScope.HomeOwner, scopeOwnerId, manage: true, cancellationToken);
+        await store.DeleteHomeOwnerPoolEquipmentPhotoAsync(scopeOwnerId, photoId, cancellationToken);
+        return await store.GetHomeOwnerPoolEquipmentPhotosAsync(scopeOwnerId, cancellationToken);
     }
 
     public async Task UpsertPoolEquipmentCategoryAsync(PoolEquipmentCategory category, CancellationToken cancellationToken = default)
@@ -1025,7 +1500,8 @@ public sealed class CompanyAdminService(
             Description = string.IsNullOrWhiteSpace(item.Description) ? "" : item.Description.Trim(),
             ImageUrl = string.IsNullOrWhiteSpace(item.ImageUrl) ? null : item.ImageUrl.Trim(),
             ModelNo = string.IsNullOrWhiteSpace(item.ModelNo) ? "" : item.ModelNo.Trim(),
-            Manufacturer = string.IsNullOrWhiteSpace(item.Manufacturer) ? "" : item.Manufacturer.Trim()
+            Manufacturer = string.IsNullOrWhiteSpace(item.Manufacturer) ? "" : item.Manufacturer.Trim(),
+            Comment = string.IsNullOrWhiteSpace(item.Comment) ? "" : item.Comment.Trim()
         }, cancellationToken);
     }
 
@@ -1216,7 +1692,8 @@ public sealed class CompanyAdminService(
             Name = material.Name.Trim(),
             UnitOfMeasure = material.UnitOfMeasure.Trim(),
             Brand = string.IsNullOrWhiteSpace(material.Brand) ? "" : material.Brand.Trim(),
-            ModelNo = string.IsNullOrWhiteSpace(material.ModelNo) ? "" : material.ModelNo.Trim()
+            ModelNo = string.IsNullOrWhiteSpace(material.ModelNo) ? "" : material.ModelNo.Trim(),
+            Description = string.IsNullOrWhiteSpace(material.Description) ? "" : material.Description.Trim()
         }, cancellationToken);
     }
 
@@ -1491,26 +1968,258 @@ public sealed class CompanyAdminService(
         await store.DeleteServiceAsync(companyId, serviceId, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<ServicePackage>> GetServicePackagesAsync(string companyId, CancellationToken cancellationToken = default)
+    {
+        await RequireCatalogReadAsync(companyId, cancellationToken);
+        return (await store.GetServicePackagesAsync(companyId, cancellationToken))
+            .OrderBy(package => package.Name)
+            .ToList();
+    }
+
+    public async Task UpsertServicePackageAsync(
+        ServicePackage servicePackage,
+        IReadOnlyList<string> accessibleServiceCompanyIds,
+        CancellationToken cancellationToken = default)
+    {
+        await RequireCatalogManagementAsync(servicePackage.CompanyId, cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(servicePackage.Id))
+        {
+            throw new InvalidOperationException("Service package ID is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(servicePackage.Name))
+        {
+            throw new InvalidOperationException("Service package name is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(servicePackage.Recurrence))
+        {
+            throw new InvalidOperationException("Service package recurrence is required.");
+        }
+
+        var packageRecurrence = NormalizePackageRecurrence(servicePackage.Recurrence);
+
+        if (servicePackage.Cost < 0)
+        {
+            throw new InvalidOperationException("Service package cost must be zero or greater.");
+        }
+
+        var accessibleServiceIds = await GetAccessibleServiceIdsAsync(accessibleServiceCompanyIds, cancellationToken);
+        var normalizedServices = servicePackage.Services
+            .Where(service => !string.IsNullOrWhiteSpace(service.ServiceId))
+            .GroupBy(service => service.ServiceId.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(group => new ServicePackageService(
+                group.Key,
+                NormalizePackageServiceRecurrence(group.First().Recurrence)))
+            .ToList();
+
+        foreach (var service in normalizedServices)
+        {
+            if (!accessibleServiceIds.Contains(service.ServiceId))
+            {
+                throw new InvalidOperationException("Service package contains a service that is not accessible in this scope.");
+            }
+        }
+
+        await store.UpsertServicePackageAsync(servicePackage with
+        {
+            Id = CreateSlug(servicePackage.Id),
+            CompanyId = servicePackage.CompanyId.Trim(),
+            Name = servicePackage.Name.Trim(),
+            Recurrence = packageRecurrence,
+            Description = string.IsNullOrWhiteSpace(servicePackage.Description) ? "" : servicePackage.Description.Trim(),
+            Services = normalizedServices
+        }, cancellationToken);
+    }
+
+    public async Task SetServicePackageActiveAsync(string companyId, string packageId, bool isActive, CancellationToken cancellationToken = default)
+    {
+        await RequireCatalogManagementAsync(companyId, cancellationToken);
+        var servicePackage = (await store.GetServicePackagesAsync(companyId, cancellationToken)).FirstOrDefault(p => p.Id == packageId)
+            ?? throw new InvalidOperationException("Service package was not found.");
+
+        await store.UpsertServicePackageAsync(servicePackage with { IsActive = isActive }, cancellationToken);
+    }
+
+    public async Task DeleteServicePackageAsync(string companyId, string packageId, CancellationToken cancellationToken = default)
+    {
+        await RequireCatalogManagementAsync(companyId, cancellationToken);
+        var exists = (await store.GetServicePackagesAsync(companyId, cancellationToken)).Any(p => p.Id == packageId);
+        if (!exists)
+        {
+            throw new InvalidOperationException("Service package was not found.");
+        }
+
+        await store.DeleteServicePackageAsync(companyId, packageId, cancellationToken);
+    }
+
+    private async Task<HashSet<string>> GetAccessibleServiceIdsAsync(
+        IReadOnlyList<string> companyIds,
+        CancellationToken cancellationToken)
+    {
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var companyId in companyIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            foreach (var service in await store.GetServicesAsync(companyId, cancellationToken))
+            {
+                ids.Add(service.Id);
+            }
+        }
+
+        return ids;
+    }
+
+    private static string NormalizePackageRecurrence(string recurrence)
+    {
+        var normalized = recurrence.Trim();
+        var allowed = new[] { "Weekly", "Bi-Weekly", "Monthly", "Bi-Monthly", "Half-Yearly", "Yearly" };
+        return allowed.FirstOrDefault(value => string.Equals(value, normalized, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException("Service package recurrence must be Weekly, Bi-Weekly, Monthly, Bi-Monthly, Half-Yearly, or Yearly.");
+    }
+
+    private static string NormalizePackageServiceRecurrence(string recurrence)
+    {
+        if (string.IsNullOrWhiteSpace(recurrence) || string.Equals(recurrence.Trim(), "Every Visit", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Every Visit";
+        }
+
+        var normalized = recurrence.Trim();
+        var parts = normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 3 &&
+            string.Equals(parts[0], "Every", StringComparison.OrdinalIgnoreCase) &&
+            int.TryParse(parts[1], out var visitCount) &&
+            visitCount > 0 &&
+            string.Equals(parts[2], "Visits", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"Every {visitCount} Visits";
+        }
+
+        throw new InvalidOperationException("Service recurrence must be Every Visit or Every X Visits.");
+    }
+
     public async Task<IReadOnlyList<ServiceVisit>> GetScheduleAsync(string companyId, DateOnly date, CancellationToken cancellationToken = default)
     {
         await authorization.RequireCompanyRoleAsync(companyId, CompanyRole.CompanyAdmin, cancellationToken);
         return await store.GetVisitsByDateAsync(companyId, date, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<ServiceVisit>> GetVisitsAsync(string companyId, CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireSystemAdminOrAnyCompanyRoleAsync(companyId, [CompanyRole.CompanyAdmin], cancellationToken);
+        return await store.GetVisitsAsync(companyId, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Invoice>> GetInvoicesAsync(string companyId, CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireSystemAdminOrAnyCompanyRoleAsync(companyId, [CompanyRole.CompanyAdmin], cancellationToken);
+        return await store.GetInvoicesAsync(companyId, cancellationToken);
+    }
+
+    public async Task SetInvoiceStatusAsync(string companyId, string invoiceId, InvoiceStatus status, CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireSystemAdminOrAnyCompanyRoleAsync(companyId, [CompanyRole.CompanyAdmin], cancellationToken);
+        var invoice = await store.GetInvoiceAsync(companyId, invoiceId, cancellationToken)
+            ?? throw new InvalidOperationException("Invoice was not found.");
+        var allowed = (invoice.Status, status) switch
+        {
+            (InvoiceStatus.New, InvoiceStatus.Invoiced) => true,
+            (InvoiceStatus.Invoiced, InvoiceStatus.Paid) => true,
+            _ when invoice.Status == status => true,
+            _ => false
+        };
+        if (!allowed)
+        {
+            throw new InvalidOperationException("Invoice status can only move from New to Invoiced to Paid.");
+        }
+
+        await store.UpsertInvoiceAsync(invoice with { Status = status }, cancellationToken);
+    }
+
+    public async Task UpsertVisitAsync(ServiceVisit visit, CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireSystemAdminOrAnyCompanyRoleAsync(visit.CompanyId, [CompanyRole.CompanyAdmin], cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(visit.Id))
+        {
+            throw new InvalidOperationException("Visit ID is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(visit.CompanyClientId))
+        {
+            throw new InvalidOperationException("Business client is required.");
+        }
+
+        var client = await store.GetClientAsync(visit.CompanyId, visit.CompanyClientId, cancellationToken)
+            ?? throw new InvalidOperationException("Business client was not found.");
+        if (!client.IsActive)
+        {
+            throw new InvalidOperationException("Business client is inactive.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(visit.AssignedUserId))
+        {
+            await EnsureActiveVisitAssigneeAsync(visit.CompanyId, visit.AssignedUserId, cancellationToken);
+        }
+
+        var company = await store.GetCompanyAsync(visit.CompanyId, cancellationToken)
+            ?? throw new InvalidOperationException("Service client was not found.");
+        var companyType = (await store.GetCompanyTypesAsync(cancellationToken))
+            .FirstOrDefault(type => string.Equals(type.Id, company.CompanyTypeId, StringComparison.OrdinalIgnoreCase));
+        var globalCatalogCompanyId = GlobalCatalogScope.For(companyType is null ? SystemMode.Pool : GetSystemModeForCompanyType(companyType));
+        var serviceIds = (await store.GetServicesAsync(visit.CompanyId, cancellationToken))
+            .Concat(await store.GetServicesAsync(globalCatalogCompanyId, cancellationToken))
+            .Where(service => service.IsActive)
+            .Select(service => service.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var serviceId in visit.PlannedServiceIds.Where(id => !string.IsNullOrWhiteSpace(id)))
+        {
+            if (!serviceIds.Contains(serviceId))
+            {
+                throw new InvalidOperationException("Visit contains a service that is not active for the service client.");
+            }
+        }
+
+        await store.UpsertVisitAsync(NormalizeVisit(visit), cancellationToken);
+    }
+
+    public async Task DeleteVisitAsync(string companyId, string visitId, CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireSystemAdminOrAnyCompanyRoleAsync(companyId, [CompanyRole.CompanyAdmin], cancellationToken);
+        var visit = await store.GetVisitAsync(companyId, visitId, cancellationToken)
+            ?? throw new InvalidOperationException("Visit was not found.");
+        if (visit.Status is VisitStatus.Completed or VisitStatus.Closed)
+        {
+            throw new InvalidOperationException("Completed or closed visits cannot be deleted.");
+        }
+
+        await store.DeleteVisitAsync(companyId, visitId, cancellationToken);
+    }
+
+    public async Task SetVisitStatusAsync(string companyId, string visitId, VisitStatus status, CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireSystemAdminOrAnyCompanyRoleAsync(companyId, [CompanyRole.CompanyAdmin], cancellationToken);
+        if (status is not VisitStatus.InProgress and not VisitStatus.Completed and not VisitStatus.Closed)
+        {
+            throw new InvalidOperationException("Only In Progress, Complete, or Closed can be set directly.");
+        }
+
+        var visit = await store.GetVisitAsync(companyId, visitId, cancellationToken)
+            ?? throw new InvalidOperationException("Visit was not found.");
+        await store.UpsertVisitAsync(visit with
+        {
+            Status = status,
+            StartedUtc = status == VisitStatus.InProgress ? DateTimeOffset.UtcNow : visit.StartedUtc,
+            CompletedUtc = status == VisitStatus.Completed && visit.CompletedUtc is null ? DateTimeOffset.UtcNow : visit.CompletedUtc
+        }, cancellationToken);
+    }
+
     public async Task AssignVisitAsync(string companyId, string visitId, string userId, CancellationToken cancellationToken = default)
     {
         await authorization.RequireCompanyRoleAsync(companyId, CompanyRole.CompanyAdmin, cancellationToken);
 
-        var memberships = await store.GetMembershipsForCompanyAsync(companyId, cancellationToken);
-        var assignee = memberships.FirstOrDefault(m =>
-            m.UserId == userId &&
-            m.Role == CompanyRole.CompanyUser &&
-            m.Status == MembershipStatus.Active);
-
-        if (assignee is null)
-        {
-            throw new InvalidOperationException("Visits can only be assigned to active company users.");
-        }
+        await EnsureActiveVisitAssigneeAsync(companyId, userId, cancellationToken);
 
         var visit = await store.GetVisitAsync(companyId, visitId, cancellationToken)
             ?? throw new InvalidOperationException("Visit was not found.");
@@ -1518,8 +2227,53 @@ public sealed class CompanyAdminService(
         await store.UpsertVisitAsync(visit with
         {
             AssignedUserId = userId,
-            Status = visit.Status == VisitStatus.Scheduled ? VisitStatus.Assigned : visit.Status
+            Status = visit.ScheduledDate == default ? VisitStatus.New : VisitStatus.Assigned
         }, cancellationToken);
+    }
+
+    private async Task EnsureActiveVisitAssigneeAsync(string companyId, string userId, CancellationToken cancellationToken)
+    {
+        var memberships = await store.GetMembershipsForCompanyAsync(companyId, cancellationToken);
+        var assignee = memberships.FirstOrDefault(m =>
+            m.UserId == userId &&
+            m.Role is CompanyRole.CompanyUser or CompanyRole.CompanyAdmin &&
+            m.Status == MembershipStatus.Active);
+
+        if (assignee is null)
+        {
+            throw new InvalidOperationException("Visits can only be assigned to active business employees or business owners.");
+        }
+    }
+
+    private static ServiceVisit NormalizeVisit(ServiceVisit visit)
+    {
+        var status = visit.Status;
+        if (status is not VisitStatus.InProgress and not VisitStatus.Completed and not VisitStatus.Closed and not VisitStatus.Canceled and not VisitStatus.Skipped)
+        {
+            status = visit.ScheduledDate == default || string.IsNullOrWhiteSpace(visit.AssignedUserId)
+                ? VisitStatus.New
+                : VisitStatus.Assigned;
+        }
+
+        return visit with
+        {
+            Id = CreateSlug(visit.Id),
+            CompanyId = visit.CompanyId.Trim(),
+            CompanyClientId = visit.CompanyClientId.Trim(),
+            AssignedUserId = string.IsNullOrWhiteSpace(visit.AssignedUserId) ? null : visit.AssignedUserId.Trim(),
+            VisitName = string.IsNullOrWhiteSpace(visit.VisitName) ? "Service Visit" : visit.VisitName.Trim(),
+            Notes = string.IsNullOrWhiteSpace(visit.Notes) ? "" : visit.Notes.Trim(),
+            NotesToBusinessClient = string.IsNullOrWhiteSpace(visit.NotesToBusinessClient) ? "" : visit.NotesToBusinessClient.Trim(),
+            NotesToServiceClient = string.IsNullOrWhiteSpace(visit.NotesToServiceClient) ? "" : visit.NotesToServiceClient.Trim(),
+            InternalNotes = string.IsNullOrWhiteSpace(visit.InternalNotes) ? "" : visit.InternalNotes.Trim(),
+            PlannedServiceIds = visit.PlannedServiceIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+            OutOfScopeServiceIds = visit.OutOfScopeServiceIds?.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? [],
+            OutOfScopeMaterials = visit.OutOfScopeMaterials ?? [],
+            CompletedByUserId = string.IsNullOrWhiteSpace(visit.CompletedByUserId) ? null : visit.CompletedByUserId.Trim(),
+            CompletedServiceIds = visit.CompletedServiceIds?.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? [],
+            MaterialsUsed = visit.MaterialsUsed ?? [],
+            Status = status
+        };
     }
 
     public async Task<IReadOnlyList<AccessRequest>> GetPendingAccessRequestsAsync(
@@ -1543,7 +2297,7 @@ public sealed class CompanyAdminService(
         string companyId,
         CancellationToken cancellationToken = default)
     {
-        await authorization.RequireCompanyRoleAsync(companyId, CompanyRole.CompanyAdmin, cancellationToken);
+        await authorization.RequireSystemAdminOrAnyCompanyRoleAsync(companyId, [CompanyRole.CompanyAdmin], cancellationToken);
 
         var company = await store.GetCompanyAsync(companyId, cancellationToken)
             ?? throw new InvalidOperationException("Company was not found.");
@@ -1554,8 +2308,9 @@ public sealed class CompanyAdminService(
         var memberships = await store.GetMembershipsForCompanyAsync(companyId, cancellationToken);
         var pending = BuildAccessRequests(company, users, roles, memberships);
         var rows = memberships
-            .Where(m => m.Status is MembershipStatus.Active or MembershipStatus.Inactive or MembershipStatus.Removed)
+            .Where(m => m.Status is MembershipStatus.Pending or MembershipStatus.Active or MembershipStatus.Inactive or MembershipStatus.Removed)
             .OrderByDescending(m => m.Status == MembershipStatus.Active)
+            .ThenByDescending(m => m.Status == MembershipStatus.Pending)
             .ThenBy(m => users.FirstOrDefault(u => u.Id == m.UserId)?.DisplayName ?? m.UserId)
             .Select(m => new CompanyUserManagementRow(
                 users.First(u => u.Id == m.UserId),
@@ -1790,7 +2545,7 @@ public sealed class CompanyAdminService(
 
     private async Task RequireCatalogReadAsync(string companyId, CancellationToken cancellationToken)
     {
-        if (string.Equals(companyId, "global", StringComparison.OrdinalIgnoreCase))
+        if (GlobalCatalogScope.IsGlobal(companyId))
         {
             await authorization.RequireCurrentUserAsync(cancellationToken);
             return;
@@ -1847,15 +2602,49 @@ public sealed class CompanyAdminService(
                 break;
             case EquipmentScope.HomeOwner:
                 var user = await authorization.RequireCurrentUserAsync(cancellationToken);
-                if (!user.IsSystemAdmin && !string.Equals(user.Id, scopeOwnerId, StringComparison.OrdinalIgnoreCase))
+                if (user.IsSystemAdmin)
+                {
+                    break;
+                }
+
+                if (string.Equals(user.Id, scopeOwnerId, StringComparison.OrdinalIgnoreCase) &&
+                    await IsIndependentHomeOwnerCatalogAsync(scopeOwnerId, cancellationToken))
+                {
+                    break;
+                }
+
+                var owningCompany = await GetCompanyForClientAsync(scopeOwnerId, cancellationToken);
+                if (owningCompany is not null)
+                {
+                    await authorization.RequireCompanyRoleAsync(owningCompany.Id, CompanyRole.CompanyAdmin, cancellationToken);
+                    break;
+                }
+
+                if (!string.Equals(user.Id, scopeOwnerId, StringComparison.OrdinalIgnoreCase))
                 {
                     throw new UnauthorizedAccessException("You can only manage your own homeowner equipment catalog.");
                 }
 
-                break;
+                throw new UnauthorizedAccessException("Pool configuration access is available only to independent homeowners or the business owner for the selected client.");
+
             default:
                 throw new InvalidOperationException("Unsupported equipment scope.");
         }
+    }
+
+    private async Task<Company?> GetCompanyForClientAsync(string clientId, CancellationToken cancellationToken)
+    {
+        var companies = await store.GetCompaniesAsync(cancellationToken);
+        foreach (var company in companies)
+        {
+            var clients = await store.GetClientsAsync(company.Id, cancellationToken);
+            if (clients.Any(client => string.Equals(client.Id, clientId, StringComparison.OrdinalIgnoreCase)))
+            {
+                return company;
+            }
+        }
+
+        return null;
     }
 
     private static void ValidateCategory(string id, string name)
@@ -2056,15 +2845,85 @@ public sealed class FieldWorkService(
 
         var visits = await store.GetVisitsForUserByDateAsync(companyId, currentUser.UserId, date, cancellationToken);
         var clients = await store.GetClientsAsync(companyId, cancellationToken);
-        var completions = await Task.WhenAll(visits.Select(v => store.GetVisitCompletionAsync(companyId, v.Id, cancellationToken)));
 
         return visits
             .OrderBy(v => v.RouteOrder)
-            .Select((visit, index) => new ServiceHistoryItem(
+            .Select(visit => new ServiceHistoryItem(
                 visit,
                 clients.First(c => c.Id == visit.CompanyClientId),
-                null,
-                completions[index]))
+                null))
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<ServiceHistoryItem>> GetTodayAssignedVisitsAsync(
+        string companyId,
+        CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireCompanyRoleAsync(companyId, CompanyRole.CompanyUser, cancellationToken);
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var visits = (await store.GetVisitsForUserByDateAsync(companyId, currentUser.UserId, today, cancellationToken))
+            .Where(visit => visit.Status is VisitStatus.Assigned or VisitStatus.InProgress)
+            .OrderBy(visit => visit.ServiceWindowStart)
+            .ThenBy(visit => visit.RouteOrder)
+            .ToList();
+        var clients = await store.GetClientsAsync(companyId, cancellationToken);
+
+        return visits
+            .Select(visit => new ServiceHistoryItem(
+                visit,
+                clients.First(c => c.Id == visit.CompanyClientId),
+                null))
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<ServiceHistoryItem>> GetUpcomingAssignedVisitsAsync(
+        string companyId,
+        CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireCompanyRoleAsync(companyId, CompanyRole.CompanyUser, cancellationToken);
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var visits = (await store.GetVisitsAsync(companyId, cancellationToken))
+            .Where(visit =>
+                string.Equals(visit.AssignedUserId, currentUser.UserId, StringComparison.OrdinalIgnoreCase) &&
+                visit.Status is VisitStatus.Assigned or VisitStatus.InProgress &&
+                (visit.ScheduledDate == default || visit.ScheduledDate > today))
+            .OrderBy(visit => visit.ScheduledDate == default ? DateOnly.MaxValue : visit.ScheduledDate)
+            .ThenBy(visit => visit.ServiceWindowStart)
+            .ThenBy(visit => visit.RouteOrder)
+            .ToList();
+        var clients = await store.GetClientsAsync(companyId, cancellationToken);
+
+        return visits
+            .Select(visit => new ServiceHistoryItem(
+                visit,
+                clients.First(c => c.Id == visit.CompanyClientId),
+                null))
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<ServiceHistoryItem>> GetRecentlyCompletedAssignedVisitsAsync(
+        string companyId,
+        CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireCompanyRoleAsync(companyId, CompanyRole.CompanyUser, cancellationToken);
+
+        var visits = (await store.GetVisitsAsync(companyId, cancellationToken))
+            .Where(visit =>
+                visit.Status == VisitStatus.Completed &&
+                (string.Equals(visit.AssignedUserId, currentUser.UserId, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(visit.CompletedByUserId, currentUser.UserId, StringComparison.OrdinalIgnoreCase)))
+            .OrderByDescending(visit => visit.CompletedUtc ?? new DateTimeOffset(visit.ScheduledDate == default ? DateTime.MinValue : visit.ScheduledDate.ToDateTime(TimeOnly.MinValue)))
+            .Take(25)
+            .ToList();
+        var clients = await store.GetClientsAsync(companyId, cancellationToken);
+
+        return visits
+            .Select(visit => new ServiceHistoryItem(
+                visit,
+                clients.First(c => c.Id == visit.CompanyClientId),
+                null))
             .ToList();
     }
 
@@ -2084,6 +2943,94 @@ public sealed class FieldWorkService(
         {
             Status = VisitStatus.InProgress,
             StartedUtc = DateTimeOffset.UtcNow
+        }, cancellationToken);
+    }
+
+    public async Task MarkVisitInProgressAsync(string companyId, string visitId, CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireCompanyRoleAsync(companyId, CompanyRole.CompanyUser, cancellationToken);
+
+        var visit = await store.GetVisitAsync(companyId, visitId, cancellationToken)
+            ?? throw new InvalidOperationException("Visit was not found.");
+
+        if (!string.Equals(visit.AssignedUserId, currentUser.UserId, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(visit.CompletedByUserId, currentUser.UserId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new UnauthorizedAccessException("Only the assigned user can update this visit.");
+        }
+
+        if (visit.Status != VisitStatus.Completed)
+        {
+            throw new InvalidOperationException("Only completed visits can be moved back to in progress.");
+        }
+
+        await store.UpsertVisitAsync(visit with
+        {
+            Status = VisitStatus.InProgress,
+            StartedUtc = DateTimeOffset.UtcNow
+        }, cancellationToken);
+    }
+
+    public async Task UpdateAssignedVisitDetailsAsync(
+        string companyId,
+        string visitId,
+        string notesToBusinessClient,
+        string notesToServiceClient,
+        string internalNotes,
+        IReadOnlyList<string> completedServiceIds,
+        IReadOnlyList<string> outOfScopeServiceIds,
+        CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireCompanyRoleAsync(companyId, CompanyRole.CompanyUser, cancellationToken);
+
+        var visit = await store.GetVisitAsync(companyId, visitId, cancellationToken)
+            ?? throw new InvalidOperationException("Visit was not found.");
+
+        if (!string.Equals(visit.AssignedUserId, currentUser.UserId, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(visit.CompletedByUserId, currentUser.UserId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new UnauthorizedAccessException("Only the assigned user can edit this visit.");
+        }
+
+        if (visit.Status is VisitStatus.Closed or VisitStatus.Canceled or VisitStatus.Skipped)
+        {
+            throw new InvalidOperationException("Closed, canceled, or skipped visits cannot be edited.");
+        }
+
+        var plannedIds = visit.PlannedServiceIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var normalizedCompletedIds = completedServiceIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (normalizedCompletedIds.Any(id => !plannedIds.Contains(id)))
+        {
+            throw new InvalidOperationException("Completed services must be part of the planned visit services.");
+        }
+
+        var activeServiceIds = (await store.GetServicesAsync(companyId, cancellationToken))
+            .Concat(await store.GetServicesAsync(GlobalCatalogScope.Pool, cancellationToken))
+            .Concat(await store.GetServicesAsync(GlobalCatalogScope.Landscape, cancellationToken))
+            .Where(service => service.IsActive)
+            .Select(service => service.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var normalizedOutOfScopeIds = outOfScopeServiceIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (normalizedOutOfScopeIds.Any(id => plannedIds.Contains(id) || !activeServiceIds.Contains(id)))
+        {
+            throw new InvalidOperationException("Out-of-scope services must be active services that are not already planned for the visit.");
+        }
+
+        await store.UpsertVisitAsync(visit with
+        {
+            NotesToBusinessClient = string.IsNullOrWhiteSpace(notesToBusinessClient) ? "" : notesToBusinessClient.Trim(),
+            NotesToServiceClient = string.IsNullOrWhiteSpace(notesToServiceClient) ? "" : notesToServiceClient.Trim(),
+            InternalNotes = string.IsNullOrWhiteSpace(internalNotes) ? "" : internalNotes.Trim(),
+            CompletedServiceIds = normalizedCompletedIds,
+            OutOfScopeServiceIds = normalizedOutOfScopeIds
         }, cancellationToken);
     }
 
@@ -2118,34 +3065,258 @@ public sealed class FieldWorkService(
         }
 
         var completedUtc = DateTimeOffset.UtcNow;
-        var completion = new VisitCompletion(
-            visit.Id,
-            companyId,
-            currentUser.UserId,
-            serviceIds,
-            materials,
-            customerNotes,
-            internalNotes,
-            completedUtc);
-
         var completedVisit = visit with
         {
             Status = VisitStatus.Completed,
-            CompletedUtc = completedUtc
+            CompletedUtc = completedUtc,
+            CompletedByUserId = currentUser.UserId,
+            CompletedServiceIds = serviceIds,
+            MaterialsUsed = materials,
+            NotesToBusinessClient = string.IsNullOrWhiteSpace(customerNotes) ? visit.NotesToBusinessClient : customerNotes.Trim(),
+            InternalNotes = string.IsNullOrWhiteSpace(internalNotes) ? visit.InternalNotes : internalNotes.Trim()
         };
 
         await store.UpsertVisitAsync(completedVisit, cancellationToken);
-        await store.UpsertVisitCompletionAsync(completion, cancellationToken);
 
         var client = await store.GetClientAsync(companyId, visit.CompanyClientId, cancellationToken)
             ?? throw new InvalidOperationException("Client was not found.");
         var user = await store.GetUserAsync(currentUser.UserId, cancellationToken);
 
         await notificationQueue.QueueVisitCompletedEmailAsync(
-            new ServiceHistoryItem(completedVisit, client, user, completion),
+            new ServiceHistoryItem(completedVisit, client, user),
             cancellationToken);
-        ServiceBusinessTelemetry.VisitCompletions.Add(1);
+        ServiceBusinessTelemetry.CompletedVisits.Add(1);
     }
+}
+
+public sealed class InvoicingJobService(IServiceBusinessStore store)
+{
+    public async Task<IReadOnlyList<Invoice>> CreateInvoicesForCompletedVisitsAsync(CancellationToken cancellationToken = default)
+    {
+        var created = new List<Invoice>();
+        var companies = await store.GetCompaniesAsync(cancellationToken);
+
+        foreach (var company in companies.Where(company => company.Status == CompanyStatus.Active))
+        {
+            var visits = await store.GetVisitsAsync(company.Id, cancellationToken);
+            foreach (var visit in visits.Where(visit => visit.Status == VisitStatus.Completed && string.IsNullOrWhiteSpace(visit.InvoiceId)))
+            {
+                var client = await store.GetClientAsync(company.Id, visit.CompanyClientId, cancellationToken);
+                if (client is null)
+                {
+                    continue;
+                }
+
+                var invoice = await BuildInvoiceAsync(company, client, visit, cancellationToken);
+                await store.UpsertInvoiceAsync(invoice, cancellationToken);
+                await store.UpsertVisitAsync(visit with { InvoiceId = invoice.InvoiceId }, cancellationToken);
+                await QueueInvoiceEmailAsync(company, client, invoice, cancellationToken);
+                created.Add(invoice);
+            }
+        }
+
+        return created;
+    }
+
+    private async Task<Invoice> BuildInvoiceAsync(
+        Company company,
+        CompanyClient client,
+        ServiceVisit visit,
+        CancellationToken cancellationToken)
+    {
+        var serviceCatalog = await GetAccessibleServicesAsync(company, cancellationToken);
+        var materialCatalog = await GetAccessibleMaterialsAsync(company, cancellationToken);
+        var billableServiceIds = visit.VisitType == VisitType.AdHocVisit
+            ? visit.PlannedServiceIds.Concat(visit.OutOfScopeServiceIds ?? [])
+            : visit.OutOfScopeServiceIds ?? [];
+        var serviceLines = billableServiceIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(id =>
+            {
+                var service = serviceCatalog.FirstOrDefault(s => string.Equals(s.Id, id, StringComparison.OrdinalIgnoreCase));
+                return new InvoiceServiceLine(
+                    id,
+                    service?.Name ?? id,
+                    service?.DefaultPrice ?? 0m);
+            })
+            .ToList();
+        var materialLines = (visit.OutOfScopeMaterials ?? [])
+            .Where(material => !string.IsNullOrWhiteSpace(material.MaterialId) && material.Quantity > 0)
+            .Select(material =>
+            {
+                var catalogItem = materialCatalog.FirstOrDefault(m => string.Equals(m.Id, material.MaterialId, StringComparison.OrdinalIgnoreCase));
+                var unitAmount = catalogItem?.DefaultBillableUnitPrice ?? 0m;
+                return new InvoiceMaterialLine(
+                    material.MaterialId,
+                    catalogItem?.Name ?? material.MaterialId,
+                    catalogItem?.UnitOfMeasure ?? "Each",
+                    material.Quantity,
+                    unitAmount,
+                    material.Quantity * unitAmount);
+            })
+            .ToList();
+        var servicePackageId = visit.VisitType == VisitType.ServicePackageVisit
+            ? client.ServicePackageId ?? company.ServicePackageId
+            : null;
+        var invoiceId = await GetNextInvoiceIdAsync(company.Id, cancellationToken);
+        var total = serviceLines.Sum(line => line.Amount) + materialLines.Sum(line => line.Amount);
+        var invoice = new Invoice(
+            Guid.NewGuid().ToString("N"),
+            company.Id,
+            invoiceId,
+            client.Id,
+            visit.Id,
+            servicePackageId,
+            serviceLines,
+            materialLines,
+            total,
+            InvoiceStatus.New,
+            "",
+            DateTimeOffset.UtcNow);
+
+        return invoice with { InvoiceHtml = BuildInvoiceHtml(company, client, visit, invoice) };
+    }
+
+    private async Task<string> GetNextInvoiceIdAsync(string companyId, CancellationToken cancellationToken)
+    {
+        var invoices = await store.GetInvoicesAsync(companyId, cancellationToken);
+        var next = invoices
+            .Select(invoice => int.TryParse(invoice.InvoiceId, out var value) ? value : 0)
+            .DefaultIfEmpty(0)
+            .Max() + 1;
+        return next.ToString("D6");
+    }
+
+    private async Task<IReadOnlyList<ServiceOffering>> GetAccessibleServicesAsync(Company company, CancellationToken cancellationToken)
+    {
+        var globalCatalogCompanyId = GlobalCatalogScope.For(await GetSystemModeForCompanyAsync(company, cancellationToken));
+        return (await store.GetServicesAsync(company.Id, cancellationToken))
+            .Concat(await store.GetServicesAsync(globalCatalogCompanyId, cancellationToken))
+            .Where(service => service.IsActive)
+            .GroupBy(service => service.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToList();
+    }
+
+    private async Task<IReadOnlyList<Material>> GetAccessibleMaterialsAsync(Company company, CancellationToken cancellationToken)
+    {
+        var globalCatalogCompanyId = GlobalCatalogScope.For(await GetSystemModeForCompanyAsync(company, cancellationToken));
+        return (await store.GetMaterialsAsync(company.Id, cancellationToken))
+            .Concat(await store.GetMaterialsAsync(globalCatalogCompanyId, cancellationToken))
+            .Where(material => material.IsActive)
+            .GroupBy(material => material.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToList();
+    }
+
+    private async Task<SystemMode> GetSystemModeForCompanyAsync(Company company, CancellationToken cancellationToken)
+    {
+        var companyType = (await store.GetCompanyTypesAsync(cancellationToken))
+            .FirstOrDefault(type => string.Equals(type.Id, company.CompanyTypeId, StringComparison.OrdinalIgnoreCase));
+        var searchable = companyType is null
+            ? company.CompanyTypeId
+            : $"{companyType.Id} {companyType.Name} {companyType.Description}";
+        return searchable.Contains("landscape", StringComparison.OrdinalIgnoreCase) ||
+            searchable.Contains("lawn", StringComparison.OrdinalIgnoreCase) ||
+            searchable.Contains("yard", StringComparison.OrdinalIgnoreCase) ||
+            searchable.Contains("tree", StringComparison.OrdinalIgnoreCase)
+            ? SystemMode.Landscape
+            : SystemMode.Pool;
+    }
+
+    private async Task QueueInvoiceEmailAsync(
+        Company company,
+        CompanyClient client,
+        Invoice invoice,
+        CancellationToken cancellationToken)
+    {
+        var log = new EmailLogEntry(
+            $"invoice-{invoice.InvoiceGuid}",
+            company.Id,
+            "Invoice",
+            client.Id,
+            client.Email,
+            client.Email,
+            $"Invoice {invoice.InvoiceId} from {company.Name}",
+            invoice.InvoiceHtml,
+            EmailDeliveryStatus.New,
+            null,
+            null,
+            DateTimeOffset.UtcNow,
+            null,
+            company.BusinessEmail,
+            "");
+
+        await store.UpsertEmailLogAsync(log, cancellationToken);
+    }
+
+    private static string BuildInvoiceHtml(Company company, CompanyClient client, ServiceVisit visit, Invoice invoice)
+    {
+        var serviceRows = invoice.AdditionalServices.Count == 0
+            ? "<tr><td colspan=\"3\">No additional services.</td></tr>"
+            : string.Concat(invoice.AdditionalServices.Select(line =>
+                $"<tr><td>{HtmlEncode(line.Name)}</td><td>Service</td><td>{line.Amount:C}</td></tr>"));
+        var materialRows = invoice.Materials.Count == 0
+            ? "<tr><td colspan=\"3\">No additional materials.</td></tr>"
+            : string.Concat(invoice.Materials.Select(line =>
+                $"<tr><td>{HtmlEncode(line.Name)} ({line.Quantity} {HtmlEncode(line.Unit)})</td><td>Material</td><td>{line.Amount:C}</td></tr>"));
+
+        return $"""
+        <html>
+        <body>
+            <h1>Invoice {HtmlEncode(invoice.InvoiceId)}</h1>
+            <p><strong>{HtmlEncode(company.Name)}</strong></p>
+            <p>Bill To: {HtmlEncode(client.DisplayName)}<br />{HtmlEncode(client.ServiceAddress)}</p>
+            <p>Visit: {HtmlEncode(string.IsNullOrWhiteSpace(visit.VisitName) ? visit.Id : visit.VisitName)} on {(visit.ScheduledDate == default ? "Unscheduled" : visit.ScheduledDate)}</p>
+            <table>
+                <thead><tr><th>Item</th><th>Type</th><th>Amount</th></tr></thead>
+                <tbody>{serviceRows}{materialRows}</tbody>
+            </table>
+            <h2>Total: {invoice.TotalCost:C}</h2>
+        </body>
+        </html>
+        """;
+    }
+
+    private static string HtmlEncode(string? value) => WebUtility.HtmlEncode(value ?? "");
+}
+
+public sealed class EmailJobService(IServiceBusinessStore store)
+{
+    public async Task<int> ProcessNewEmailLogsAsync(CancellationToken cancellationToken = default)
+    {
+        var settings = await store.GetSystemSettingsAsync(cancellationToken);
+        var logs = (await store.GetEmailLogsAsync(cancellationToken))
+            .Where(log => log.Status == EmailDeliveryStatus.New)
+            .OrderBy(log => log.CreatedUtc)
+            .ToList();
+        var processed = 0;
+
+        foreach (var log in logs)
+        {
+            var updated = settings.DevTest || IsValidEmail(log.RecipientEmail)
+                ? log with
+                {
+                    Status = EmailDeliveryStatus.Sent,
+                    SentUtc = DateTimeOffset.UtcNow,
+                    FailureReason = null
+                }
+                : log with
+                {
+                    Status = EmailDeliveryStatus.Failed,
+                    FailureReason = "Recipient email address is not valid."
+                };
+
+            await store.UpsertEmailLogAsync(updated, cancellationToken);
+            processed++;
+        }
+
+        return processed;
+    }
+
+    private static bool IsValidEmail(string email) =>
+        !string.IsNullOrWhiteSpace(email) && email.Contains('@', StringComparison.Ordinal);
 }
 
 public sealed class ClientPortalService(
@@ -2153,25 +3324,148 @@ public sealed class ClientPortalService(
     TenantAuthorizationService authorization,
     ICurrentUserContext currentUser)
 {
+    public async Task<CompanyClient> GetCurrentUserClientAsync(CancellationToken cancellationToken = default)
+    {
+        var context = await GetCurrentClientContextAsync(cancellationToken);
+        return context.Client;
+    }
+
+    public async Task<ServicePackage?> GetCurrentUserServicePackageAsync(
+        string globalCatalogCompanyId,
+        CancellationToken cancellationToken = default)
+    {
+        var context = await GetCurrentClientContextAsync(cancellationToken);
+        var company = await store.GetCompanyAsync(context.Membership.CompanyId, cancellationToken);
+        var servicePackageId = context.Client.ServicePackageId ?? company?.ServicePackageId;
+        if (string.IsNullOrWhiteSpace(servicePackageId))
+        {
+            return null;
+        }
+
+        var servicePackages = (await store.GetServicePackagesAsync(context.Membership.CompanyId, cancellationToken))
+            .Concat(await store.GetServicePackagesAsync(globalCatalogCompanyId, cancellationToken));
+        return servicePackages.FirstOrDefault(package => string.Equals(package.Id, servicePackageId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public async Task<PoolEquipmentOverview> GetCurrentUserPoolEquipmentOverviewAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var context = await GetCurrentClientContextAsync(cancellationToken);
+        var categories = await store.GetPoolEquipmentCategoriesAsync(EquipmentScope.HomeOwner, context.Client.Id, cancellationToken);
+        var items = await store.GetPoolEquipmentItemsAsync(EquipmentScope.HomeOwner, context.Client.Id, cancellationToken);
+        return BuildPoolEquipmentGroups(EquipmentScope.HomeOwner, context.Client.Id, categories, items);
+    }
+
+    public async Task<IReadOnlyList<ServiceOffering>> GetCurrentUserServicesAsync(CancellationToken cancellationToken = default)
+    {
+        var context = await GetCurrentClientContextAsync(cancellationToken);
+        return (await store.GetServicesAsync(context.Membership.CompanyId, cancellationToken))
+            .Where(service => service.IsActive)
+            .OrderBy(service => service.Name)
+            .ToList();
+    }
+
     public async Task<IReadOnlyList<ServiceHistoryItem>> GetCurrentUserServiceHistoryAsync(
         CancellationToken cancellationToken = default)
     {
-        var memberships = await store.GetMembershipsForUserAsync(currentUser.UserId, cancellationToken);
-        var membership = memberships
-            .Where(m =>
-                m.Role == CompanyRole.CompanyClientUser &&
-                m.Status == MembershipStatus.Active)
-            .OrderBy(m => m.CompanyId)
-            .FirstOrDefault()
-            ?? throw new UnauthorizedAccessException("An active company client membership is required.");
+        var context = await GetCurrentClientContextAsync(cancellationToken);
+        return await GetServiceHistoryAsync(context.Membership.CompanyId, context.Client.Id, cancellationToken);
+    }
 
-        var user = await store.GetUserAsync(currentUser.UserId, cancellationToken)
-            ?? throw new UnauthorizedAccessException("The current user profile was not found.");
-        var clients = await store.GetClientsAsync(membership.CompanyId, cancellationToken);
-        var client = ResolveClientForUser(membership.CompanyId, user, clients)
-            ?? throw new InvalidOperationException("A customer record was not found for the current client user.");
+    public async Task<IReadOnlyList<ServiceVisit>> GetCurrentUserVisitsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var context = await GetCurrentClientContextAsync(cancellationToken);
+        return (await store.GetVisitsForClientAsync(context.Membership.CompanyId, context.Client.Id, cancellationToken))
+            .OrderBy(visit => visit.ScheduledDate == default ? DateOnly.MaxValue : visit.ScheduledDate)
+            .ThenBy(visit => visit.ServiceWindowStart)
+            .ToList();
+    }
 
-        return await GetServiceHistoryAsync(membership.CompanyId, client.Id, cancellationToken);
+    public async Task UpdateCurrentUserVisitServiceProviderNotesAsync(
+        string visitId,
+        string? notesToServiceClient,
+        CancellationToken cancellationToken = default)
+    {
+        var context = await GetCurrentClientContextAsync(cancellationToken);
+        var visit = await store.GetVisitAsync(context.Membership.CompanyId, visitId, cancellationToken)
+            ?? throw new InvalidOperationException("Visit was not found.");
+        if (!string.Equals(visit.CompanyClientId, context.Client.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new UnauthorizedAccessException("The visit is not available to the current client.");
+        }
+
+        await store.UpsertVisitAsync(visit with
+        {
+            NotesToServiceClient = string.IsNullOrWhiteSpace(notesToServiceClient) ? "" : notesToServiceClient.Trim()
+        }, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<IndependentHomeOwnerServiceHistoryItem>> GetCurrentUserAddedServiceHistoryAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var context = await GetCurrentClientContextAsync(cancellationToken);
+        return (await store.GetIndependentHomeOwnerServiceHistoryAsync(context.Client.Id, cancellationToken))
+            .Where(item => !item.IsDeleted)
+            .OrderByDescending(item => item.ServiceDateTime)
+            .ToList();
+    }
+
+    public async Task<IndependentHomeOwnerServiceHistoryItem> AddCurrentUserServiceHistoryItemAsync(
+        string serviceId,
+        DateOnly serviceDate,
+        string? notes,
+        CancellationToken cancellationToken = default)
+    {
+        var context = await GetCurrentClientContextAsync(cancellationToken);
+        var service = await GetRequiredClientServiceAsync(context.Membership.CompanyId, serviceId, cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        var item = new IndependentHomeOwnerServiceHistoryItem(
+            $"client-service-{now:yyyyMMddHHmmssfff}",
+            context.Client.Id,
+            new DateTimeOffset(serviceDate.ToDateTime(TimeOnly.MinValue)),
+            string.IsNullOrWhiteSpace(notes) ? "" : notes.Trim(),
+            now,
+            service.Id,
+            service.Name);
+
+        await store.UpsertIndependentHomeOwnerServiceHistoryItemAsync(item, cancellationToken);
+        return item;
+    }
+
+    public async Task<IndependentHomeOwnerServiceHistoryItem> UpdateCurrentUserServiceHistoryItemAsync(
+        string itemId,
+        string serviceId,
+        DateOnly serviceDate,
+        string? notes,
+        CancellationToken cancellationToken = default)
+    {
+        var context = await GetCurrentClientContextAsync(cancellationToken);
+        var service = await GetRequiredClientServiceAsync(context.Membership.CompanyId, serviceId, cancellationToken);
+        var existing = (await store.GetIndependentHomeOwnerServiceHistoryAsync(context.Client.Id, cancellationToken))
+            .FirstOrDefault(item => item.Id == itemId && !item.IsDeleted)
+            ?? throw new InvalidOperationException("Service history item was not found.");
+
+        var updated = existing with
+        {
+            ServiceDateTime = new DateTimeOffset(serviceDate.ToDateTime(TimeOnly.MinValue)),
+            Notes = string.IsNullOrWhiteSpace(notes) ? "" : notes.Trim(),
+            ServiceId = service.Id,
+            ServiceName = service.Name
+        };
+
+        await store.UpsertIndependentHomeOwnerServiceHistoryItemAsync(updated, cancellationToken);
+        return updated;
+    }
+
+    public async Task DeleteCurrentUserServiceHistoryItemAsync(string itemId, CancellationToken cancellationToken = default)
+    {
+        var context = await GetCurrentClientContextAsync(cancellationToken);
+        var existing = (await store.GetIndependentHomeOwnerServiceHistoryAsync(context.Client.Id, cancellationToken))
+            .FirstOrDefault(item => item.Id == itemId && !item.IsDeleted)
+            ?? throw new InvalidOperationException("Service history item was not found.");
+
+        await store.UpsertIndependentHomeOwnerServiceHistoryItemAsync(existing with { IsDeleted = true }, cancellationToken);
     }
 
     public async Task<IReadOnlyList<ServiceHistoryItem>> GetServiceHistoryAsync(
@@ -2185,35 +3479,42 @@ public sealed class ClientPortalService(
         var client = await store.GetClientAsync(companyId, clientId, cancellationToken)
             ?? throw new InvalidOperationException("Client was not found.");
         var users = await store.GetUsersAsync(cancellationToken);
-        var completions = await Task.WhenAll(visits.Select(v => store.GetVisitCompletionAsync(companyId, v.Id, cancellationToken)));
 
         return visits
             .Where(v => v.Status == VisitStatus.Completed)
             .OrderByDescending(v => v.CompletedUtc)
-            .Select((visit, index) => new ServiceHistoryItem(
+            .Select(visit => new ServiceHistoryItem(
                 visit,
                 client,
-                users.FirstOrDefault(u => u.Id == visit.AssignedUserId),
-                completions[index]))
+                users.FirstOrDefault(u => u.Id == (visit.CompletedByUserId ?? visit.AssignedUserId))))
             .ToList();
     }
 
     private static CompanyClient? ResolveClientForUser(
-        string companyId,
+        CompanyMembership membership,
         AppUser user,
         IReadOnlyList<CompanyClient> clients)
     {
+        if (!string.IsNullOrWhiteSpace(membership.CompanyClientId))
+        {
+            var selectedClient = clients.FirstOrDefault(c => string.Equals(c.Id, membership.CompanyClientId, StringComparison.OrdinalIgnoreCase));
+            if (selectedClient is not null)
+            {
+                return selectedClient;
+            }
+        }
+
         var exact = clients.FirstOrDefault(c => c.Id == user.Id);
         if (exact is not null)
         {
             return exact;
         }
 
-        var generatedClientPrefix = $"{companyId}-client-";
+        var generatedClientPrefix = $"{membership.CompanyId}-client-";
         if (user.Id.StartsWith(generatedClientPrefix, StringComparison.OrdinalIgnoreCase))
         {
             var suffix = user.Id[generatedClientPrefix.Length..];
-            var generatedClient = clients.FirstOrDefault(c => c.Id == $"{companyId}-home-{suffix}");
+            var generatedClient = clients.FirstOrDefault(c => c.Id == $"{membership.CompanyId}-home-{suffix}");
             if (generatedClient is not null)
             {
                 return generatedClient;
@@ -2233,6 +3534,81 @@ public sealed class ClientPortalService(
 
         return clients.FirstOrDefault(c => string.Equals(c.Email, user.Email, StringComparison.OrdinalIgnoreCase));
     }
+
+    private async Task<ClientPortalContext> GetCurrentClientContextAsync(CancellationToken cancellationToken)
+    {
+        var memberships = await store.GetMembershipsForUserAsync(currentUser.UserId, cancellationToken);
+        var membership = memberships
+            .Where(m =>
+                m.Role == CompanyRole.CompanyClientUser &&
+                m.Status == MembershipStatus.Active)
+            .OrderBy(m => m.CompanyId)
+            .FirstOrDefault()
+            ?? throw new UnauthorizedAccessException("An active company client membership is required.");
+
+        var user = await store.GetUserAsync(currentUser.UserId, cancellationToken)
+            ?? throw new UnauthorizedAccessException("The current user profile was not found.");
+        var clients = await store.GetClientsAsync(membership.CompanyId, cancellationToken);
+        var client = ResolveClientForUser(membership, user, clients)
+            ?? throw new InvalidOperationException("A customer record was not found for the current client user.");
+
+        return new ClientPortalContext(user, membership, client);
+    }
+
+    private async Task<ServiceOffering> GetRequiredClientServiceAsync(
+        string companyId,
+        string serviceId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(serviceId))
+        {
+            throw new InvalidOperationException("Choose a service.");
+        }
+
+        return (await store.GetServicesAsync(companyId, cancellationToken))
+            .FirstOrDefault(service => service.IsActive && string.Equals(service.Id, serviceId, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException("Choose an active service.");
+    }
+
+    private static PoolEquipmentOverview BuildPoolEquipmentGroups(
+        EquipmentScope scope,
+        string scopeOwnerId,
+        IReadOnlyList<PoolEquipmentCategory> categories,
+        IReadOnlyList<PoolEquipmentItem> items)
+    {
+        var knownCategories = categories
+            .OrderByDescending(c => c.IsActive)
+            .ThenBy(c => c.Name)
+            .ToList();
+        var categoryIds = knownCategories.Select(c => c.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var groups = knownCategories
+            .Select(category => new PoolEquipmentCategoryGroup(
+                category,
+                items
+                    .Where(item => string.Equals(item.CategoryId, category.Id, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(item => item.Name)
+                    .ToList()))
+            .ToList();
+
+        var uncategorized = items
+            .Where(item => string.IsNullOrWhiteSpace(item.CategoryId) || !categoryIds.Contains(item.CategoryId))
+            .OrderBy(item => item.Name)
+            .ToList();
+
+        if (uncategorized.Count > 0)
+        {
+            groups.Add(new PoolEquipmentCategoryGroup(
+                new PoolEquipmentCategory("uncategorized-equipment", scope, scopeOwnerId, "", "Uncategorized Equipment", "Equipment without an assigned category.", false, true),
+                uncategorized));
+        }
+
+        return new PoolEquipmentOverview(groups);
+    }
+
+    private sealed record ClientPortalContext(
+        AppUser User,
+        CompanyMembership Membership,
+        CompanyClient Client);
 }
 
 public sealed class OnboardingService(IServiceBusinessStore store)
@@ -2240,9 +3616,40 @@ public sealed class OnboardingService(IServiceBusinessStore store)
     public async Task<IReadOnlyList<Company>> GetAvailableCompaniesAsync(CancellationToken cancellationToken = default)
     {
         var companies = await store.GetCompaniesAsync(cancellationToken);
+        var companyTypes = await GetCompanyTypesForCurrentSystemModeAsync(cancellationToken);
+        var companyTypeIds = companyTypes.Select(type => type.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         return companies
-            .Where(c => c.Status == CompanyStatus.Active)
+            .Where(c => c.Status == CompanyStatus.Active && companyTypeIds.Contains(c.CompanyTypeId))
             .OrderBy(c => c.Name)
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<CompanyClient>> GetAvailableBusinessClientsAsync(
+        string companyId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(companyId))
+        {
+            return [];
+        }
+
+        var company = await store.GetCompanyAsync(companyId, cancellationToken);
+        if (company is null || company.Status != CompanyStatus.Active)
+        {
+            return [];
+        }
+
+        var allowedCompanies = await GetAvailableCompaniesAsync(cancellationToken);
+        if (!allowedCompanies.Any(c => string.Equals(c.Id, company.Id, StringComparison.OrdinalIgnoreCase)))
+        {
+            return [];
+        }
+
+        return (await store.GetClientsAsync(company.Id, cancellationToken))
+            .Where(client => client.IsActive)
+            .OrderBy(client => client.ServiceAddress)
+            .ThenBy(client => client.DisplayName)
             .ToList();
     }
 
@@ -2423,10 +3830,16 @@ public sealed class OnboardingService(IServiceBusinessStore store)
         var existing = await store.GetUserByEmailAsync(submission.Email, cancellationToken);
         if (existing is not null)
         {
+            if (existing.IsSystemAdmin && submission.AccountType != RegistrationAccountType.BusinessOwner)
+            {
+                throw new InvalidOperationException("This email is already registered as a system administrator. Use a different Gmail account for homeowner or business user registration.");
+            }
+
             var updated = existing with
             {
                 DisplayName = submission.DisplayName.Trim(),
-                Phone = string.IsNullOrWhiteSpace(submission.Phone) ? existing.Phone : submission.Phone.Trim()
+                Phone = string.IsNullOrWhiteSpace(submission.Phone) ? existing.Phone : submission.Phone.Trim(),
+                IsTestUser = existing.IsTestUser || submission.AuthenticationSkipped
             };
             await store.UpsertUserAsync(updated, cancellationToken);
             return updated;
@@ -2441,7 +3854,7 @@ public sealed class OnboardingService(IServiceBusinessStore store)
             submission.Phone.Trim(),
             null,
             false,
-            false,
+            submission.AuthenticationSkipped,
             true,
             UserStatus.Active);
 
@@ -2460,10 +3873,12 @@ public sealed class OnboardingService(IServiceBusinessStore store)
         }
 
         var companyId = CreateSlug(submission.BusinessName);
-        var companyTypes = await store.GetCompanyTypesAsync(cancellationToken);
+        var companyTypes = await GetCompanyTypesForCurrentSystemModeAsync(cancellationToken);
+        var companyType = companyTypes.FirstOrDefault()
+            ?? throw new InvalidOperationException("No active business type is configured for this service.");
         var company = new Company(
             companyId,
-            companyTypes.First(t => t.IsActive).Id,
+            companyType.Id,
             submission.BusinessName.Trim(),
             string.IsNullOrWhiteSpace(submission.BusinessEmail) ? submission.Email : submission.BusinessEmail.Trim(),
             string.IsNullOrWhiteSpace(submission.BusinessPhone) ? submission.Phone : submission.BusinessPhone.Trim(),
@@ -2471,6 +3886,7 @@ public sealed class OnboardingService(IServiceBusinessStore store)
             CompanyStatus.Active);
 
         await store.UpsertCompanyAsync(company, cancellationToken);
+        await store.UpsertClientTypeAsync(BusinessClientTypeReferenceData.HomeOwner(company.Id), cancellationToken);
 
         var membership = new CompanyMembership(
             company.Id,
@@ -2519,6 +3935,24 @@ public sealed class OnboardingService(IServiceBusinessStore store)
         var company = await store.GetCompanyAsync(submission.CompanyId, cancellationToken)
             ?? throw new InvalidOperationException("Selected business was not found.");
 
+        string? companyClientId = null;
+        if (role == CompanyRole.CompanyClientUser)
+        {
+            if (string.IsNullOrWhiteSpace(submission.BusinessClientId))
+            {
+                throw new InvalidOperationException("Choose the business client address you want to access.");
+            }
+
+            var client = await store.GetClientAsync(company.Id, submission.BusinessClientId.Trim(), cancellationToken)
+                ?? throw new InvalidOperationException("Selected business client was not found.");
+            if (!client.IsActive)
+            {
+                throw new InvalidOperationException("Selected business client is inactive.");
+            }
+
+            companyClientId = client.Id;
+        }
+
         var membership = new CompanyMembership(
             company.Id,
             user.Id,
@@ -2526,11 +3960,34 @@ public sealed class OnboardingService(IServiceBusinessStore store)
             MembershipStatus.Pending,
             DateTimeOffset.UtcNow,
             null,
-            null);
+            null,
+            companyClientId);
         await store.UpsertMembershipAsync(membership, cancellationToken);
 
         return new RegistrationResult(user, company, membership, RequiresApproval: true, Message: message);
     }
+
+    private async Task<IReadOnlyList<CompanyType>> GetCompanyTypesForCurrentSystemModeAsync(CancellationToken cancellationToken)
+    {
+        var settings = await store.GetSystemSettingsAsync(cancellationToken);
+        var companyTypes = await store.GetCompanyTypesAsync(cancellationToken);
+
+        return companyTypes
+            .Where(type => type.IsActive && CompanyTypeMatchesSystemMode(type, settings.SystemMode))
+            .OrderBy(type => type.Name)
+            .ToList();
+    }
+
+    private static bool CompanyTypeMatchesSystemMode(CompanyType type, SystemMode systemMode)
+    {
+        var searchable = $"{type.Id} {type.Name} {type.Description}";
+        return systemMode == SystemMode.Pool
+            ? searchable.Contains("pool", StringComparison.OrdinalIgnoreCase)
+            : ContainsAny(searchable, "landscape", "landscaping", "lawn", "yard", "tree");
+    }
+
+    private static bool ContainsAny(string value, params string[] terms) =>
+        terms.Any(term => value.Contains(term, StringComparison.OrdinalIgnoreCase));
 
     private async Task<RegistrationResult> RegisterIndependentHomeOwnerAsync(
         AppUser user,

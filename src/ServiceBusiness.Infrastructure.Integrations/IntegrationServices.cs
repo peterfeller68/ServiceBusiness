@@ -22,7 +22,7 @@ public sealed class AzureCommunicationEmailNotificationQueue(
         Your service visit was completed on {item.Visit.CompletedUtc?.LocalDateTime:g}.
 
         Notes:
-        {item.Completion?.CustomerNotes}
+        {item.Visit.NotesToBusinessClient}
         """;
 
         var recipient = item.AssignedUser ?? new AppUser(

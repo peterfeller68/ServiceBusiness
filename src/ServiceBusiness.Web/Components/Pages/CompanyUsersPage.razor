@@ -3,6 +3,7 @@
 @rendermode InteractiveServer
 @using ServiceBusiness.Application
 @using ServiceBusiness.Domain
+@inject ICurrentUserContext CurrentUser
 @inject CompanyAdminService CompanyAdminService
 @inject ServiceBusiness.Web.CurrentCompanyContext CurrentCompany
 
@@ -49,61 +50,7 @@ else
 
     <section class="management-panel">
         <div class="management-panel-header">
-            <h2>Pending Access</h2>
-            <button class="icon-button" type="button" title="Toggle pending access" @onclick="TogglePendingAccess">@(pendingAccessExpanded ? "^" : "v")</button>
-        </div>
-        @if (pendingAccessExpanded)
-        {
-            <div class="management-panel-body">
-                @if (overview.PendingAccessRequests.Count == 0)
-                {
-                    <div class="callout">
-                        <strong>No pending requests</strong>
-                        <p>New business user and business client registrations will appear here for owner review.</p>
-                    </div>
-                }
-                else
-                {
-                    <div class="management-table-wrap">
-                        <table class="management-table">
-                            <thead>
-                                <tr>
-                                    <th>User ID</th>
-                                    <th>Status</th>
-                                    <th>Name</th>
-                                    <th>Email</th>
-                                    <th>Role</th>
-                                    <th>Requested</th>
-                                    <th class="actions">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var request in overview.PendingAccessRequests)
-                                {
-                                    <tr>
-                                        <td>@request.User.Id</td>
-                                        <td>@request.Membership.Status</td>
-                                        <td>@request.User.DisplayName</td>
-                                        <td>@request.User.Email</td>
-                                        <td>@request.Role.DisplayName</td>
-                                        <td>@request.Membership.RequestedUtc.LocalDateTime.ToString("g")</td>
-                                        <td class="actions">
-                                            <button class="icon-button" type="button" title="Approve request" @onclick="() => DecideAsync(request, MembershipStatus.Active)">Ok</button>
-                                            <button class="icon-button danger" type="button" title="Reject request" @onclick="() => DecideAsync(request, MembershipStatus.Rejected)">Del</button>
-                                        </td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-                }
-            </div>
-        }
-    </section>
-
-    <section class="management-panel">
-        <div class="management-panel-header">
-            <h2>Company Access</h2>
+            <h2>Users</h2>
             <button class="icon-button" type="button" title="Toggle company access" @onclick="ToggleCompanyAccess">@(companyAccessExpanded ? "^" : "v")</button>
         </div>
         @if (companyAccessExpanded)
@@ -113,11 +60,12 @@ else
                     <table class="management-table">
                         <thead>
                             <tr>
-                                <th>User ID</th>
                                 <th>Status</th>
                                 <th>Name</th>
                                 <th>Email</th>
-                                <th>Role</th>
+                                <th>Flags</th>
+                                <th>User Type</th>
+                                <th>Approved</th>
                                 <th class="actions">Action</th>
                             </tr>
                         </thead>
@@ -125,29 +73,35 @@ else
                             @foreach (var row in overview.Users)
                             {
                                 var key = RoleEditKey(row);
+                                var isCurrentUser = IsCurrentUser(row.User);
                                 <tr>
-                                    <td>@row.User.Id</td>
-                                    <td>@row.Membership.Status</td>
+                                    <td>
+                                        <label class="switch-control" title="Toggle active state">
+                                            <input type="checkbox" checked="@(row.Membership.Status == MembershipStatus.Active)" disabled="@(isCurrentUser || row.Membership.Status == MembershipStatus.Pending)" @onchange="args => SetAccessStatusAsync(row, GetChecked(args) ? MembershipStatus.Active : MembershipStatus.Inactive)" />
+                                            <span></span>
+                                        </label>
+                                    </td>
                                     <td>@row.User.DisplayName</td>
                                     <td>@row.User.Email</td>
+                                    <td>@GetUserFlags(row)</td>
                                     <td>
-                                        <select class="form-control compact-select" @bind="roleEdits[key]">
+                                        <select class="form-control compact-select" @bind="roleEdits[key]" disabled="@isCurrentUser">
                                             @foreach (var role in overview.Roles)
                                             {
                                                 <option value="@role.Role">@role.DisplayName</option>
                                             }
                                         </select>
                                     </td>
+                                    <td>
+                                        <label class="switch-control" title="Toggle approval state">
+                                            <input type="checkbox" checked="@(row.Membership.Status == MembershipStatus.Active)" disabled="@isCurrentUser" @onchange="args => SetApprovalAsync(row, GetChecked(args))" />
+                                            <span></span>
+                                        </label>
+                                    </td>
                                     <td class="actions">
-                                        <button class="icon-button" type="button" title="Update role" @onclick="() => UpdateRoleAsync(row)">Save</button>
-                                        @if (row.Membership.Status == MembershipStatus.Active)
-                                        {
-                                            <button class="icon-button danger" type="button" title="Deactivate access" @onclick="() => SetAccessStatusAsync(row, MembershipStatus.Inactive)">Del</button>
-                                        }
-                                        else
-                                        {
-                                            <button class="icon-button" type="button" title="Reactivate access" @onclick="() => SetAccessStatusAsync(row, MembershipStatus.Active)">On</button>
-                                        }
+                                        <button class="icon-button icon-only" type="button" title="Edit user role" aria-label="Edit user role" disabled="@isCurrentUser" @onclick="() => UpdateRoleAsync(row)">
+                                            <span class="action-icon edit-icon" aria-hidden="true"></span>
+                                        </button>
                                     </td>
                                 </tr>
                             }
@@ -163,13 +117,14 @@ else
     private string companyId = "";
     private CompanyUserManagementOverview? overview;
     private readonly Dictionary<string, CompanyRole> roleEdits = [];
-    private bool pendingAccessExpanded = true;
     private bool companyAccessExpanded = true;
+    private string currentUserId = "";
     private string? message;
     private string? errorMessage;
 
     protected override async Task OnInitializedAsync()
     {
+        currentUserId = CurrentUser.UserId;
         companyId = await CurrentCompany.GetRequiredCompanyIdAsync([CompanyRole.CompanyAdmin]);
         await LoadAsync();
     }
@@ -199,6 +154,19 @@ else
                 status);
             message = $"{row.User.DisplayName} access is now {status.ToString().ToLowerInvariant()}.";
         });
+    }
+
+    private async Task SetApprovalAsync(CompanyUserManagementRow row, bool isApproved)
+    {
+        if (row.Membership.Status == MembershipStatus.Pending)
+        {
+            await DecideAsync(
+                new AccessRequest(row.Membership, row.User, overview!.Company, row.Role),
+                isApproved ? MembershipStatus.Active : MembershipStatus.Rejected);
+            return;
+        }
+
+        await SetAccessStatusAsync(row, isApproved ? MembershipStatus.Active : MembershipStatus.Inactive);
     }
 
     private async Task UpdateRoleAsync(CompanyUserManagementRow row)
@@ -247,7 +215,26 @@ else
 
     private static string RoleEditKey(CompanyUserManagementRow row) => $"{row.User.Id}|{row.Membership.Role}";
 
-    private void TogglePendingAccess() => pendingAccessExpanded = !pendingAccessExpanded;
-
     private void ToggleCompanyAccess() => companyAccessExpanded = !companyAccessExpanded;
+
+    private static bool GetChecked(ChangeEventArgs args) => args.Value is bool value && value;
+
+    private bool IsCurrentUser(AppUser user) =>
+        string.Equals(user.Id, currentUserId, StringComparison.OrdinalIgnoreCase);
+
+    private static string GetUserFlags(CompanyUserManagementRow row)
+    {
+        var flags = new List<string> { row.Role.DisplayName };
+        if (row.User.IsTestUser)
+        {
+            flags.Add("Test User");
+        }
+
+        if (row.Membership.Status == MembershipStatus.Pending)
+        {
+            flags.Add("Pending");
+        }
+
+        return string.Join(", ", flags);
+    }
 }

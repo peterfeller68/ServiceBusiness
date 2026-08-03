@@ -1,0 +1,92 @@
+@page "/admin/delete-user"
+@rendermode InteractiveServer
+@using ServiceBusiness.Domain
+@inject ServiceBusiness.Application.PlatformAdminService PlatformAdminService
+@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+
+<PageTitle>Delete User</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">System Administrator</p>
+        <h1>Delete User</h1>
+        <p class="lede">Physically remove a user and user-owned records from storage.</p>
+    </div>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="notice success">@message</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="notice error">@errorMessage</div>
+}
+
+<section class="management-panel">
+    <div class="management-panel-header">
+        <h2>User Removal</h2>
+    </div>
+    <div class="management-panel-body">
+        <EditForm Model="form" OnValidSubmit="DeleteUserAsync" FormName="delete-user">
+            <div class="editor-panel">
+                <div class="form-grid">
+                    <label>
+                        User ID
+                        <InputText class="form-control" @bind-Value="form.UserId" />
+                    </label>
+                    <label>
+                        Type DELETE to confirm
+                        <InputText class="form-control" @bind-Value="form.Confirmation" />
+                    </label>
+                </div>
+                <div class="form-actions">
+                    <button class="button danger" type="submit" disabled="@IsDeleteDisabled">Delete User</button>
+                </div>
+            </div>
+        </EditForm>
+    </div>
+</section>
+
+@code {
+    private readonly DeleteUserForm form = new();
+    private string? message;
+    private string? errorMessage;
+    private bool IsDeleteDisabled =>
+        string.IsNullOrWhiteSpace(form.UserId) ||
+        !string.Equals(form.Confirmation, "DELETE", StringComparison.Ordinal);
+
+    protected override void OnInitialized()
+    {
+        DemoUser.UserId = "sys-admin";
+    }
+
+    private async Task DeleteUserAsync()
+    {
+        message = null;
+        errorMessage = null;
+
+        try
+        {
+            var result = await PlatformAdminService.DeleteUserAsync(form.UserId);
+            message = $"Deleted user {result.UserId}. Removed {result.RowsDeleted} storage row{(result.RowsDeleted == 1 ? "" : "s")}.";
+            form.UserId = "";
+            form.Confirmation = "";
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private sealed class DeleteUserForm
+    {
+        public string UserId { get; set; } = "";
+        public string Confirmation { get; set; } = "";
+    }
+}

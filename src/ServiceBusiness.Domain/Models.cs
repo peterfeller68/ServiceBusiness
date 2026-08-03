@@ -41,21 +41,38 @@ public enum BillingFrequency
 
 public enum VisitStatus
 {
+    New,
+    Unscheduled,
     Scheduled,
     Assigned,
     InProgress,
     Completed,
+    Closed,
     Canceled,
     Skipped
 }
 
+public enum VisitType
+{
+    ServicePackageVisit,
+    AdHocVisit
+}
+
 public enum EmailDeliveryStatus
 {
+    New,
     Queued,
     Sent,
     Failed,
     TestRerouted,
     Suppressed
+}
+
+public enum InvoiceStatus
+{
+    New,
+    Invoiced,
+    Paid
 }
 
 public enum UserStatus
@@ -78,6 +95,36 @@ public enum SystemMode
 }
 
 public sealed record SystemSettings(SystemMode SystemMode, bool DevTest = false);
+
+public static class GlobalCatalogScope
+{
+    public const string Pool = "Pool_Global";
+    public const string Landscape = "LandScape_Global";
+    public const string Legacy = "global";
+
+    public static string For(SystemMode mode) =>
+        mode == SystemMode.Landscape ? Landscape : Pool;
+
+    public static bool IsGlobal(string companyId) =>
+        string.Equals(companyId, Pool, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(companyId, Landscape, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(companyId, Legacy, StringComparison.OrdinalIgnoreCase);
+
+    public static string? ServiceNameFor(string companyId)
+    {
+        if (string.Equals(companyId, Pool, StringComparison.OrdinalIgnoreCase))
+        {
+            return "Pool";
+        }
+
+        if (string.Equals(companyId, Landscape, StringComparison.OrdinalIgnoreCase))
+        {
+            return "LandScape";
+        }
+
+        return null;
+    }
+}
 
 public sealed record AppUser(
     string Id,
@@ -112,7 +159,8 @@ public sealed record Company(
     string BusinessEmail,
     string BusinessPhone,
     string TimeZone,
-    CompanyStatus Status);
+    CompanyStatus Status,
+    string? ServicePackageId = null);
 
 public sealed record CompanyMembership(
     string CompanyId,
@@ -121,7 +169,8 @@ public sealed record CompanyMembership(
     MembershipStatus Status,
     DateTimeOffset RequestedUtc,
     DateTimeOffset? DecidedUtc,
-    string? DecidedByUserId);
+    string? DecidedByUserId,
+    string? CompanyClientId = null);
 
 public sealed record ClientType(
     string Id,
@@ -168,7 +217,8 @@ public sealed record CompanyClient(
     string AccessNotes,
     string ClientTypeId,
     decimal? RateOverride,
-    bool IsActive);
+    bool IsActive,
+    string? ServicePackageId = null);
 
 public sealed record IndependentHomeOwnerProfile(
     string UserId,
@@ -197,6 +247,20 @@ public sealed record ServiceOffering(
     bool IsTaxable,
     bool IsActive);
 
+public sealed record ServicePackage(
+    string Id,
+    string CompanyId,
+    string Name,
+    string Recurrence,
+    string Description,
+    decimal Cost,
+    bool IsActive,
+    IReadOnlyList<ServicePackageService> Services);
+
+public sealed record ServicePackageService(
+    string ServiceId,
+    string Recurrence);
+
 public sealed record ServiceSeedRow(
     string Category,
     string Name,
@@ -217,7 +281,8 @@ public sealed record Material(
     bool IsTaxable,
     bool IsActive,
     string Brand = "",
-    string ModelNo = "");
+    string ModelNo = "",
+    string Description = "");
 
 public sealed record MaterialSeedRow(
     string Brand,
@@ -239,7 +304,8 @@ public sealed record PoolEquipmentItem(
     string? ImageUrl,
     bool IsActive,
     string ModelNo = "",
-    string Manufacturer = "");
+    string Manufacturer = "",
+    string Comment = "");
 
 public sealed record PoolEquipmentSeedRow(
     string Manufacturer,
@@ -264,27 +330,54 @@ public sealed record ServiceVisit(
     int RouteOrder,
     string Notes,
     DateTimeOffset? StartedUtc,
-    DateTimeOffset? CompletedUtc);
-
-public sealed record VisitCompletion(
-    string VisitId,
-    string CompanyId,
-    string CompletedByUserId,
-    IReadOnlyList<string> ServiceIds,
-    IReadOnlyList<MaterialUsage> Materials,
-    string CustomerNotes,
-    string InternalNotes,
-    DateTimeOffset CompletedUtc);
+    DateTimeOffset? CompletedUtc,
+    VisitType VisitType = VisitType.ServicePackageVisit,
+    string VisitName = "",
+    string NotesToBusinessClient = "",
+    string NotesToServiceClient = "",
+    string InternalNotes = "",
+    string? InvoiceId = null,
+    IReadOnlyList<string>? OutOfScopeServiceIds = null,
+    IReadOnlyList<MaterialUsage>? OutOfScopeMaterials = null,
+    string? CompletedByUserId = null,
+    IReadOnlyList<string>? CompletedServiceIds = null,
+    IReadOnlyList<MaterialUsage>? MaterialsUsed = null);
 
 public sealed record MaterialUsage(
     string MaterialId,
     decimal Quantity);
 
+public sealed record Invoice(
+    string InvoiceGuid,
+    string CompanyId,
+    string InvoiceId,
+    string CompanyClientId,
+    string VisitId,
+    string? ServicePackageId,
+    IReadOnlyList<InvoiceServiceLine> AdditionalServices,
+    IReadOnlyList<InvoiceMaterialLine> Materials,
+    decimal TotalCost,
+    InvoiceStatus Status,
+    string InvoiceHtml,
+    DateTimeOffset CreatedUtc);
+
+public sealed record InvoiceServiceLine(
+    string ServiceId,
+    string Name,
+    decimal Amount);
+
+public sealed record InvoiceMaterialLine(
+    string MaterialId,
+    string Name,
+    string Unit,
+    decimal Quantity,
+    decimal UnitAmount,
+    decimal Amount);
+
 public sealed record ServiceHistoryItem(
     ServiceVisit Visit,
     CompanyClient Client,
-    AppUser? AssignedUser,
-    VisitCompletion? Completion);
+    AppUser? AssignedUser);
 
 public sealed record IndependentHomeOwnerServiceHistoryItem(
     string Id,
@@ -344,7 +437,9 @@ public sealed record RegistrationSubmission(
     string? ServiceArea,
     IReadOnlyList<string> InitialServices,
     string? HomeAddress = null,
-    string? HomeAccessNotes = null);
+    string? HomeAccessNotes = null,
+    bool AuthenticationSkipped = false,
+    string? BusinessClientId = null);
 
 public sealed record GoogleUserProfile(
     string GoogleSubjectId,
@@ -388,7 +483,9 @@ public sealed record EmailLogEntry(
     string? ProviderMessageId,
     string? FailureReason,
     DateTimeOffset CreatedUtc,
-    DateTimeOffset? SentUtc);
+    DateTimeOffset? SentUtc,
+    string FromEmail = "",
+    string CcEmail = "");
 
 public sealed record UserManagementRow(
     AppUser User,
@@ -404,6 +501,21 @@ public sealed record PlatformUserManagementOverview(
     int PendingMemberships,
     IReadOnlyList<RoleDefinition> Roles,
     IReadOnlyList<UserManagementRow> Users);
+
+public sealed record UserDeletionResult(
+    string UserId,
+    int RowsDeleted);
+
+public sealed record BusinessClientManagementRow(
+    Company Company,
+    CompanyClient Client,
+    ClientType? ClientType);
+
+public sealed record PoolConfigurationClientRow(
+    string ScopeOwnerId,
+    string CompanyName,
+    string ClientAddress,
+    string ClientType);
 
 public sealed record CompanyUserManagementRow(
     AppUser User,

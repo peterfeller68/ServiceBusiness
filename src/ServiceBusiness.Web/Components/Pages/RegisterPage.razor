@@ -1,9 +1,15 @@
 @page "/register"
 @rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Authorization
 @using ServiceBusiness.Application
 @using ServiceBusiness.Domain
+@inject AuthenticationStateProvider AuthenticationStateProvider
 @inject OnboardingService OnboardingService
+@inject UserProfileService ProfileService
 @inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+@inject IConfiguration Configuration
+@inject NavigationManager Navigation
 
 <PageTitle>Register</PageTitle>
 
@@ -11,7 +17,7 @@
     <div>
         <p class="eyebrow">Registration</p>
         <h1>Create your account</h1>
-        <p class="lede">Choose your account type, continue with a Gmail address, and complete the details for your role.</p>
+        <p class="lede">Choose your account type, authenticate with Gmail, then complete the details for your role.</p>
     </div>
 </section>
 
@@ -20,75 +26,99 @@
     <div class="notice error">@errorMessage</div>
 }
 
-@if (result is not null)
+@if (step == RegistrationStep.AccountType)
 {
-    <div class="notice success">
-        <strong>@result.Message</strong>
-        @if (result.Company is not null)
+    <EditForm Model="form" OnValidSubmit="ContinueToAuthentication" FormName="register-account-type">
+        <section class="form-panel">
+            <h2>Account type</h2>
+            <InputRadioGroup @bind-Value="form.AccountType">
+                <div class="choice-grid">
+                    <label class="choice-card">
+                        <InputRadio Value="RegistrationAccountType.BusinessOwner" />
+                        <span>
+                            <strong>Business owner</strong>
+                            <small>Create a company profile and start setup.</small>
+                        </span>
+                    </label>
+                    <label class="choice-card">
+                        <InputRadio Value="RegistrationAccountType.BusinessUser" />
+                        <span>
+                            <strong>Business employee</strong>
+                            <small>Request access to an existing business.</small>
+                        </span>
+                    </label>
+                    <label class="choice-card">
+                        <InputRadio Value="RegistrationAccountType.BusinessClient" />
+                        <span>
+                            <strong>Business client</strong>
+                            <small>Request homeowner portal access.</small>
+                        </span>
+                    </label>
+                    <label class="choice-card">
+                        <InputRadio Value="RegistrationAccountType.IndependentHomeOwner" />
+                        <span>
+                            <strong>Home owner</strong>
+                            <small>Manage your own pool equipment without joining a business.</small>
+                        </span>
+                    </label>
+                </div>
+            </InputRadioGroup>
+            <div class="form-actions">
+                <button class="button primary" type="submit">Continue</button>
+                <a class="button" href="">Cancel</a>
+            </div>
+        </section>
+    </EditForm>
+}
+else if (step == RegistrationStep.Authentication)
+{
+    <section class="form-panel">
+        <h2>Gmail authentication</h2>
+        <p class="form-note">Continue with Gmail to verify your account before completing registration.</p>
+        <div class="form-actions">
+            <a class="button primary auth-button" href="@GoogleRegistrationUrl">Continue with Google</a>
+            <button class="button" type="button" @onclick="BackToAccountType">Back</button>
+        </div>
+
+        @if (devTest)
         {
-            <p>@result.Company.Name &middot; @result.Membership?.Role &middot; @result.Membership?.Status</p>
+            <div class="auth-divider">DevTest</div>
+            <p class="form-note">Skip Google Auth is available because DevTest mode is enabled.</p>
+            <div class="form-actions">
+                <button class="button" type="button" @onclick="SkipGoogleAuth">Skip Google Auth</button>
+            </div>
         }
-        @if (result.RequiresApproval)
-        {
-            <a class="button" href="signin">Check Sign-In Status</a>
-        }
-        else
-        {
-            <a class="button primary" href="@SuccessHref">@(result.Company is null ? "Manage Pool Equipment" : "Open Dashboard")</a>
-        }
-    </div>
+    </section>
 }
 else
 {
-    <EditForm Model="form" OnValidSubmit="SubmitAsync" FormName="register">
+    <EditForm Model="form" OnValidSubmit="SubmitAsync" FormName="register-details">
         <DataAnnotationsValidator />
         <div class="onboarding-grid">
             <section class="form-panel">
-                <h2>Account type</h2>
-                <InputRadioGroup @bind-Value="form.AccountType">
-                    <div class="choice-grid">
-                        <label class="choice-card">
-                            <InputRadio Value="RegistrationAccountType.BusinessOwner" />
-                            <span>
-                                <strong>Business owner</strong>
-                                <small>Create a company profile and start setup.</small>
-                            </span>
-                        </label>
-                        <label class="choice-card">
-                            <InputRadio Value="RegistrationAccountType.BusinessUser" />
-                            <span>
-                                <strong>Business user</strong>
-                                <small>Request access to an existing business.</small>
-                            </span>
-                        </label>
-                        <label class="choice-card">
-                            <InputRadio Value="RegistrationAccountType.BusinessClient" />
-                            <span>
-                                <strong>Business client</strong>
-                                <small>Request homeowner portal access.</small>
-                            </span>
-                        </label>
-                        <label class="choice-card">
-                            <InputRadio Value="RegistrationAccountType.IndependentHomeOwner" />
-                            <span>
-                                <strong>Independent homeowner</strong>
-                                <small>Manage your own pool equipment without joining a business.</small>
-                            </span>
-                        </label>
-                    </div>
-                </InputRadioGroup>
-            </section>
-
-            <section class="form-panel">
-                <h2>Gmail account</h2>
-                <label>
-                    Gmail email
-                    <InputText class="form-control" @bind-Value="form.Email" placeholder="name@gmail.com" />
-                </label>
-                <label>
-                    Display name
-                    <InputText class="form-control" @bind-Value="form.DisplayName" />
-                </label>
+                <h2>Account</h2>
+                @if (authenticatedWithGoogle)
+                {
+                    <label>
+                        Gmail email
+                        <input class="form-control" value="@form.Email" disabled />
+                    </label>
+                    <label>
+                        Display name
+                        <InputText class="form-control" @bind-Value="form.DisplayName" />
+                    </label>
+                }
+                else
+                {
+                    <label>
+                        Gmail email
+                        <InputText class="form-control" @bind-Value="form.Email" placeholder="name@gmail.com" />
+                    </label>
+                    <label>
+                        Display name
+                        <InputText class="form-control" @bind-Value="form.DisplayName" />
+                    </label>
+                }
                 <label>
                     Phone
                     <InputText class="form-control" @bind-Value="form.Phone" />
@@ -117,10 +147,6 @@ else
                             <InputText class="form-control" @bind-Value="form.ServiceArea" />
                         </label>
                     </div>
-                    <label>
-                        Initial services
-                        <InputTextArea class="form-control" @bind-Value="form.InitialServicesText" placeholder="Standard Pool Cleaning&#10;Chemical Balance" />
-                    </label>
                 </section>
             }
             else if (form.AccountType is RegistrationAccountType.BusinessUser or RegistrationAccountType.BusinessClient)
@@ -129,7 +155,7 @@ else
                     <h2>Business association</h2>
                     <label>
                         Business
-                        <InputSelect class="form-control" @bind-Value="form.CompanyId">
+                        <InputSelect class="form-control" Value="form.CompanyId" ValueChanged="@((string? selectedCompanyId) => OnCompanyChangedAsync(selectedCompanyId))" ValueExpression="() => form.CompanyId">
                             <option value="">Choose a business</option>
                             @foreach (var company in companies)
                             {
@@ -137,13 +163,26 @@ else
                             }
                         </InputSelect>
                     </label>
+                    @if (form.AccountType == RegistrationAccountType.BusinessClient)
+                    {
+                        <label>
+                            Business client address
+                            <InputSelect class="form-control" @bind-Value="form.BusinessClientId" disabled="@string.IsNullOrWhiteSpace(form.CompanyId)">
+                                <option value="">Choose an address</option>
+                                @foreach (var client in businessClients)
+                                {
+                                    <option value="@client.Id">@GetBusinessClientAddressLabel(client)</option>
+                                }
+                            </InputSelect>
+                        </label>
+                    }
                     <p class="form-note">Access stays pending until the business owner approves the request.</p>
                 </section>
             }
             else
             {
                 <section class="form-panel wide-panel">
-                    <h2>Homeowner setup</h2>
+                    <h2>Home owner setup</h2>
                     <div class="form-grid">
                         <label class="wide">
                             Home address
@@ -160,22 +199,105 @@ else
         </div>
 
         <div class="form-actions">
-            <button class="button primary" type="submit">Continue with Gmail</button>
-            <a class="button" href="">Cancel</a>
+            <button class="button primary" type="submit">Complete Registration</button>
+            <button class="button" type="button" @onclick="BackToAuthentication">Back</button>
         </div>
     </EditForm>
 }
 
 @code {
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "accountType")]
+    public string? AccountTypeQuery { get; set; }
+
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "auth")]
+    public string? AuthQuery { get; set; }
+
     private readonly RegisterForm form = new();
     private IReadOnlyList<Company> companies = [];
-    private RegistrationResult? result;
+    private IReadOnlyList<CompanyClient> businessClients = [];
+    private RegistrationStep step = RegistrationStep.AccountType;
+    private bool devTest;
+    private bool authenticatedWithGoogle;
     private string? errorMessage;
-    private string SuccessHref => result?.Company is null ? "poolequipment" : "dashboard";
+    private string GoogleRegistrationUrl => $"auth/google?returnUrl={Uri.EscapeDataString($"/register?accountType={form.AccountType}&auth=google")}";
 
     protected override async Task OnInitializedAsync()
     {
+        devTest = SystemSettingsConfiguration.IsDevTestEnabled(Configuration);
         companies = await OnboardingService.GetAvailableCompaniesAsync();
+        var googleReturn = ApplyAccountTypeQuery();
+
+        var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        if (googleReturn &&
+            string.Equals(AuthQuery, "google", StringComparison.OrdinalIgnoreCase) &&
+            authenticationState.User.Identity?.IsAuthenticated == true)
+        {
+            var user = await ProfileService.GetCurrentProfileAsync();
+            form.Email = user.Email;
+            form.DisplayName = user.DisplayName;
+            form.Phone = user.Phone ?? "";
+            authenticatedWithGoogle = !user.IsTestUser;
+            step = RegistrationStep.Details;
+        }
+    }
+
+    private bool ApplyAccountTypeQuery()
+    {
+        if (Enum.TryParse<RegistrationAccountType>(AccountTypeQuery, ignoreCase: true, out var parsed))
+        {
+            form.AccountType = parsed;
+            step = RegistrationStep.Authentication;
+            return true;
+        }
+
+        return false;
+    }
+
+    private void ContinueToAuthentication()
+    {
+        errorMessage = null;
+        step = RegistrationStep.Authentication;
+    }
+
+    private void BackToAccountType()
+    {
+        errorMessage = null;
+        step = RegistrationStep.AccountType;
+    }
+
+    private void BackToAuthentication()
+    {
+        errorMessage = null;
+        step = authenticatedWithGoogle ? RegistrationStep.Details : RegistrationStep.Authentication;
+    }
+
+    private async Task OnCompanyChangedAsync(string? selectedCompanyId)
+    {
+        form.CompanyId = selectedCompanyId;
+        form.BusinessClientId = null;
+        businessClients = form.AccountType == RegistrationAccountType.BusinessClient && !string.IsNullOrWhiteSpace(form.CompanyId)
+            ? await OnboardingService.GetAvailableBusinessClientsAsync(form.CompanyId)
+            : [];
+    }
+
+    private static string GetBusinessClientAddressLabel(CompanyClient client) =>
+        string.IsNullOrWhiteSpace(client.DisplayName)
+            ? client.ServiceAddress
+            : $"{client.ServiceAddress} ({client.DisplayName})";
+
+    private void SkipGoogleAuth()
+    {
+        if (!devTest)
+        {
+            errorMessage = "Test mode is not enabled. Use Google authentication.";
+            return;
+        }
+
+        errorMessage = null;
+        authenticatedWithGoogle = false;
+        step = RegistrationStep.Details;
     }
 
     private async Task SubmitAsync()
@@ -184,7 +306,7 @@ else
 
         try
         {
-            result = await OnboardingService.RegisterAsync(new RegistrationSubmission(
+            var result = await OnboardingService.RegisterAsync(new RegistrationSubmission(
                 form.AccountType,
                 form.Email,
                 form.DisplayName,
@@ -194,16 +316,27 @@ else
                 form.BusinessPhone,
                 form.BusinessEmail,
                 form.ServiceArea,
-                form.InitialServices,
+                [],
                 form.HomeAddress,
-                form.HomeAccessNotes));
+                form.HomeAccessNotes,
+                !authenticatedWithGoogle,
+                form.BusinessClientId));
 
             DemoUser.UserId = result.User.Id;
+            var registeredUserId = Uri.EscapeDataString(result.User.Id);
+            Navigation.NavigateTo($"auth/registration-signin?userId={registeredUserId}&returnUrl=/dashboard", forceLoad: true);
         }
         catch (InvalidOperationException ex)
         {
             errorMessage = ex.Message;
         }
+    }
+
+    private enum RegistrationStep
+    {
+        AccountType,
+        Authentication,
+        Details
     }
 
     private sealed class RegisterForm
@@ -213,17 +346,12 @@ else
         public string DisplayName { get; set; } = "";
         public string Phone { get; set; } = "";
         public string? CompanyId { get; set; }
+        public string? BusinessClientId { get; set; }
         public string? BusinessName { get; set; }
         public string? BusinessEmail { get; set; }
         public string? BusinessPhone { get; set; }
         public string? ServiceArea { get; set; }
         public string? HomeAddress { get; set; }
         public string? HomeAccessNotes { get; set; }
-        public string InitialServicesText { get; set; } = "Standard Pool Cleaning\r\nChemical Balance";
-
-        public IReadOnlyList<string> InitialServices =>
-            InitialServicesText
-                .Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .ToList();
     }
 }

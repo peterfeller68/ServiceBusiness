@@ -1,0 +1,250 @@
+@page "/invoices"
+@page "/admin/invoices"
+@rendermode InteractiveServer
+@using ServiceBusiness.Application
+@using ServiceBusiness.Domain
+@inject CompanyAdminService CompanyAdminService
+@inject OnboardingService OnboardingService
+@inject PlatformAdminService PlatformAdminService
+@inject ICurrentUserContext CurrentUser
+@inject ServiceBusiness.Web.CurrentCompanyContext CurrentCompany
+@inject ServiceBusiness.Web.ApplicationModeService ApplicationMode
+@inject NavigationManager Navigation
+
+<PageTitle>Invoices</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">@PageEyebrow</p>
+        <h1>Invoices</h1>
+        <p class="lede">Review generated visit invoices and invoice email status.</p>
+    </div>
+</section>
+
+@if (isLoading)
+{
+    <p>Loading invoices...</p>
+}
+else
+{
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <div class="notice success">@message</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="notice error">@errorMessage</div>
+    }
+
+    @if (!CanViewInvoices)
+    {
+        <p>You do not have access to invoices.</p>
+    }
+    else if (invoices.Count == 0)
+    {
+        <div class="callout">
+            <strong>No invoices generated yet</strong>
+            <p>Completed visits without an invoice are picked up by the invoicing service.</p>
+        </div>
+    }
+    else
+    {
+        <section class="management-panel">
+            <div class="management-panel-header">
+                <h2>Invoices</h2>
+            </div>
+            <div class="management-panel-body">
+                <div class="management-table-wrap">
+                    <table class="management-table">
+                        <thead>
+                            <tr>
+                                <th>Invoice ID</th>
+                                @if (IsSystemAdminView)
+                                {
+                                    <th>Service Client</th>
+                                }
+                                <th>Business Client</th>
+                                <th>Visit</th>
+                                <th>Total</th>
+                                <th>Status</th>
+                                <th class="actions">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var invoice in invoices)
+                            {
+                                <tr>
+                                    <td>@invoice.InvoiceId</td>
+                                    @if (IsSystemAdminView)
+                                    {
+                                        <td>@GetCompanyName(invoice.CompanyId)</td>
+                                    }
+                                    <td>@GetClientName(invoice)</td>
+                                    <td>@invoice.VisitId</td>
+                                    <td>@invoice.TotalCost.ToString("C")</td>
+                                    <td>@invoice.Status</td>
+                                    <td class="actions">
+                                        @if (invoice.Status == InvoiceStatus.New)
+                                        {
+                                            <button class="icon-button icon-only" type="button" title="Mark invoiced" aria-label="Mark invoiced" @onclick="() => SetInvoiceStatusAsync(invoice, InvoiceStatus.Invoiced)">
+                                                <span class="action-icon check-icon" aria-hidden="true"></span>
+                                            </button>
+                                        }
+                                        @if (invoice.Status == InvoiceStatus.Invoiced)
+                                        {
+                                            <button class="icon-button icon-only" type="button" title="Mark paid" aria-label="Mark paid" @onclick="() => SetInvoiceStatusAsync(invoice, InvoiceStatus.Paid)">
+                                                <span class="action-icon check-icon" aria-hidden="true"></span>
+                                            </button>
+                                        }
+                                        <button class="icon-button icon-only" type="button" title="Show invoice info" aria-label="Show invoice info" @onclick="() => selectedInvoice = invoice">
+                                            <span class="action-icon info-icon" aria-hidden="true"></span>
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    }
+}
+
+@if (selectedInvoice is not null)
+{
+    <div class="photo-modal-backdrop" @onclick="CloseInfo">
+        <div class="photo-modal" @onclick:stopPropagation="true">
+            <div class="photo-modal-header">
+                <strong>Invoice @selectedInvoice.InvoiceId</strong>
+                <button class="icon-button icon-only" type="button" title="Close invoice info" aria-label="Close invoice info" @onclick="CloseInfo">x</button>
+            </div>
+            <div class="data-list">
+                <article class="row-card"><strong>Invoice GUID</strong><p>@selectedInvoice.InvoiceGuid</p></article>
+                <article class="row-card"><strong>Service Package</strong><p>@(selectedInvoice.ServicePackageId ?? "-")</p></article>
+                <article class="row-card"><strong>Additional Services</strong><p>@GetServiceLines(selectedInvoice)</p></article>
+                <article class="row-card"><strong>Materials</strong><p>@GetMaterialLines(selectedInvoice)</p></article>
+                <article class="row-card"><strong>Total</strong><p>@selectedInvoice.TotalCost.ToString("C")</p></article>
+                <article class="row-card"><strong>Status</strong><p>@selectedInvoice.Status</p></article>
+                <article class="row-card"><strong>Created</strong><p>@selectedInvoice.CreatedUtc.ToLocalTime().ToString("g")</p></article>
+                <article class="row-card"><strong>Invoice HTML</strong><p>@selectedInvoice.InvoiceHtml</p></article>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool isLoading = true;
+    private UserAccessOverview? overview;
+    private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
+    private IReadOnlyList<CompanyType> companyTypes = [];
+    private IReadOnlyList<Company> companies = [];
+    private readonly Dictionary<string, IReadOnlyList<CompanyClient>> clientsByCompany = new(StringComparer.OrdinalIgnoreCase);
+    private List<Invoice> invoices = [];
+    private Invoice? selectedInvoice;
+    private string companyId = "";
+    private string? message;
+    private string? errorMessage;
+
+    private bool IsSystemAdminView => overview?.User.IsSystemAdmin == true && Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("admin/invoices", StringComparison.OrdinalIgnoreCase);
+    private bool IsBusinessOwner => overview?.Companies.Any(access => access.Status == MembershipStatus.Active && access.Role == CompanyRole.CompanyAdmin) == true;
+    private bool CanViewInvoices => IsSystemAdminView || IsBusinessOwner;
+    private string PageEyebrow => IsSystemAdminView ? "System Administrator" : "Business Owner";
+
+    protected override async Task OnInitializedAsync()
+    {
+        appMode = await ApplicationMode.GetCurrentAsync();
+        overview = await OnboardingService.GetAccessOverviewAsync(CurrentUser.UserId);
+        if (!CanViewInvoices)
+        {
+            isLoading = false;
+            return;
+        }
+
+        if (IsSystemAdminView)
+        {
+            companyTypes = await PlatformAdminService.GetCompanyTypesAsync();
+            companies = (await PlatformAdminService.GetCompaniesAsync())
+                .Where(CompanyMatchesMode)
+                .OrderBy(company => company.Name)
+                .ToList();
+        }
+        else
+        {
+            companyId = await CurrentCompany.GetRequiredCompanyIdAsync([CompanyRole.CompanyAdmin]);
+            companies = overview.Companies
+                .Where(access => string.Equals(access.Company.Id, companyId, StringComparison.OrdinalIgnoreCase))
+                .Select(access => access.Company)
+                .ToList();
+        }
+
+        await LoadInvoicesAsync();
+        isLoading = false;
+    }
+
+    private async Task LoadInvoicesAsync()
+    {
+        invoices = [];
+        clientsByCompany.Clear();
+        foreach (var company in companies)
+        {
+            clientsByCompany[company.Id] = await CompanyAdminService.GetClientsAsync(company.Id);
+            invoices.AddRange(await CompanyAdminService.GetInvoicesAsync(company.Id));
+        }
+
+        invoices = invoices.OrderByDescending(invoice => invoice.CreatedUtc).ToList();
+    }
+
+    private async Task SetInvoiceStatusAsync(Invoice invoice, InvoiceStatus status)
+    {
+        message = null;
+        errorMessage = null;
+        try
+        {
+            await CompanyAdminService.SetInvoiceStatusAsync(invoice.CompanyId, invoice.InvoiceId, status);
+            message = $"Invoice {invoice.InvoiceId} marked {status}.";
+            await LoadInvoicesAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private string GetCompanyName(string selectedCompanyId) =>
+        companies.FirstOrDefault(company => string.Equals(company.Id, selectedCompanyId, StringComparison.OrdinalIgnoreCase))?.Name
+        ?? selectedCompanyId;
+
+    private string GetClientName(Invoice invoice) =>
+        clientsByCompany.TryGetValue(invoice.CompanyId, out var clients)
+            ? clients.FirstOrDefault(client => string.Equals(client.Id, invoice.CompanyClientId, StringComparison.OrdinalIgnoreCase))?.DisplayName ?? invoice.CompanyClientId
+            : invoice.CompanyClientId;
+
+    private static string GetServiceLines(Invoice invoice) =>
+        invoice.AdditionalServices.Count == 0
+            ? "-"
+            : string.Join(", ", invoice.AdditionalServices.Select(line => $"{line.Name} {line.Amount:C}"));
+
+    private static string GetMaterialLines(Invoice invoice) =>
+        invoice.Materials.Count == 0
+            ? "-"
+            : string.Join(", ", invoice.Materials.Select(line => $"{line.Name} {line.Quantity} {line.Unit} {line.Amount:C}"));
+
+    private void CloseInfo() => selectedInvoice = null;
+
+    private bool CompanyMatchesMode(Company company)
+    {
+        var type = companyTypes.FirstOrDefault(t => string.Equals(t.Id, company.CompanyTypeId, StringComparison.OrdinalIgnoreCase));
+        var searchable = type is null ? company.CompanyTypeId : $"{type.Id} {type.Name} {type.Description}";
+        return appMode.IsPoolMode
+            ? searchable.Contains("pool", StringComparison.OrdinalIgnoreCase)
+            : ContainsAny(searchable, "landscape", "landscaping", "lawn", "yard", "tree");
+    }
+
+    private static bool ContainsAny(string value, params string[] terms) =>
+        terms.Any(term => value.Contains(term, StringComparison.OrdinalIgnoreCase));
+}

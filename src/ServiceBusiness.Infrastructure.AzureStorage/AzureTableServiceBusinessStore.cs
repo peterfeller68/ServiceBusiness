@@ -128,6 +128,15 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
         return profile with { PoolEquipmentPhotos = photos };
     }
 
+    public async Task<IReadOnlyList<IndependentHomeOwnerProfile>> GetIndependentHomeOwnerProfilesAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        return (await GetPartitionAsync<IndependentHomeOwnerProfile>("IndependentHomeOwnerProfiles", "HOMEOWNER_PROFILE", cancellationToken))
+            .OrderBy(profile => profile.HomeAddress)
+            .ThenBy(profile => profile.UserId)
+            .ToList();
+    }
+
     public async Task<IReadOnlyList<HomeOwnerPoolEquipmentPhoto>> GetHomeOwnerPoolEquipmentPhotosAsync(string userId, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
@@ -198,6 +207,12 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
         return await GetPartitionAsync<ServiceOffering>("Services", ServicePartition(companyId), cancellationToken);
     }
 
+    public async Task<IReadOnlyList<ServicePackage>> GetServicePackagesAsync(string companyId, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        return await GetPartitionAsync<ServicePackage>("ServicePackages", ServicePackagePartition(companyId), cancellationToken);
+    }
+
     public async Task<IReadOnlyList<Material>> GetMaterialsAsync(string companyId, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
@@ -215,6 +230,13 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
         await EnsureInitializedAsync(cancellationToken);
         var visits = await GetPartitionAsync<ServiceVisit>("ServiceVisits", CompanyPartition(companyId), cancellationToken);
         return visits.Where(v => v.ScheduledDate == date).OrderBy(v => v.ServiceWindowStart).ToList();
+    }
+
+    public async Task<IReadOnlyList<ServiceVisit>> GetVisitsAsync(string companyId, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        var visits = await GetPartitionAsync<ServiceVisit>("ServiceVisits", CompanyPartition(companyId), cancellationToken);
+        return visits.OrderBy(v => v.ScheduledDate).ThenBy(v => v.ServiceWindowStart).ToList();
     }
 
     public async Task<IReadOnlyList<ServiceVisit>> GetVisitsForUserByDateAsync(string companyId, string userId, DateOnly date, CancellationToken cancellationToken = default)
@@ -237,10 +259,17 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
         return await GetAsync<ServiceVisit>("ServiceVisits", CompanyPartition(companyId), visitId, cancellationToken);
     }
 
-    public async Task<VisitCompletion?> GetVisitCompletionAsync(string companyId, string visitId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<Invoice>> GetInvoicesAsync(string companyId, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
-        return await GetAsync<VisitCompletion>("VisitCompletions", CompanyPartition(companyId), visitId, cancellationToken);
+        var invoices = await GetPartitionAsync<Invoice>("Invoices", CompanyPartition(companyId), cancellationToken);
+        return invoices.OrderByDescending(i => i.CreatedUtc).ToList();
+    }
+
+    public async Task<Invoice?> GetInvoiceAsync(string companyId, string invoiceId, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        return await GetAsync<Invoice>("Invoices", CompanyPartition(companyId), invoiceId, cancellationToken);
     }
 
     public async Task<IReadOnlyList<EmailLogEntry>> GetEmailLogsAsync(CancellationToken cancellationToken = default)
@@ -278,6 +307,12 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
         await EnsureInitializedAsync(cancellationToken);
         await UpsertAsync("CompanyMemberships", CompanyPartition(membership.CompanyId), MembershipRow(membership.UserId, membership.Role), membership, cancellationToken);
         await UpsertAsync("UserCompanyMemberships", UserPartition(membership.UserId), UserMembershipRow(membership.CompanyId, membership.Role), membership, cancellationToken);
+    }
+
+    public async Task UpsertClientTypeAsync(ClientType clientType, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        await UpsertAsync("ClientTypes", CompanyPartition(clientType.CompanyId), clientType.Id, clientType, cancellationToken);
     }
 
     public async Task UpsertClientAsync(CompanyClient client, CancellationToken cancellationToken = default)
@@ -331,6 +366,60 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
         await DeleteHomeOwnerPoolEquipmentPhotoRowsAsync(table, AzureTableKey.ToStorageKey(HomeOwnerPhotoPartition(userId)), photoId, cancellationToken);
     }
 
+    public async Task<UserDeletionResult> DeleteUserAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+
+        var user = await GetUserAsync(userId, cancellationToken);
+        var memberships = await GetMembershipsForUserAsync(userId, cancellationToken);
+        var rowsDeleted = 0;
+
+        rowsDeleted += await DeleteEntityIfExistsAsync("Users", "USER", userId, cancellationToken);
+
+        if (user is not null)
+        {
+            rowsDeleted += await DeleteEntityIfExistsAsync("UserByEmail", "EMAIL", NormalizeEmail(user.Email), cancellationToken);
+            if (!string.IsNullOrWhiteSpace(user.GoogleSubjectId))
+            {
+                rowsDeleted += await DeleteEntityIfExistsAsync("UserByGoogleSubject", "GOOGLE_SUBJECT", user.GoogleSubjectId, cancellationToken);
+            }
+        }
+
+        rowsDeleted += await DeletePartitionRowsAsync("UserCompanyMemberships", UserPartition(userId), cancellationToken);
+        foreach (var membership in memberships)
+        {
+            rowsDeleted += await DeleteEntityIfExistsAsync(
+                "CompanyMemberships",
+                CompanyPartition(membership.CompanyId),
+                MembershipRow(membership.UserId, membership.Role),
+                cancellationToken);
+        }
+
+        rowsDeleted += await DeleteEntityIfExistsAsync("IndependentHomeOwnerProfiles", "HOMEOWNER_PROFILE", userId, cancellationToken);
+        rowsDeleted += await DeletePartitionRowsAsync("HomeOwnerPoolEquipmentPhotos", HomeOwnerPhotoPartition(userId), cancellationToken);
+        rowsDeleted += await DeletePartitionRowsAsync("IndependentHomeOwnerServiceHistory", UserPartition(userId), cancellationToken);
+        rowsDeleted += await DeletePartitionRowsAsync("ServiceCategories", ServicePartition(userId), cancellationToken);
+        rowsDeleted += await DeletePartitionRowsAsync("Services", ServicePartition(userId), cancellationToken);
+        rowsDeleted += await DeletePartitionRowsAsync("MaterialCategories", MaterialPartition(userId), cancellationToken);
+        rowsDeleted += await DeletePartitionRowsAsync("Materials", MaterialPartition(userId), cancellationToken);
+        rowsDeleted += await DeletePartitionRowsAsync("PoolEquipmentCategories", EquipmentPartition(EquipmentScope.HomeOwner, userId), cancellationToken);
+        rowsDeleted += await DeletePartitionRowsAsync("PoolEquipmentItems", EquipmentPartition(EquipmentScope.HomeOwner, userId), cancellationToken);
+        rowsDeleted += await DeleteRowsMatchingAsync<ServiceVisit>(
+            "ServiceVisits",
+            visit => string.Equals(visit.AssignedUserId, userId, StringComparison.OrdinalIgnoreCase),
+            cancellationToken);
+        rowsDeleted += await DeleteRowsMatchingAsync<Invoice>(
+            "Invoices",
+            invoice => string.Equals(invoice.CompanyClientId, userId, StringComparison.OrdinalIgnoreCase),
+            cancellationToken);
+        rowsDeleted += await DeleteRowsMatchingAsync<EmailLogEntry>(
+            "EmailLogs",
+            emailLog => string.Equals(emailLog.RecipientUserId, userId, StringComparison.OrdinalIgnoreCase),
+            cancellationToken);
+
+        return new UserDeletionResult(userId, rowsDeleted);
+    }
+
     public async Task UpsertIndependentHomeOwnerServiceHistoryItemAsync(IndependentHomeOwnerServiceHistoryItem item, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
@@ -361,6 +450,12 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
         await UpsertAsync("Services", ServicePartition(service.CompanyId), service.Id, service, cancellationToken);
     }
 
+    public async Task UpsertServicePackageAsync(ServicePackage servicePackage, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        await UpsertAsync("ServicePackages", ServicePackagePartition(servicePackage.CompanyId), servicePackage.Id, servicePackage, cancellationToken);
+    }
+
     public async Task UpsertMaterialAsync(Material material, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
@@ -384,6 +479,12 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
             cancellationToken);
     }
 
+    public async Task DeleteServicePackageAsync(string companyId, string packageId, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        await DeleteEntityIfExistsAsync("ServicePackages", ServicePackagePartition(companyId), packageId, cancellationToken);
+    }
+
     public async Task DeletePoolEquipmentItemAsync(EquipmentScope scope, string scopeOwnerId, string itemId, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
@@ -395,16 +496,22 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
             cancellationToken);
     }
 
+    public async Task DeleteVisitAsync(string companyId, string visitId, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        await DeleteEntityIfExistsAsync("ServiceVisits", CompanyPartition(companyId), visitId, cancellationToken);
+    }
+
     public async Task UpsertVisitAsync(ServiceVisit visit, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
         await UpsertAsync("ServiceVisits", CompanyPartition(visit.CompanyId), visit.Id, visit, cancellationToken);
     }
 
-    public async Task UpsertVisitCompletionAsync(VisitCompletion completion, CancellationToken cancellationToken = default)
+    public async Task UpsertInvoiceAsync(Invoice invoice, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
-        await UpsertAsync("VisitCompletions", CompanyPartition(completion.CompanyId), completion.VisitId, completion, cancellationToken);
+        await UpsertAsync("Invoices", CompanyPartition(invoice.CompanyId), invoice.InvoiceId, invoice, cancellationToken);
     }
 
     public async Task UpsertEmailLogAsync(EmailLogEntry emailLog, CancellationToken cancellationToken = default)
@@ -495,6 +602,34 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
             await UpsertWithoutInitializationAsync("CompanyTypes", "COMPANY_TYPE", type.Id, type, cancellationToken);
         }
 
+        foreach (var globalCatalogCompanyId in new[] { GlobalCatalogScope.Pool, GlobalCatalogScope.Landscape })
+        {
+            foreach (var category in await seed.GetServiceCategoriesAsync(globalCatalogCompanyId, cancellationToken))
+            {
+                await UpsertWithoutInitializationAsync("ServiceCategories", ServicePartition(category.CompanyId), category.Id, category, cancellationToken);
+            }
+
+            foreach (var category in await seed.GetMaterialCategoriesAsync(globalCatalogCompanyId, cancellationToken))
+            {
+                await UpsertWithoutInitializationAsync("MaterialCategories", MaterialPartition(category.CompanyId), category.Id, category, cancellationToken);
+            }
+
+            foreach (var service in await seed.GetServicesAsync(globalCatalogCompanyId, cancellationToken))
+            {
+                await UpsertWithoutInitializationAsync("Services", ServicePartition(service.CompanyId), service.Id, service, cancellationToken);
+            }
+
+            foreach (var servicePackage in await seed.GetServicePackagesAsync(globalCatalogCompanyId, cancellationToken))
+            {
+                await UpsertWithoutInitializationAsync("ServicePackages", ServicePackagePartition(servicePackage.CompanyId), servicePackage.Id, servicePackage, cancellationToken);
+            }
+
+            foreach (var material in await seed.GetMaterialsAsync(globalCatalogCompanyId, cancellationToken))
+            {
+                await UpsertWithoutInitializationAsync("Materials", MaterialPartition(material.CompanyId), material.Id, material, cancellationToken);
+            }
+        }
+
         foreach (var company in await seed.GetCompaniesAsync(cancellationToken))
         {
             await UpsertWithoutInitializationAsync("Companies", "COMPANY", company.Id, company, cancellationToken);
@@ -530,6 +665,11 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
                 await UpsertWithoutInitializationAsync("Services", ServicePartition(service.CompanyId), service.Id, service, cancellationToken);
             }
 
+            foreach (var servicePackage in await seed.GetServicePackagesAsync(company.Id, cancellationToken))
+            {
+                await UpsertWithoutInitializationAsync("ServicePackages", ServicePackagePartition(servicePackage.CompanyId), servicePackage.Id, servicePackage, cancellationToken);
+            }
+
             foreach (var material in await seed.GetMaterialsAsync(company.Id, cancellationToken))
             {
                 await UpsertWithoutInitializationAsync("Materials", MaterialPartition(material.CompanyId), material.Id, material, cancellationToken);
@@ -553,11 +693,6 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
             foreach (var visit in await seed.GetVisitsForClientAsync(company.Id, "client-1", cancellationToken))
             {
                 await UpsertWithoutInitializationAsync("ServiceVisits", CompanyPartition(visit.CompanyId), visit.Id, visit, cancellationToken);
-                var completion = await seed.GetVisitCompletionAsync(company.Id, visit.Id, cancellationToken);
-                if (completion is not null)
-                {
-                    await UpsertWithoutInitializationAsync("VisitCompletions", CompanyPartition(completion.CompanyId), completion.VisitId, completion, cancellationToken);
-                }
             }
         }
 
@@ -659,6 +794,74 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
         }
     }
 
+    private async Task<int> DeleteEntityIfExistsAsync(
+        string tableName,
+        string partitionKey,
+        string rowKey,
+        CancellationToken cancellationToken)
+    {
+        var table = tableServiceClient.GetTableClient(tableName);
+        try
+        {
+            await table.DeleteEntityAsync(
+                AzureTableKey.ToStorageKey(partitionKey),
+                AzureTableKey.ToStorageKey(rowKey),
+                ETag.All,
+                cancellationToken);
+            return 1;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return 0;
+        }
+    }
+
+    private async Task<int> DeletePartitionRowsAsync(
+        string tableName,
+        string partitionKey,
+        CancellationToken cancellationToken)
+    {
+        var table = tableServiceClient.GetTableClient(tableName);
+        var storagePartitionKey = AzureTableKey.ToStorageKey(partitionKey);
+        var rowKeys = new List<string>();
+
+        await foreach (var entity in table.QueryAsync<TableEntity>(e => e.PartitionKey == storagePartitionKey, cancellationToken: cancellationToken))
+        {
+            rowKeys.Add(entity.RowKey);
+        }
+
+        foreach (var rowKey in rowKeys)
+        {
+            await table.DeleteEntityAsync(storagePartitionKey, rowKey, ETag.All, cancellationToken);
+        }
+
+        return rowKeys.Count;
+    }
+
+    private async Task<int> DeleteRowsMatchingAsync<T>(
+        string tableName,
+        Func<T, bool> predicate,
+        CancellationToken cancellationToken)
+    {
+        var table = tableServiceClient.GetTableClient(tableName);
+        var keys = new List<(string PartitionKey, string RowKey)>();
+
+        await foreach (var entity in table.QueryAsync<TableEntity>(cancellationToken: cancellationToken))
+        {
+            if (predicate(Deserialize<T>(entity)))
+            {
+                keys.Add((entity.PartitionKey, entity.RowKey));
+            }
+        }
+
+        foreach (var (partitionKey, rowKey) in keys)
+        {
+            await table.DeleteEntityAsync(partitionKey, rowKey, ETag.All, cancellationToken);
+        }
+
+        return keys.Count;
+    }
+
     private static IEnumerable<string> Chunk(string value, int size)
     {
         for (var index = 0; index < value.Length; index += size)
@@ -702,15 +905,33 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
 
     private static string HomeOwnerPhotoPartition(string userId) => $"HOMEOWNER_PHOTOS_{userId}";
 
-    internal static string ServicePartition(string companyId) =>
-        string.Equals(companyId, "global", StringComparison.OrdinalIgnoreCase)
-            ? "SERVICES_Global_global"
-            : $"SERVICES_Company_{companyId}";
+    internal static string ServicePartition(string companyId)
+    {
+        var serviceName = GlobalCatalogScope.ServiceNameFor(companyId);
+        return serviceName is not null
+            ? $"SERVICES_{serviceName}_Global"
+            : string.Equals(companyId, GlobalCatalogScope.Legacy, StringComparison.OrdinalIgnoreCase)
+                ? "SERVICES_Global_global"
+                : $"SERVICES_Company_{companyId}";
+    }
 
-    internal static string MaterialPartition(string companyId) =>
-        string.Equals(companyId, "global", StringComparison.OrdinalIgnoreCase)
-            ? "MATERIALS_GLOBAL_global"
-            : CompanyPartition(companyId);
+    internal static string ServicePackagePartition(string companyId)
+    {
+        var serviceName = GlobalCatalogScope.ServiceNameFor(companyId);
+        return serviceName is not null
+            ? $"SERVICEPACKAGES_{serviceName}_Global"
+            : $"SERVICEPACKAGES_Company_{companyId}";
+    }
+
+    internal static string MaterialPartition(string companyId)
+    {
+        var serviceName = GlobalCatalogScope.ServiceNameFor(companyId);
+        return serviceName is not null
+            ? $"MATERIALS_{serviceName}_Global"
+            : string.Equals(companyId, GlobalCatalogScope.Legacy, StringComparison.OrdinalIgnoreCase)
+                ? "MATERIALS_GLOBAL_global"
+                : CompanyPartition(companyId);
+    }
 
     private static string MembershipRow(string userId, CompanyRole role) => $"USER_{userId}_ROLE_{role}";
 

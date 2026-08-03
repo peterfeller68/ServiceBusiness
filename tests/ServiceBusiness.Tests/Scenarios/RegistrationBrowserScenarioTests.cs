@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using Microsoft.Playwright;
 
 namespace ServiceBusiness.Tests.Scenarios;
@@ -10,7 +11,7 @@ namespace ServiceBusiness.Tests.Scenarios;
 public sealed class RegistrationBrowserScenarioTests
 {
     [Fact]
-    public async Task Independent_homeowner_can_register_and_open_pool_equipment()
+    public async Task Independent_homeowner_can_register_and_open_dashboard()
     {
         await using var app = await TestBlazorApp.StartAsync();
         using var playwright = await Playwright.CreateAsync();
@@ -19,20 +20,19 @@ public sealed class RegistrationBrowserScenarioTests
 
         await page.GotoAsync($"{app.BaseUrl}/register");
         await page.WaitForTimeoutAsync(1500);
-        await page.GetByText("Independent homeowner").ClickAsync();
+        await page.GetByText("Home owner").ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Continue" }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Skip Google Auth" }).ClickAsync();
         await page.GetByLabel("Gmail email").FillAsync("scenario.homeowner@gmail.com");
         await page.GetByLabel("Display name").FillAsync("Scenario Homeowner");
         await page.GetByLabel("Phone").FillAsync("555-0999");
         await page.GetByLabel("Home address").FillAsync("500 Browser Scenario Way, Phoenix, AZ");
         await page.GetByLabel("Access notes").FillAsync("Equipment pad is behind the side gate.");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Continue with Gmail" }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Complete Registration" }).ClickAsync();
 
-        await Expect(page.GetByText("Your homeowner account is ready")).ToBeVisibleAsync();
-        await page.GetByRole(AriaRole.Link, new() { Name = "Manage Pool Equipment" }).ClickAsync();
-
+        await Assertions.Expect(page).ToHaveURLAsync(new Regex(".*/dashboard$"));
+        await Expect(page.GetByText("Pool Service Operations")).ToBeVisibleAsync();
         await Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Pool Equipment", Exact = true })).ToBeVisibleAsync();
-        await page.GetByRole(AriaRole.Button, new() { Name = "Create" }).ClickAsync();
-        await Expect(page.GetByRole(AriaRole.Button, new() { Name = "Save Equipment" })).ToBeVisibleAsync();
     }
 
     private static ILocatorAssertions Expect(ILocator locator) => Assertions.Expect(locator);

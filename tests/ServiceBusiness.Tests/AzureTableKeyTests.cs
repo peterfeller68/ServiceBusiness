@@ -1,4 +1,5 @@
 using ServiceBusiness.Infrastructure.AzureStorage;
+using ServiceBusiness.Domain;
 
 namespace ServiceBusiness.Tests;
 
@@ -27,9 +28,17 @@ public sealed class AzureTableKeyTests
     [Fact]
     public void Global_material_partition_uses_material_catalog_scope()
     {
-        var partition = AzureTableServiceBusinessStore.MaterialPartition("global");
+        var partition = AzureTableServiceBusinessStore.MaterialPartition(GlobalCatalogScope.Pool);
 
-        Assert.Equal("MATERIALS_GLOBAL_global", partition);
+        Assert.Equal("MATERIALS_Pool_Global", partition);
+    }
+
+    [Fact]
+    public void Landscape_global_material_partition_uses_material_catalog_scope()
+    {
+        var partition = AzureTableServiceBusinessStore.MaterialPartition(GlobalCatalogScope.Landscape);
+
+        Assert.Equal("MATERIALS_LandScape_Global", partition);
     }
 
     [Fact]
@@ -43,9 +52,17 @@ public sealed class AzureTableKeyTests
     [Fact]
     public void Global_service_partition_uses_service_catalog_scope()
     {
-        var partition = AzureTableServiceBusinessStore.ServicePartition("global");
+        var partition = AzureTableServiceBusinessStore.ServicePartition(GlobalCatalogScope.Pool);
 
-        Assert.Equal("SERVICES_Global_global", partition);
+        Assert.Equal("SERVICES_Pool_Global", partition);
+    }
+
+    [Fact]
+    public void Landscape_global_service_partition_uses_service_catalog_scope()
+    {
+        var partition = AzureTableServiceBusinessStore.ServicePartition(GlobalCatalogScope.Landscape);
+
+        Assert.Equal("SERVICES_LandScape_Global", partition);
     }
 
     [Fact]
@@ -54,5 +71,21 @@ public sealed class AzureTableKeyTests
         var partition = AzureTableServiceBusinessStore.ServicePartition("clearwater");
 
         Assert.Equal("SERVICES_Company_clearwater", partition);
+    }
+
+    [Fact]
+    public void Global_service_package_partition_uses_service_catalog_scope()
+    {
+        var partition = AzureTableServiceBusinessStore.ServicePackagePartition(GlobalCatalogScope.Pool);
+
+        Assert.Equal("SERVICEPACKAGES_Pool_Global", partition);
+    }
+
+    [Fact]
+    public void Company_service_package_partition_uses_company_scope()
+    {
+        var partition = AzureTableServiceBusinessStore.ServicePackagePartition("clearwater");
+
+        Assert.Equal("SERVICEPACKAGES_Company_clearwater", partition);
     }
 }

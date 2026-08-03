@@ -37,6 +37,14 @@ else
                     <div>
                         <strong>@email.Subject</strong>
                         <p>@email.RecipientEmail &middot; @email.EmailType</p>
+                        @if (!string.IsNullOrWhiteSpace(email.FromEmail))
+                        {
+                            <small>From: @email.FromEmail</small>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(email.CcEmail))
+                        {
+                            <small>CC: @email.CcEmail</small>
+                        }
                         @if (!string.Equals(email.OriginalRecipientEmail, email.RecipientEmail, StringComparison.OrdinalIgnoreCase))
                         {
                             <small>Original recipient: @email.OriginalRecipientEmail</small>

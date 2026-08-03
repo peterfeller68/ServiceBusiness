@@ -58,6 +58,34 @@ public sealed class OnboardingTests
     }
 
     [Fact]
+    public async Task Business_client_registration_requires_and_stores_selected_client_address()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var service = new OnboardingService(store);
+        var availableClients = await service.GetAvailableBusinessClientsAsync("clearwater");
+        var selectedClient = Assert.Single(availableClients, client => client.Id == "client-1");
+
+        var result = await service.RegisterAsync(new RegistrationSubmission(
+            RegistrationAccountType.BusinessClient,
+            "client-access@gmail.com",
+            "Casey Client",
+            "555-0178",
+            "clearwater",
+            null,
+            null,
+            null,
+            null,
+            [],
+            BusinessClientId: selectedClient.Id));
+
+        Assert.True(result.RequiresApproval);
+        Assert.Equal("clearwater", result.Membership!.CompanyId);
+        Assert.Equal(CompanyRole.CompanyClientUser, result.Membership.Role);
+        Assert.Equal(MembershipStatus.Pending, result.Membership.Status);
+        Assert.Equal("client-1", result.Membership.CompanyClientId);
+    }
+
+    [Fact]
     public async Task Independent_homeowner_registration_creates_active_owner_workspace_without_company_membership()
     {
         var store = new InMemoryServiceBusinessStore();

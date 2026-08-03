@@ -8,6 +8,7 @@
 @inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
 @inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
 @inject ServiceBusiness.Web.CurrentCompanyContext CurrentCompany
+@inject ServiceBusiness.Web.ApplicationModeService ApplicationMode
 @inject NavigationManager Navigation
 
 <PageTitle>Materials</PageTitle>
@@ -36,110 +37,117 @@
 }
 else
 {
+    @if (IsSystemAdminRoute)
+    {
     <section class="management-panel">
         <div class="management-panel-header">
             <h2>Seed Materials</h2>
+            <button class="icon-button" type="button" title="Toggle seed materials" @onclick="ToggleSeedPanel">@(seedExpanded ? "^" : "v")</button>
         </div>
-        <div class="management-panel-body">
-            <div class="form-grid">
-                <label class="wide">
-                    Materials CSV
-                    <InputFile OnChange="OnSeedFileSelected" accept=".csv,text/csv" />
-                </label>
-            </div>
-            <div class="form-actions">
-                <button class="button primary" type="button" @onclick="SeedMaterialsAsync" disabled="@(seedFile is null)">Seed Table</button>
-            </div>
-            @if (!string.IsNullOrWhiteSpace(seedFileName))
-            {
-                <p class="form-note">@seedFileName selected.</p>
-            }
-        </div>
-    </section>
-
-    <section class="management-panel">
-        <div class="management-panel-header">
-            <h2>Material Categories</h2>
-            <div class="management-panel-actions">
-                <button class="button primary" type="button" @onclick="ShowCreateCategory">Create</button>
-                <button class="icon-button" type="button" title="Toggle material categories" @onclick="ToggleCategoryList">@(categoryListExpanded ? "^" : "v")</button>
-            </div>
-        </div>
-        @if (categoryListExpanded)
+        @if (seedExpanded)
         {
             <div class="management-panel-body">
-                @if (categoryEditorExpanded)
-                {
-                    <EditForm Model="categoryForm" OnValidSubmit="SaveCategoryAsync" FormName="material-category-editor">
-                        <div class="editor-panel">
-                            <h3>@(categoryForm.IsEditing ? "Edit Category" : "Create Category")</h3>
-                <label>
-                    Name
-                    <InputText class="form-control" @bind-Value="categoryForm.Name" />
-                </label>
-                <label>
-                    Description
-                    <InputTextArea class="form-control" @bind-Value="categoryForm.Description" />
-                </label>
-                <label class="switch-control" title="Toggle active state">
-                    <input type="checkbox" checked="@categoryForm.IsActive" @onchange="args => categoryForm.IsActive = GetChecked(args)" />
-                    <span></span>
-                    <small>Active</small>
-                </label>
-                <div class="form-actions">
-                    <button class="button primary" type="submit">Save Category</button>
-                                    <button class="button" type="button" @onclick="HideCategoryEditor">Cancel</button>
-                </div>
-                        </div>
-                    </EditForm>
-                }
                 <div class="form-grid">
                     <label class="wide">
-                        Filter categories
-                        <input class="form-control" @bind="categoryFilter" @bind:event="oninput" placeholder="Filter by active state, category, or description" />
+                        Materials CSV
+                        <InputFile OnChange="OnSeedFileSelected" accept=".csv,text/csv" />
                     </label>
                 </div>
-                <div class="management-table-wrap">
-                    <table class="management-table">
-                        <thead>
-                            <tr>
-                                <th><button class="table-sort-button" type="button" @onclick="() => SortCategories(CategorySortColumn.Active)">Active @GetCategorySortIndicator(CategorySortColumn.Active)</button></th>
-                                <th><button class="table-sort-button" type="button" @onclick="() => SortCategories(CategorySortColumn.Category)">Category @GetCategorySortIndicator(CategorySortColumn.Category)</button></th>
-                                <th><button class="table-sort-button" type="button" @onclick="() => SortCategories(CategorySortColumn.Description)">Description @GetCategorySortIndicator(CategorySortColumn.Description)</button></th>
-                                <th class="actions">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var group in FilteredCategoryGroups)
-                            {
-                                <tr>
-                                    <td>
-                                        <label class="switch-control" title="Toggle active state">
-                                            <input type="checkbox" checked="@group.Category.IsActive" @onchange="args => ToggleCategoryActiveAsync(group.Category, args)" />
-                                            <span></span>
-                                        </label>
-                                    </td>
-                                    <td>@group.Category.Name</td>
-                                    <td>@group.Category.Description</td>
-                                    <td class="actions">
-                                        <button class="icon-button icon-only" type="button" title="Edit category" aria-label="Edit category" @onclick="() => EditCategory(group.Category)">
-                                            <span class="action-icon edit-icon" aria-hidden="true"></span>
-                                        </button>
-                                        @if (group.Category.IsSystemManaged)
-                                        {
-                                            <button class="icon-button icon-only" type="button" title="Copy as custom category" aria-label="Copy as custom category" @onclick="() => CopyCategoryAsync(group.Category)">
-                                                <span class="action-icon copy-icon" aria-hidden="true"></span>
-                                            </button>
-                                        }
-                                    </td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
+                <div class="form-actions">
+                    <button class="button primary" type="button" @onclick="SeedMaterialsAsync" disabled="@(seedFile is null)">Seed Table</button>
                 </div>
+                @if (!string.IsNullOrWhiteSpace(seedFileName))
+                {
+                    <p class="form-note">@seedFileName selected.</p>
+                }
             </div>
         }
     </section>
+    }
+
+    @if (CanManageMaterialCategories)
+    {
+        <section class="management-panel">
+            <div class="management-panel-header">
+                <h2>Material Categories</h2>
+                <div class="management-panel-actions">
+                    <button class="button primary" type="button" @onclick="ShowCreateCategory">Create</button>
+                    <button class="icon-button" type="button" title="Toggle material categories" @onclick="ToggleCategoryList">@(categoryListExpanded ? "^" : "v")</button>
+                </div>
+            </div>
+            @if (categoryListExpanded)
+            {
+                <div class="management-panel-body">
+                    @if (categoryEditorExpanded)
+                    {
+                        <EditForm Model="categoryForm" OnValidSubmit="SaveCategoryAsync" FormName="material-category-editor">
+                            <div class="editor-panel">
+                                <h3>@(categoryForm.IsEditing ? "Edit Category" : "Create Category")</h3>
+                                <label>
+                                    Name
+                                    <InputText class="form-control" @bind-Value="categoryForm.Name" />
+                                </label>
+                                <label>
+                                    Description
+                                    <InputTextArea class="form-control" @bind-Value="categoryForm.Description" />
+                                </label>
+                                <label class="switch-control" title="Toggle active state">
+                                    <input type="checkbox" checked="@categoryForm.IsActive" @onchange="args => categoryForm.IsActive = GetChecked(args)" />
+                                    <span></span>
+                                    <small>Active</small>
+                                </label>
+                                <div class="form-actions">
+                                    <button class="button primary" type="submit">Save Category</button>
+                                    <button class="button" type="button" @onclick="HideCategoryEditor">Cancel</button>
+                                </div>
+                            </div>
+                        </EditForm>
+                    }
+                    <div class="form-grid">
+                        <label class="wide">
+                            Filter categories
+                            <input class="form-control" @bind="categoryFilter" @bind:event="oninput" placeholder="Filter by active state, category, or description" />
+                        </label>
+                    </div>
+                    <div class="management-table-wrap">
+                        <table class="management-table">
+                            <thead>
+                                <tr>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortCategories(CategorySortColumn.Active)">Active @GetCategorySortIndicator(CategorySortColumn.Active)</button></th>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortCategories(CategorySortColumn.Category)">Category @GetCategorySortIndicator(CategorySortColumn.Category)</button></th>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortCategories(CategorySortColumn.Description)">Description @GetCategorySortIndicator(CategorySortColumn.Description)</button></th>
+                                    <th class="actions">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var group in FilteredCategoryGroups)
+                                {
+                                    <tr>
+                                        <td>
+                                            <label class="switch-control" title="Toggle active state">
+                                                <input type="checkbox" checked="@group.Category.IsActive" @onchange="args => ToggleCategoryActiveAsync(group.Category, args)" />
+                                                <span></span>
+                                            </label>
+                                        </td>
+                                        <td>@group.Category.Name</td>
+                                        <td>@group.Category.Description</td>
+                                        <td class="actions">
+                                            <button class="icon-button icon-only" type="button" title="Edit category" aria-label="Edit category" @onclick="() => EditCategory(group.Category)">
+                                                <span class="action-icon edit-icon" aria-hidden="true"></span>
+                                            </button>
+                                            <button class="icon-button icon-only danger" type="button" title="Delete category" aria-label="Delete category" @onclick="() => SetCategoryActiveAsync(group.Category, false)">
+                                                <span class="action-icon delete-icon" aria-hidden="true"></span>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+        </section>
+    }
 
     <section class="management-panel">
         <div class="management-panel-header">
@@ -162,14 +170,14 @@ else
                         Category
                         <InputSelect class="form-control" @bind-Value="materialForm.CategoryId">
                             <option value="">Uncategorized</option>
-                            @foreach (var category in MaterialCategories)
+                            @foreach (var category in AvailableMaterialCategories)
                             {
                                 <option value="@category.Id">@category.Name</option>
                             }
                         </InputSelect>
                     </label>
                     <label>
-                        Brand
+                        Manufacturer
                         <InputText class="form-control" @bind-Value="materialForm.Brand" />
                     </label>
                     <label>
@@ -192,6 +200,10 @@ else
                         Billable price
                         <InputNumber class="form-control" @bind-Value="materialForm.DefaultBillableUnitPrice" />
                     </label>
+                    <label class="wide">
+                        Description
+                        <InputTextArea class="form-control" @bind-Value="materialForm.Description" />
+                    </label>
                     <label class="switch-control" title="Toggle taxable state">
                         <input type="checkbox" checked="@materialForm.IsTaxable" @onchange="args => materialForm.IsTaxable = GetChecked(args)" />
                         <span></span>
@@ -213,7 +225,7 @@ else
                 <div class="form-grid">
                     <label class="wide">
                         Filter materials
-                        <input class="form-control" @bind="materialFilter" @bind:event="oninput" placeholder="Filter by active state, brand, name, category, model, unit, or price" />
+                        <input class="form-control" @bind="materialFilter" @bind:event="oninput" placeholder="Filter by active state, manufacturer, name, category, model, unit, price, or description" />
                     </label>
                 </div>
                 <div class="management-table-wrap">
@@ -221,12 +233,13 @@ else
                         <thead>
                             <tr>
                                 <th><button class="table-sort-button" type="button" @onclick="() => SortMaterials(MaterialSortColumn.Active)">Active @GetMaterialSortIndicator(MaterialSortColumn.Active)</button></th>
-                                <th><button class="table-sort-button" type="button" @onclick="() => SortMaterials(MaterialSortColumn.Brand)">Brand @GetMaterialSortIndicator(MaterialSortColumn.Brand)</button></th>
+                                <th><button class="table-sort-button" type="button" @onclick="() => SortMaterials(MaterialSortColumn.Brand)">Manufacturer @GetMaterialSortIndicator(MaterialSortColumn.Brand)</button></th>
                                 <th><button class="table-sort-button" type="button" @onclick="() => SortMaterials(MaterialSortColumn.Name)">Name @GetMaterialSortIndicator(MaterialSortColumn.Name)</button></th>
                                 <th><button class="table-sort-button" type="button" @onclick="() => SortMaterials(MaterialSortColumn.Category)">Category @GetMaterialSortIndicator(MaterialSortColumn.Category)</button></th>
                                 <th><button class="table-sort-button" type="button" @onclick="() => SortMaterials(MaterialSortColumn.ModelNo)">Model No @GetMaterialSortIndicator(MaterialSortColumn.ModelNo)</button></th>
                                 <th><button class="table-sort-button" type="button" @onclick="() => SortMaterials(MaterialSortColumn.Unit)">Unit @GetMaterialSortIndicator(MaterialSortColumn.Unit)</button></th>
                                 <th><button class="table-sort-button" type="button" @onclick="() => SortMaterials(MaterialSortColumn.Price)">Price @GetMaterialSortIndicator(MaterialSortColumn.Price)</button></th>
+                                <th><button class="table-sort-button" type="button" @onclick="() => SortMaterials(MaterialSortColumn.Description)">Description @GetMaterialSortIndicator(MaterialSortColumn.Description)</button></th>
                                 <th class="actions">Action</th>
                             </tr>
                         </thead>
@@ -246,16 +259,14 @@ else
                                         <td>@row.Material.ModelNo</td>
                                         <td>@row.Material.UnitOfMeasure</td>
                                         <td>@row.Material.DefaultBillableUnitPrice.ToString("C")</td>
+                                        <td>@row.Material.Description</td>
                                         <td class="actions">
                                             <button class="icon-button icon-only" type="button" title="Edit material" aria-label="Edit material" @onclick="() => EditMaterial(row.Material)">
                                                 <span class="action-icon edit-icon" aria-hidden="true"></span>
                                             </button>
-                                            @if (row.Category.IsSystemManaged)
-                                            {
-                                                <button class="icon-button icon-only" type="button" title="Copy material" aria-label="Copy material" @onclick="() => CopyMaterialAsync(row.Material)">
-                                                    <span class="action-icon copy-icon" aria-hidden="true"></span>
-                                                </button>
-                                            }
+                                            <button class="icon-button icon-only danger" type="button" title="Delete material" aria-label="Delete material" @onclick="() => SetMaterialActiveAsync(row.Material, false)">
+                                                <span class="action-icon delete-icon" aria-hidden="true"></span>
+                                            </button>
                                         </td>
                                     </tr>
                             }
@@ -265,19 +276,74 @@ else
             </div>
         }
     </section>
+
+    @if (CanAddGlobalMaterials)
+    {
+        <section class="management-panel">
+            <div class="management-panel-header">
+                <h2>Add Materials</h2>
+                <div class="management-panel-actions">
+                    <button class="icon-button" type="button" title="Toggle add materials" @onclick="ToggleAddMaterialPanel">@(addMaterialExpanded ? "^" : "v")</button>
+                </div>
+            </div>
+            @if (addMaterialExpanded)
+            {
+                <div class="management-panel-body">
+                    <div class="form-grid">
+                        <label class="wide">
+                            Find global materials
+                            <input class="form-control" @bind="globalMaterialFilter" @bind:event="oninput" placeholder="Filter by name, category, or description" />
+                        </label>
+                    </div>
+                    <div class="management-table-wrap">
+                        <table class="management-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Category</th>
+                                    <th>Description</th>
+                                    <th class="actions">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in FilteredGlobalMaterialRows)
+                                {
+                                    <tr>
+                                        <td>@row.Material.Name</td>
+                                        <td>@row.Category.Name</td>
+                                        <td>@row.Material.Description</td>
+                                        <td class="actions">
+                                            <button class="icon-button icon-only" type="button" title="Choose material" aria-label="Choose material" @onclick="() => AddGlobalMaterialAsync(row.Material.Id)">
+                                                <span class="action-icon choose-icon" aria-hidden="true"></span>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+        </section>
+    }
 }
 
 @code {
     private string companyId = "";
+    private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
     private CatalogOverview? catalog;
+    private CatalogOverview? globalCatalog;
     private MaterialCategoryForm categoryForm = new();
     private MaterialForm materialForm = new();
     private bool categoryListExpanded = true;
     private bool materialListExpanded = true;
+    private bool addMaterialExpanded = true;
+    private bool seedExpanded = true;
     private bool categoryEditorExpanded;
     private bool materialEditorExpanded;
     private IBrowserFile? seedFile;
     private string? seedFileName;
+    private string globalMaterialFilter = "";
     private string categoryFilter = "";
     private string materialFilter = "";
     private CategorySortColumn categorySortColumn = CategorySortColumn.Category;
@@ -287,17 +353,44 @@ else
     private string? message;
     private string? errorMessage;
     private bool IsSystemAdminRoute => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("admin/", StringComparison.OrdinalIgnoreCase);
+    private bool IsBusinessOwnerRoute => string.Equals(Navigation.ToBaseRelativePath(Navigation.Uri).Trim('/'), "catalog/materials", StringComparison.OrdinalIgnoreCase);
+    private bool CanAddGlobalMaterials => IsBusinessOwnerRoute;
+    private bool CanManageMaterialCategories => IsSystemAdminRoute;
     private string PageScope => IsSystemAdminRoute ? "System Administrator" : "Company Admin";
     private IReadOnlyList<MaterialCategory> MaterialCategories => catalog?.MaterialGroups.Select(g => g.Category).ToList() ?? [];
+    private IReadOnlyList<MaterialCategory> GlobalMaterialCategories => globalCatalog?.MaterialGroups.Select(g => g.Category).ToList() ?? [];
+    private IReadOnlyList<MaterialCategory> AvailableMaterialCategories => CanAddGlobalMaterials
+        ? MaterialCategories
+            .Concat(GlobalMaterialCategories)
+            .GroupBy(category => category.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(category => category.Name)
+            .ToList()
+        : MaterialCategories;
+    private HashSet<string> MaterialIds => (catalog?.MaterialGroups ?? [])
+        .SelectMany(group => group.Materials)
+        .Select(material => material.Id)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<MaterialGridRow> GlobalMaterialRows => globalCatalog?.MaterialGroups
+        .SelectMany(group => group.Materials.Select(material => new MaterialGridRow(group.Category, material)))
+        .Where(row => !MaterialIds.Contains(row.Material.Id))
+        .OrderBy(row => row.Category.Name)
+        .ThenBy(row => row.Material.Name)
+        .ToList() ?? [];
+    private IReadOnlyList<MaterialGridRow> FilteredGlobalMaterialRows => GlobalMaterialRows
+        .Where(MatchesGlobalMaterialFilter)
+        .Take(50)
+        .ToList();
     private IReadOnlyList<MaterialCategoryGroup> FilteredCategoryGroups => GetFilteredCategoryGroups();
     private IReadOnlyList<MaterialGridRow> FilteredMaterialRows => GetFilteredMaterialRows();
 
     protected override async Task OnInitializedAsync()
     {
+        appMode = await ApplicationMode.GetCurrentAsync();
         if (IsSystemAdminRoute)
         {
             DemoUser.UserId = "sys-admin";
-            companyId = "global";
+            companyId = appMode.GlobalCatalogCompanyId;
         }
         else
         {
@@ -328,6 +421,8 @@ else
     {
         await RunAsync(async () =>
         {
+            await EnsureSelectedGlobalMaterialCategoryAsync(materialForm.CategoryId);
+
             await CompanyAdminService.UpsertMaterialAsync(new Material(
                 GetMaterialRowKey(),
                 companyId,
@@ -339,10 +434,36 @@ else
                 materialForm.IsTaxable,
                 materialForm.IsActive,
                 materialForm.Brand,
-                materialForm.ModelNo));
+                materialForm.ModelNo,
+                materialForm.Description));
             message = $"{materialForm.Name} was saved.";
             ResetMaterialForm();
             materialEditorExpanded = false;
+        });
+    }
+
+    private async Task AddGlobalMaterialAsync(string materialId)
+    {
+        if (string.IsNullOrWhiteSpace(materialId))
+        {
+            errorMessage = "Choose a global material before adding it.";
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            var row = GlobalMaterialRows.FirstOrDefault(row => row.Material.Id == materialId)
+                ?? throw new InvalidOperationException("Global material was not found.");
+
+            await EnsureSelectedGlobalMaterialCategoryAsync(row.Material.CategoryId);
+            await CompanyAdminService.UpsertMaterialAsync(row.Material with
+            {
+                CompanyId = companyId,
+                IsActive = true
+            });
+
+            message = $"{row.Material.Name} was added to your materials.";
+            globalMaterialFilter = "";
         });
     }
 
@@ -437,6 +558,31 @@ else
     private async Task LoadAsync()
     {
         catalog = await CompanyAdminService.GetCatalogOverviewAsync(companyId);
+        globalCatalog = CanAddGlobalMaterials
+            ? await CompanyAdminService.GetCatalogOverviewAsync(appMode.GlobalCatalogCompanyId)
+            : null;
+    }
+
+    private async Task EnsureSelectedGlobalMaterialCategoryAsync(string? categoryId)
+    {
+        if (!CanAddGlobalMaterials || string.IsNullOrWhiteSpace(categoryId))
+        {
+            return;
+        }
+
+        if (MaterialCategories.Any(category => string.Equals(category.Id, categoryId, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        var sourceCategory = GlobalMaterialCategories.FirstOrDefault(category => string.Equals(category.Id, categoryId, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException("Choose a material category from the global catalog.");
+        await CompanyAdminService.UpsertMaterialCategoryAsync(sourceCategory with
+        {
+            CompanyId = companyId,
+            IsSystemManaged = false,
+            IsActive = true
+        });
     }
 
     private void EditCategory(MaterialCategory category)
@@ -486,6 +632,10 @@ else
     private void ToggleCategoryList() => categoryListExpanded = !categoryListExpanded;
 
     private void ToggleMaterialList() => materialListExpanded = !materialListExpanded;
+
+    private void ToggleAddMaterialPanel() => addMaterialExpanded = !addMaterialExpanded;
+
+    private void ToggleSeedPanel() => seedExpanded = !seedExpanded;
 
     private void SortCategories(CategorySortColumn column)
     {
@@ -548,6 +698,7 @@ else
             MaterialSortColumn.Category => ApplyMaterialSort(rows, row => row.Category.Name),
             MaterialSortColumn.ModelNo => ApplyMaterialSort(rows, row => row.Material.ModelNo),
             MaterialSortColumn.Unit => ApplyMaterialSort(rows, row => row.Material.UnitOfMeasure),
+            MaterialSortColumn.Description => ApplyMaterialSort(rows, row => row.Material.Description),
             MaterialSortColumn.Price => materialSortDescending
                 ? rows.OrderByDescending(row => row.Material.DefaultBillableUnitPrice)
                 : rows.OrderBy(row => row.Material.DefaultBillableUnitPrice),
@@ -596,7 +747,20 @@ else
             ContainsFilter(row.Category.Name, materialFilter) ||
             ContainsFilter(row.Material.ModelNo, materialFilter) ||
             ContainsFilter(row.Material.UnitOfMeasure, materialFilter) ||
-            ContainsFilter(row.Material.DefaultBillableUnitPrice.ToString("C"), materialFilter);
+            ContainsFilter(row.Material.DefaultBillableUnitPrice.ToString("C"), materialFilter) ||
+            ContainsFilter(row.Material.Description, materialFilter);
+    }
+
+    private bool MatchesGlobalMaterialFilter(MaterialGridRow row)
+    {
+        if (string.IsNullOrWhiteSpace(globalMaterialFilter))
+        {
+            return true;
+        }
+
+        return ContainsFilter(row.Material.Name, globalMaterialFilter) ||
+            ContainsFilter(row.Category.Name, globalMaterialFilter) ||
+            ContainsFilter(row.Material.Description, globalMaterialFilter);
     }
 
     private static bool ContainsFilter(string? value, string filter) =>
@@ -640,7 +804,8 @@ else
         Category,
         ModelNo,
         Unit,
-        Price
+        Price,
+        Description
     }
 
     private sealed class MaterialCategoryForm
@@ -673,6 +838,7 @@ else
         public string UnitOfMeasure { get; set; } = "";
         public decimal DefaultUnitCost { get; set; }
         public decimal DefaultBillableUnitPrice { get; set; }
+        public string Description { get; set; } = "";
         public bool IsTaxable { get; set; } = true;
         public bool IsActive { get; set; } = true;
         public bool IsEditing { get; set; }
@@ -687,6 +853,7 @@ else
             UnitOfMeasure = material.UnitOfMeasure,
             DefaultUnitCost = material.DefaultUnitCost,
             DefaultBillableUnitPrice = material.DefaultBillableUnitPrice,
+            Description = material.Description,
             IsTaxable = material.IsTaxable,
             IsActive = material.IsActive,
             IsEditing = true

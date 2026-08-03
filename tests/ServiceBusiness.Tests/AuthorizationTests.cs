@@ -52,6 +52,31 @@ public sealed class AuthorizationTests
     }
 
     [Fact]
+    public async Task Business_owner_registration_uses_current_system_mode_company_type()
+    {
+        var store = new InMemoryServiceBusinessStore(new SystemSettings(SystemMode.Landscape));
+        var service = new OnboardingService(store);
+
+        var result = await service.RegisterAsync(new RegistrationSubmission(
+            RegistrationAccountType.BusinessOwner,
+            "owner-landscape-mode@gmail.com",
+            "Landscape Owner",
+            "555-0150",
+            null,
+            "Mode Aware Landscape",
+            "555-0151",
+            "hello@modeawarelandscape.com",
+            "Phoenix",
+            [],
+            AuthenticationSkipped: true));
+
+        Assert.Equal("landscaping", result.Company!.CompanyTypeId);
+
+        var availableCompanies = await service.GetAvailableCompaniesAsync();
+        Assert.All(availableCompanies, company => Assert.Equal("landscaping", company.CompanyTypeId));
+    }
+
+    [Fact]
     public async Task System_admin_can_promote_registered_user_to_system_admin()
     {
         var store = new InMemoryServiceBusinessStore();
@@ -95,6 +120,72 @@ public sealed class AuthorizationTests
         var role = (await store.GetRoleDefinitionsAsync()).Single(r => r.Role == CompanyRole.CompanyUser);
         Assert.Equal("Route Technician", role.DisplayName);
         Assert.Equal(["visits.assigned.view", "visits.complete"], role.Permissions);
+    }
+
+    [Fact]
+    public async Task System_admin_can_delete_user_and_user_owned_rows()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var currentUser = new TestCurrentUser("sys-admin");
+        var authorization = new TenantAuthorizationService(store, currentUser);
+        var service = new PlatformAdminService(store, authorization);
+
+        var result = await service.DeleteUserAsync("independent-homeowner-1");
+
+        Assert.True(result.RowsDeleted > 1);
+        Assert.Null(await store.GetUserAsync("independent-homeowner-1"));
+        Assert.Empty(await store.GetMembershipsForUserAsync("independent-homeowner-1"));
+        Assert.Null(await store.GetIndependentHomeOwnerProfileAsync("independent-homeowner-1"));
+        Assert.Empty(await store.GetHomeOwnerPoolEquipmentPhotosAsync("independent-homeowner-1"));
+        Assert.Empty(await store.GetIndependentHomeOwnerServiceHistoryAsync("independent-homeowner-1"));
+        Assert.Empty(await store.GetPoolEquipmentCategoriesAsync(EquipmentScope.HomeOwner, "independent-homeowner-1"));
+        Assert.Empty(await store.GetPoolEquipmentItemsAsync(EquipmentScope.HomeOwner, "independent-homeowner-1"));
+    }
+
+    [Fact]
+    public async Task System_admin_can_assign_service_package_to_service_client()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var currentUser = new TestCurrentUser("sys-admin");
+        var authorization = new TenantAuthorizationService(store, currentUser);
+        var service = new PlatformAdminService(store, authorization);
+        var company = await store.GetCompanyAsync("clearwater");
+
+        await service.UpsertCompanyAsync(company! with { ServicePackageId = "pool-service-level-1" });
+
+        var updated = await store.GetCompanyAsync("clearwater");
+        Assert.Equal("pool-service-level-1", updated!.ServicePackageId);
+    }
+
+    [Fact]
+    public async Task Company_admin_can_assign_service_package_to_business_client()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var currentUser = new TestCurrentUser("demo-owner-1");
+        var authorization = new TenantAuthorizationService(store, currentUser);
+        var service = new CompanyAdminService(store, authorization, currentUser, new TestNotificationQueue());
+        var client = await store.GetClientAsync("clearwater", "client-1");
+
+        await service.UpsertClientAsync(client! with { ServicePackageId = "pool-service-level-1" });
+
+        var updated = await store.GetClientAsync("clearwater", "client-1");
+        Assert.Equal("pool-service-level-1", updated!.ServicePackageId);
+    }
+
+    [Fact]
+    public async Task Business_client_dashboard_can_read_assigned_service_package()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var client = await store.GetClientAsync("pool1clean1", "pool1clean1-home-1");
+        await store.UpsertClientAsync(client! with { ServicePackageId = "pool-service-level-1" });
+        var currentUser = new TestCurrentUser("pool1clean1-client-1");
+        var authorization = new TenantAuthorizationService(store, currentUser);
+        var service = new ClientPortalService(store, authorization, currentUser);
+
+        var servicePackage = await service.GetCurrentUserServicePackageAsync(GlobalCatalogScope.Pool);
+
+        Assert.NotNull(servicePackage);
+        Assert.Equal("Pool Service Level 1", servicePackage.Name);
     }
 
     [Fact]
@@ -264,18 +355,60 @@ public sealed class AuthorizationTests
         var service = new CompanyAdminService(store, authorization, currentUser, new TestNotificationQueue());
 
         var result = await service.SeedMaterialsAsync(
-            "global",
+            GlobalCatalogScope.Pool,
             [
                 new("BioGuard", "Chlorine", "3-in Trichlor Tablets 50 lb", "TAB-50")
             ]);
 
-        var categories = await store.GetMaterialCategoriesAsync("global");
-        var materials = await store.GetMaterialsAsync("global");
+        var categories = await store.GetMaterialCategoriesAsync(GlobalCatalogScope.Pool);
+        var materials = await store.GetMaterialsAsync(GlobalCatalogScope.Pool);
 
         Assert.Equal(1, result.CategoriesSeeded);
         Assert.Equal(1, result.MaterialsSeeded);
-        Assert.Contains(categories, c => c.CompanyId == "global" && c.Id == "chlorine");
-        Assert.Contains(materials, m => m.CompanyId == "global" && m.Id == "bioguard-3-in-trichlor-tablets-50-lb-tab-50");
+        Assert.Contains(categories, c => c.CompanyId == GlobalCatalogScope.Pool && c.Id == "chlorine");
+        Assert.Contains(materials, m => m.CompanyId == GlobalCatalogScope.Pool && m.Id == "bioguard-3-in-trichlor-tablets-50-lb-tab-50");
+    }
+
+    [Fact]
+    public async Task Global_material_and_service_seed_catalogs_are_service_specific()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var currentUser = new TestCurrentUser("sys-admin");
+        var authorization = new TenantAuthorizationService(store, currentUser);
+        var service = new CompanyAdminService(store, authorization, currentUser, new TestNotificationQueue());
+
+        await service.SeedMaterialsAsync(
+            GlobalCatalogScope.Pool,
+            [
+                new("BioGuard", "Chlorine", "3-in Trichlor Tablets 50 lb", "TAB-50")
+            ]);
+        await service.SeedMaterialsAsync(
+            GlobalCatalogScope.Landscape,
+            [
+                new("Scotts", "Fertilizer", "Turf Builder Lawn Food 32 lb", "TB-32")
+            ]);
+        await service.SeedServicesAsync(
+            GlobalCatalogScope.Pool,
+            [
+                new("Pool Cleaning", "Standard Service", "Skim pool surface and empty baskets.")
+            ]);
+        await service.SeedServicesAsync(
+            GlobalCatalogScope.Landscape,
+            [
+                new("Landscape Maintenance", "Standard Yard Service", "Mow, edge, and blow hardscapes.")
+            ]);
+
+        var poolCatalog = await service.GetCatalogOverviewAsync(GlobalCatalogScope.Pool);
+        var landscapeCatalog = await service.GetCatalogOverviewAsync(GlobalCatalogScope.Landscape);
+
+        Assert.Contains(poolCatalog.MaterialGroups.SelectMany(group => group.Materials), material => material.Name == "3-in Trichlor Tablets 50 lb");
+        Assert.DoesNotContain(poolCatalog.MaterialGroups.SelectMany(group => group.Materials), material => material.Name == "Turf Builder Lawn Food 32 lb");
+        Assert.Contains(poolCatalog.ServiceGroups.SelectMany(group => group.Services), offering => offering.Name == "Standard Service");
+        Assert.DoesNotContain(poolCatalog.ServiceGroups.SelectMany(group => group.Services), offering => offering.Name == "Standard Yard Service");
+        Assert.Contains(landscapeCatalog.MaterialGroups.SelectMany(group => group.Materials), material => material.Name == "Turf Builder Lawn Food 32 lb");
+        Assert.DoesNotContain(landscapeCatalog.MaterialGroups.SelectMany(group => group.Materials), material => material.Name == "3-in Trichlor Tablets 50 lb");
+        Assert.Contains(landscapeCatalog.ServiceGroups.SelectMany(group => group.Services), offering => offering.Name == "Standard Yard Service");
+        Assert.DoesNotContain(landscapeCatalog.ServiceGroups.SelectMany(group => group.Services), offering => offering.Name == "Standard Service");
     }
 
     [Fact]
@@ -302,6 +435,61 @@ public sealed class AuthorizationTests
         Assert.Contains(categories, c => c.Id == "pool-cleaning" && c.Name == "Pool Cleaning");
         Assert.Contains(services, s => s.Id == "pool-cleaning-standard-service" && s.CategoryId == "pool-cleaning" && s.DefaultDurationMinutes == 45 && s.DefaultPrice == 0m);
         Assert.Contains(services, s => s.Id == "pool-cleaning-vacation-service" && s.Description == "Temporary scheduled maintenance while homeowner is away.");
+    }
+
+    [Fact]
+    public async Task Company_admin_can_manage_company_service_packages()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var currentUser = new TestCurrentUser("demo-owner-1");
+        var authorization = new TenantAuthorizationService(store, currentUser);
+        var service = new CompanyAdminService(store, authorization, currentUser, new TestNotificationQueue());
+
+        await service.UpsertServicePackageAsync(
+            new ServicePackage(
+                "Weekly Essentials",
+                "clearwater",
+                "Weekly Essentials",
+                "Weekly",
+                "Core weekly service package.",
+                129m,
+                true,
+                [
+                    new("svc-basic", "Every visit"),
+                    new("pool-cleaning-standard-service", "Every 4 Visits")
+                ]),
+            ["clearwater", GlobalCatalogScope.Pool]);
+
+        var packages = await service.GetServicePackagesAsync("clearwater");
+        var servicePackage = Assert.Single(packages, package => package.Id == "weekly-essentials");
+
+        Assert.Equal(129m, servicePackage.Cost);
+        Assert.Contains(servicePackage.Services, packageService => packageService.ServiceId == "svc-basic" && packageService.Recurrence == "Every Visit");
+        Assert.Contains(servicePackage.Services, packageService => packageService.ServiceId == "pool-cleaning-standard-service" && packageService.Recurrence == "Every 4 Visits");
+
+        await service.SetServicePackageActiveAsync("clearwater", "weekly-essentials", false);
+        servicePackage = (await service.GetServicePackagesAsync("clearwater")).Single(package => package.Id == "weekly-essentials");
+        Assert.False(servicePackage.IsActive);
+
+        await service.DeleteServicePackageAsync("clearwater", "weekly-essentials");
+        Assert.DoesNotContain(await service.GetServicePackagesAsync("clearwater"), package => package.Id == "weekly-essentials");
+    }
+
+    [Fact]
+    public async Task Global_service_packages_are_service_specific()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var currentUser = new TestCurrentUser("sys-admin");
+        var authorization = new TenantAuthorizationService(store, currentUser);
+        var service = new CompanyAdminService(store, authorization, currentUser, new TestNotificationQueue());
+
+        var poolPackages = await service.GetServicePackagesAsync(GlobalCatalogScope.Pool);
+        var landscapePackages = await service.GetServicePackagesAsync(GlobalCatalogScope.Landscape);
+
+        Assert.Contains(poolPackages, package => package.Name == "Pool Service Level 1");
+        Assert.DoesNotContain(poolPackages, package => package.Name.Contains("Landscape", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(landscapePackages, package => package.Name == "Landscape Service Level 1");
+        Assert.DoesNotContain(landscapePackages, package => package.Name.Contains("Pool", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -587,7 +775,7 @@ public sealed class AuthorizationTests
             "555-0199",
             "99 New Way",
             "Gate code 9090.",
-            "weekly",
+            BusinessClientTypeReferenceData.HomeOwnerId,
             175m,
             true));
 
@@ -595,6 +783,31 @@ public sealed class AuthorizationTests
         var client = Assert.Single(clients, c => c.Id == "client-new");
         Assert.Equal("New Residence", client.DisplayName);
         Assert.Equal(175m, client.RateOverride);
+    }
+
+    [Fact]
+    public async Task Business_owner_registration_creates_home_owner_client_type()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var service = new OnboardingService(store);
+
+        var result = await service.RegisterAsync(new RegistrationSubmission(
+            RegistrationAccountType.BusinessOwner,
+            "owner-client-types@gmail.com",
+            "Client Types Owner",
+            "555-0170",
+            null,
+            "Client Types Pool",
+            "555-0171",
+            "hello@clienttypespool.com",
+            "Phoenix",
+            [],
+            AuthenticationSkipped: true));
+
+        var clientTypes = await store.GetClientTypesAsync(result.Company!.Id);
+        var clientType = Assert.Single(clientTypes);
+        Assert.Equal(BusinessClientTypeReferenceData.HomeOwnerId, clientType.Id);
+        Assert.Equal(BusinessClientTypeReferenceData.HomeOwnerName, clientType.Name);
     }
 
     [Fact]

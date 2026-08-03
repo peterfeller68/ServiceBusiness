@@ -14,11 +14,14 @@
     <File Path="docs/source of truth/requirements.md" />
     <File Path="docs/source of truth/storage-entities.md" />
     <File Path="docs/source of truth/ui-specifications.md" />
+    <File Path="Vital Workflows.md" />
   </Folder>
   <Folder Name="/github actions/">
     <File Path=".github/workflows/deploy-poolshark-azure.yml" />
   </Folder>
   <Folder Name="/seed data/">
+    <File Path="../../../../Downloads/Landscaping Materials Seed.csv" />
+    <File Path="../../../../Downloads/Landscaping Services Seed.csv" />
     <File Path="../../../../Downloads/Pool Equipment Seed.csv" />
     <File Path="../../../../Downloads/Pool Materials Seed.csv" />
     <File Path="../../../../Downloads/Pool Services Seed.csv" />

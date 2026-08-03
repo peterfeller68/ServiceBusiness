@@ -1,16 +1,19 @@
 @page "/admin/companies"
+@page "/admin/service-clients"
 @rendermode InteractiveServer
 @using ServiceBusiness.Domain
 @inject ServiceBusiness.Application.PlatformAdminService PlatformAdminService
+@inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
 @inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+@inject ServiceBusiness.Web.ApplicationModeService ApplicationMode
 
-<PageTitle>Companies</PageTitle>
+<PageTitle>Service Clients</PageTitle>
 
 <section class="page-header">
     <div>
         <p class="eyebrow">System Administrator</p>
-        <h1>Companies</h1>
-        <p class="lede">Manage SaaS tenant companies and platform company types.</p>
+        <h1>Service Clients</h1>
+        <p class="lede">Manage registered service clients for the current service type.</p>
     </div>
 </section>
 
@@ -26,53 +29,15 @@
 
 @if (companyTypes is null || companies is null)
 {
-    <p>Loading companies...</p>
+    <p>Loading service clients...</p>
 }
 else
 {
     <section class="management-panel">
         <div class="management-panel-header">
-            <h2>Company Types</h2>
-            <button class="icon-button" type="button" title="Toggle company types" @onclick="ToggleCompanyTypes">@(companyTypesExpanded ? "^" : "v")</button>
-        </div>
-        @if (companyTypesExpanded)
-        {
-            <div class="management-panel-body">
-                <div class="management-table-wrap">
-                    <table class="management-table">
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Active</th>
-                                <th>Name</th>
-                                <th>Description</th>
-                                <th class="actions">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var type in companyTypes)
-                            {
-                                <tr>
-                                    <td>@type.Id</td>
-                                    <td>@(type.IsActive ? "Yes" : "No")</td>
-                                    <td>@type.Name</td>
-                                    <td>@type.Description</td>
-                                    <td class="actions"><span class="status-pill">Read Only</span></td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        }
-    </section>
-
-    <section class="management-panel">
-        <div class="management-panel-header">
-            <h2>Companies</h2>
+            <h2>Service Clients</h2>
             <div class="management-panel-actions">
-                <button class="button primary" type="button" @onclick="ShowCreateCompany">Create</button>
-                <button class="icon-button" type="button" title="Toggle companies" @onclick="ToggleCompanies">@(companiesExpanded ? "^" : "v")</button>
+                <button class="icon-button" type="button" title="Toggle service clients" @onclick="ToggleCompanies">@(companiesExpanded ? "^" : "v")</button>
             </div>
         </div>
         @if (companiesExpanded)
@@ -82,16 +47,12 @@ else
                 {
                     <EditForm Model="companyForm" OnValidSubmit="SaveCompanyAsync" FormName="company-editor">
                         <div class="editor-panel">
-                            <h3>@(companyForm.IsEditing ? "Edit Company" : "Create Company")</h3>
+                            <h3>Edit Service Client</h3>
                 <div class="form-grid">
                     <label>
-                        Company ID
-                        <InputText class="form-control" @bind-Value="companyForm.Id" disabled="@companyForm.IsEditing" />
-                    </label>
-                    <label>
-                        Company type
+                        Service client type
                         <InputSelect class="form-control" @bind-Value="companyForm.CompanyTypeId">
-                            @foreach (var type in companyTypes.Where(t => t.IsActive))
+                            @foreach (var type in AvailableCompanyTypes)
                             {
                                 <option value="@type.Id">@type.Name</option>
                             }
@@ -110,21 +71,27 @@ else
                         <InputText class="form-control" @bind-Value="companyForm.BusinessPhone" />
                     </label>
                     <label>
-                        Time zone
-                        <InputText class="form-control" @bind-Value="companyForm.TimeZone" />
-                    </label>
-                    <label>
-                        Status
-                        <InputSelect class="form-control" @bind-Value="companyForm.Status">
-                            @foreach (var status in Enum.GetValues<CompanyStatus>())
+                        Service package
+                        <InputSelect class="form-control" @bind-Value="companyForm.ServicePackageId">
+                            <option value="">No package assigned</option>
+                            @foreach (var servicePackage in AvailableServicePackages)
                             {
-                                <option value="@status">@status</option>
+                                <option value="@servicePackage.Id">@servicePackage.Name</option>
                             }
                         </InputSelect>
                     </label>
+                    <label>
+                        Time zone
+                        <InputText class="form-control" @bind-Value="companyForm.TimeZone" />
+                    </label>
+                    <label class="switch-control" title="Toggle active state">
+                        <input type="checkbox" checked="@(companyForm.Status == CompanyStatus.Active)" @onchange="args => companyForm.Status = GetChecked(args) ? CompanyStatus.Active : CompanyStatus.Inactive" />
+                        <span></span>
+                        <small>Active</small>
+                    </label>
                 </div>
                 <div class="form-actions">
-                    <button class="button primary" type="submit">Save Company</button>
+                    <button class="button primary" type="submit">Save Service Client</button>
                                     <button class="button" type="button" @onclick="HideCompanyEditor">Cancel</button>
                 </div>
                         </div>
@@ -134,36 +101,37 @@ else
                     <table class="management-table">
                         <thead>
                             <tr>
-                                <th>ID</th>
                                 <th>Status</th>
                                 <th>Name</th>
                                 <th>Type</th>
+                                <th>Service Package</th>
                                 <th>Email</th>
                                 <th>Phone</th>
                                 <th class="actions">Action</th>
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var company in companies)
+                            @foreach (var company in FilteredCompanies)
                             {
                                 <tr>
-                                    <td>@company.Id</td>
-                                    <td>@company.Status</td>
+                                    <td>
+                                        <label class="switch-control" title="Toggle active state">
+                                            <input type="checkbox" checked="@(company.Status == CompanyStatus.Active)" @onchange="args => SetCompanyStatusAsync(company, GetChecked(args) ? CompanyStatus.Active : CompanyStatus.Inactive)" />
+                                            <span></span>
+                                        </label>
+                                    </td>
                                     <td>@company.Name</td>
-                                    <td>@company.CompanyTypeId</td>
+                                    <td>@GetCompanyTypeName(company.CompanyTypeId)</td>
+                                    <td>@GetServicePackageName(company.ServicePackageId)</td>
                                     <td>@company.BusinessEmail</td>
                                     <td>@company.BusinessPhone</td>
                                     <td class="actions">
-                                        <button class="icon-button" type="button" title="Edit company" @onclick="() => EditCompany(company)">Edit</button>
-                            @if (company.Status == CompanyStatus.Active)
-                            {
-                                            <button class="icon-button" type="button" title="Suspend company" @onclick="() => SetCompanyStatusAsync(company, CompanyStatus.Suspended)">Sus</button>
-                                            <button class="icon-button danger" type="button" title="Archive company" @onclick="() => SetCompanyStatusAsync(company, CompanyStatus.Inactive)">Del</button>
-                            }
-                            else
-                            {
-                                            <button class="icon-button" type="button" title="Reactivate company" @onclick="() => SetCompanyStatusAsync(company, CompanyStatus.Active)">On</button>
-                            }
+                                        <button class="icon-button icon-only" type="button" title="Edit service client" aria-label="Edit service client" @onclick="() => EditCompany(company)">
+                                            <span class="action-icon edit-icon" aria-hidden="true"></span>
+                                        </button>
+                                        <button class="icon-button icon-only danger" type="button" title="Delete service client" aria-label="Delete service client" @onclick="() => SetCompanyStatusAsync(company, CompanyStatus.Inactive)">
+                                            <span class="action-icon delete-icon" aria-hidden="true"></span>
+                                        </button>
                                     </td>
                                 </tr>
                             }
@@ -178,16 +146,24 @@ else
 @code {
     private IReadOnlyList<CompanyType>? companyTypes;
     private IReadOnlyList<Company>? companies;
+    private IReadOnlyList<ServicePackage> servicePackages = [];
     private CompanyForm companyForm = new();
-    private bool companyTypesExpanded = true;
     private bool companiesExpanded = true;
     private bool companyEditorExpanded;
     private string? message;
     private string? errorMessage;
+    private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
+    private IReadOnlyList<CompanyType> AvailableCompanyTypes => companyTypes?.Where(t => t.IsActive && TypeMatchesMode(t)).OrderBy(t => t.Name).ToList() ?? [];
+    private IReadOnlyList<Company> FilteredCompanies => companies?.Where(CompanyMatchesMode).OrderBy(company => company.Name).ToList() ?? [];
+    private IReadOnlyList<ServicePackage> AvailableServicePackages => servicePackages
+        .Where(servicePackage => servicePackage.IsActive)
+        .OrderBy(servicePackage => servicePackage.Name)
+        .ToList();
 
     protected override async Task OnInitializedAsync()
     {
         DemoUser.UserId = "sys-admin";
+        appMode = await ApplicationMode.GetCurrentAsync();
         await LoadAsync();
         ResetCompanyForm();
     }
@@ -203,7 +179,8 @@ else
                 companyForm.BusinessEmail,
                 companyForm.BusinessPhone,
                 companyForm.TimeZone,
-                companyForm.Status));
+                companyForm.Status,
+                companyForm.ServicePackageId));
             message = $"{companyForm.Name} was saved.";
         });
     }
@@ -243,6 +220,7 @@ else
     {
         companyTypes = await PlatformAdminService.GetCompanyTypesAsync();
         companies = await PlatformAdminService.GetCompaniesAsync();
+        servicePackages = await CompanyAdminService.GetServicePackagesAsync(appMode.GlobalCatalogCompanyId);
     }
 
     private void EditCompany(Company company)
@@ -256,16 +234,9 @@ else
     {
         companyForm = new CompanyForm
         {
-            CompanyTypeId = companyTypes?.FirstOrDefault(t => t.IsActive)?.Id ?? "",
+            CompanyTypeId = AvailableCompanyTypes.FirstOrDefault()?.Id ?? "",
             TimeZone = "America/Los_Angeles"
         };
-    }
-
-    private void ShowCreateCompany()
-    {
-        ResetCompanyForm();
-        companyEditorExpanded = true;
-        companiesExpanded = true;
     }
 
     private void HideCompanyEditor()
@@ -274,9 +245,38 @@ else
         companyEditorExpanded = false;
     }
 
-    private void ToggleCompanyTypes() => companyTypesExpanded = !companyTypesExpanded;
-
     private void ToggleCompanies() => companiesExpanded = !companiesExpanded;
+
+    private static bool GetChecked(ChangeEventArgs args) => args.Value is bool value && value;
+
+    private string GetCompanyTypeName(string companyTypeId) =>
+        companyTypes?.FirstOrDefault(type => string.Equals(type.Id, companyTypeId, StringComparison.OrdinalIgnoreCase))?.Name
+        ?? companyTypeId;
+
+    private string GetServicePackageName(string? servicePackageId) =>
+        string.IsNullOrWhiteSpace(servicePackageId)
+            ? "-"
+            : servicePackages.FirstOrDefault(package => string.Equals(package.Id, servicePackageId, StringComparison.OrdinalIgnoreCase))?.Name
+                ?? servicePackageId;
+
+    private bool CompanyMatchesMode(Company company) =>
+        TypeMatchesMode(companyTypes?.FirstOrDefault(type => string.Equals(type.Id, company.CompanyTypeId, StringComparison.OrdinalIgnoreCase)));
+
+    private bool TypeMatchesMode(CompanyType? type)
+    {
+        if (type is null)
+        {
+            return false;
+        }
+
+        var searchable = $"{type.Id} {type.Name} {type.Description}";
+        return appMode.IsPoolMode
+            ? searchable.Contains("pool", StringComparison.OrdinalIgnoreCase)
+            : ContainsAny(searchable, "landscape", "lawn", "yard", "tree");
+    }
+
+    private static bool ContainsAny(string value, params string[] terms) =>
+        terms.Any(term => value.Contains(term, StringComparison.OrdinalIgnoreCase));
 
     private sealed class CompanyForm
     {
@@ -285,6 +285,7 @@ else
         public string Name { get; set; } = "";
         public string BusinessEmail { get; set; } = "";
         public string BusinessPhone { get; set; } = "";
+        public string? ServicePackageId { get; set; }
         public string TimeZone { get; set; } = "America/Los_Angeles";
         public CompanyStatus Status { get; set; } = CompanyStatus.Active;
         public bool IsEditing { get; set; }
@@ -296,6 +297,7 @@ else
             Name = company.Name,
             BusinessEmail = company.BusinessEmail,
             BusinessPhone = company.BusinessPhone,
+            ServicePackageId = company.ServicePackageId,
             TimeZone = company.TimeZone,
             Status = company.Status,
             IsEditing = true

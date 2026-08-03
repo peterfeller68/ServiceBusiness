@@ -16,7 +16,8 @@ public sealed record ApplicationModeSnapshot(
     string ProductName,
     string ProductCategory,
     string HeroImageUrl,
-    string HeroAltText)
+    string HeroAltText,
+    string GlobalCatalogCompanyId)
 {
     public static ApplicationModeSnapshot Pool { get; } = From(new SystemSettings(SystemMode.Pool));
 
@@ -36,6 +37,7 @@ public sealed record ApplicationModeSnapshot(
             isPoolMode ? "/images/pool-waterfall-hero.png" : "/images/landscape-fruit-trees-hero.png",
             isPoolMode
                 ? "A bright pool with a waterfall in a lush landscape."
-                : "A manicured lawn with mature fruit trees.");
+                : "A manicured lawn with mature fruit trees.",
+            GlobalCatalogScope.For(mode));
     }
 }

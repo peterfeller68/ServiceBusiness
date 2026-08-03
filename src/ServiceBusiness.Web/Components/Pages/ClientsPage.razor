@@ -1,16 +1,22 @@
 @page "/clients"
+@page "/admin/clients"
 @rendermode InteractiveServer
+@using ServiceBusiness.Application
 @using ServiceBusiness.Domain
 @inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
+@inject ServiceBusiness.Application.PlatformAdminService PlatformAdminService
 @inject ServiceBusiness.Web.CurrentCompanyContext CurrentCompany
+@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+@inject ServiceBusiness.Web.ApplicationModeService ApplicationMode
+@inject NavigationManager Navigation
 
-<PageTitle>Clients</PageTitle>
+<PageTitle>Business Clients</PageTitle>
 
 <section class="page-header">
     <div>
-        <p class="eyebrow">Company Admin</p>
-        <h1>Clients</h1>
-        <p class="lede">Create, edit, archive, and reactivate customer records.</p>
+        <p class="eyebrow">@(IsSystemAdminPage ? "System Administrator" : "Business Owner")</p>
+        <h1>Business Clients</h1>
+        <p class="lede">Create, edit, archive, and reactivate business client records.</p>
     </div>
 </section>
 
@@ -24,18 +30,18 @@
     <div class="notice error">@errorMessage</div>
 }
 
-@if (clients is null || clientTypes is null)
+@if (IsLoading)
 {
-    <p>Loading clients...</p>
+    <p>Loading business clients...</p>
 }
 else
 {
     <section class="management-panel">
         <div class="management-panel-header">
-            <h2>Customers</h2>
+            <h2>Business Clients</h2>
             <div class="management-panel-actions">
                 <button class="button primary" type="button" @onclick="ShowCreateClient">Create</button>
-                <button class="icon-button" type="button" title="Toggle customers" @onclick="ToggleClientList">@(clientListExpanded ? "^" : "v")</button>
+                <button class="icon-button" type="button" title="Toggle business clients" @onclick="ToggleClientList">@(clientListExpanded ? "^" : "v")</button>
             </div>
         </div>
         @if (clientListExpanded)
@@ -45,14 +51,23 @@ else
                 {
                     <EditForm Model="clientForm" OnValidSubmit="SaveClientAsync" FormName="client-editor">
                         <div class="editor-panel">
-                            <h3>@(clientForm.IsEditing ? "Edit Customer" : "Create Customer")</h3>
+                            <h3>@(clientForm.IsEditing ? "Edit Business Client" : "Create Business Client")</h3>
                             <div class="form-grid">
+                                @if (IsSystemAdminPage)
+                                {
+                                    <label>
+                                        Service client
+                                        <InputSelect class="form-control" Value="clientForm.CompanyId" ValueChanged="@((string selectedCompanyId) => OnCompanyChangedAsync(selectedCompanyId))" ValueExpression="() => clientForm.CompanyId" disabled="@clientForm.IsEditing">
+                                            <option value="">Select a service client</option>
+                                            @foreach (var company in AvailableCompanies)
+                                            {
+                                                <option value="@company.Id">@company.Name</option>
+                                            }
+                                        </InputSelect>
+                                    </label>
+                                }
                                 <label>
-                                    Customer ID
-                                    <InputText class="form-control" @bind-Value="clientForm.Id" disabled="@clientForm.IsEditing" />
-                                </label>
-                                <label>
-                                    Customer type
+                                    Business client type
                                     <InputSelect class="form-control" @bind-Value="clientForm.ClientTypeId">
                                         <option value="">Select a type</option>
                                         @foreach (var clientType in ActiveClientTypes)
@@ -62,7 +77,17 @@ else
                                     </InputSelect>
                                 </label>
                                 <label>
-                                    Customer name
+                                    Service package
+                                    <InputSelect class="form-control" @bind-Value="clientForm.ServicePackageId">
+                                        <option value="">No package assigned</option>
+                                        @foreach (var servicePackage in ActiveServicePackages)
+                                        {
+                                            <option value="@servicePackage.Id">@servicePackage.Name</option>
+                                        }
+                                    </InputSelect>
+                                </label>
+                                <label>
+                                    Business client name
                                     <InputText class="form-control" @bind-Value="clientForm.DisplayName" />
                                 </label>
                                 <label>
@@ -89,13 +114,14 @@ else
                                     Access notes
                                     <InputTextArea class="form-control" @bind-Value="clientForm.AccessNotes" />
                                 </label>
-                                <label class="check-row">
-                                    <InputCheckbox @bind-Value="clientForm.IsActive" />
-                                    <span>Active</span>
+                                <label class="switch-control" title="Toggle active state">
+                                    <input type="checkbox" checked="@clientForm.IsActive" @onchange="args => clientForm.IsActive = GetChecked(args)" />
+                                    <span></span>
+                                    <small>Active</small>
                                 </label>
                             </div>
                             <div class="form-actions">
-                                <button class="button primary" type="submit">Save Customer</button>
+                                <button class="button primary" type="submit">Save Business Client</button>
                                 <button class="button" type="button" @onclick="HideClientEditor">Cancel</button>
                             </div>
                         </div>
@@ -105,43 +131,45 @@ else
                     <table class="management-table">
                         <thead>
                             <tr>
-                                <th>ID</th>
-                                <th>Active</th>
+                                <th>Status</th>
+                                @if (IsSystemAdminPage)
+                                {
+                                    <th>Company</th>
+                                }
                                 <th>Name</th>
-                                <th>Contact</th>
-                                <th>Type</th>
-                                <th>Address</th>
+                                <th>Client Type</th>
+                                <th>Service Package</th>
+                                <th>Email</th>
+                                <th>Phone</th>
                                 <th class="actions">Action</th>
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var client in clients)
+                            @foreach (var row in BusinessClientRows)
                             {
                                 <tr>
-                                    <td>@client.Id</td>
-                                    <td>@(client.IsActive ? "Yes" : "No")</td>
-                                    <td>@client.DisplayName</td>
                                     <td>
-                                        @client.PrimaryContactName
-                                        <br />
-                                        <small>@client.Email</small>
+                                        <label class="switch-control" title="Toggle active state">
+                                            <input type="checkbox" checked="@row.Client.IsActive" @onchange="args => SetClientActiveAsync(row.Client, GetChecked(args))" />
+                                            <span></span>
+                                        </label>
                                     </td>
-                                    <td>@GetClientTypeName(client.ClientTypeId)</td>
-                                    <td>
-                                        @client.ServiceAddress
-                                        <br />
-                                        <small>@client.AccessNotes</small>
-                                    </td>
+                                    @if (IsSystemAdminPage)
+                                    {
+                                        <td>@row.Company.Name</td>
+                                    }
+                                    <td>@row.Client.DisplayName</td>
+                                    <td>@GetClientTypeName(row)</td>
+                                    <td>@GetServicePackageName(row.Client.ServicePackageId)</td>
+                                    <td>@row.Client.Email</td>
+                                    <td>@row.Client.Phone</td>
                                     <td class="actions">
-                                        <button class="icon-button" type="button" title="Edit customer" @onclick="() => EditClient(client)">Edit</button>
-                                        @if (client.IsActive)
-                                        {
-                                            <button class="icon-button danger" type="button" title="Archive customer" @onclick="() => SetClientActiveAsync(client, false)">Del</button>
-                                        }
-                                        else
-                                        {
-                                            <button class="icon-button" type="button" title="Reactivate customer" @onclick="() => SetClientActiveAsync(client, true)">On</button>
-                                        }
+                                        <button class="icon-button icon-only" type="button" title="Edit business client" aria-label="Edit business client" @onclick="() => EditClient(row)">
+                                            <span class="action-icon edit-icon" aria-hidden="true"></span>
+                                        </button>
+                                        <button class="icon-button icon-only danger" type="button" title="Delete business client" aria-label="Delete business client" @onclick="() => SetClientActiveAsync(row.Client, false)">
+                                            <span class="action-icon delete-icon" aria-hidden="true"></span>
+                                        </button>
                                     </td>
                                 </tr>
                             }
@@ -154,19 +182,55 @@ else
 }
 
 @code {
-    private IReadOnlyList<CompanyClient>? clients;
+    private IReadOnlyList<BusinessClientManagementRow>? platformClientRows;
+    private IReadOnlyList<CompanyClient>? companyClients;
     private IReadOnlyList<ClientType>? clientTypes;
+    private IReadOnlyList<Company>? companies;
+    private IReadOnlyList<CompanyType>? companyTypes;
+    private IReadOnlyList<ServicePackage> servicePackages = [];
     private ClientForm clientForm = new();
     private bool clientListExpanded = true;
     private bool clientEditorExpanded;
     private string companyId = "";
     private string? message;
     private string? errorMessage;
-    private IReadOnlyList<ClientType> ActiveClientTypes => clientTypes?.Where(t => t.IsActive).OrderBy(t => t.Name).ToList() ?? [];
+    private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
+
+    private bool IsSystemAdminPage => Navigation.ToBaseRelativePath(Navigation.Uri).Trim('/').StartsWith("admin/clients", StringComparison.OrdinalIgnoreCase);
+    private bool IsLoading => IsSystemAdminPage
+        ? platformClientRows is null || clientTypes is null || companies is null || companyTypes is null
+        : companyClients is null || clientTypes is null;
+    private IReadOnlyList<Company> AvailableCompanies => companies?.Where(CompanyMatchesMode).OrderBy(company => company.Name).ToList() ?? [];
+    private IReadOnlyList<ClientType> ActiveClientTypes => clientTypes?
+        .Where(t => t.IsActive && string.Equals(t.Id, BusinessClientTypeReferenceData.HomeOwnerId, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(t => t.Name)
+        .ToList() ?? [];
+    private IReadOnlyList<ServicePackage> ActiveServicePackages => servicePackages
+        .Where(servicePackage => servicePackage.IsActive)
+        .GroupBy(servicePackage => servicePackage.Id, StringComparer.OrdinalIgnoreCase)
+        .Select(group => group.First())
+        .OrderBy(servicePackage => servicePackage.Name)
+        .ToList();
+    private IReadOnlyList<BusinessClientManagementRow> BusinessClientRows => IsSystemAdminPage
+        ? platformClientRows?.Where(row => CompanyMatchesMode(row.Company)).OrderBy(row => row.Company.Name).ThenBy(row => row.Client.DisplayName).ToList() ?? []
+        : companyClients?.OrderBy(client => client.DisplayName).Select(client => new BusinessClientManagementRow(
+            new Company(companyId, "", "", "", "", "", CompanyStatus.Active),
+            client,
+            clientTypes?.FirstOrDefault(type => string.Equals(type.Id, client.ClientTypeId, StringComparison.OrdinalIgnoreCase)))).ToList() ?? [];
 
     protected override async Task OnInitializedAsync()
     {
-        companyId = await CurrentCompany.GetRequiredCompanyIdAsync([CompanyRole.CompanyAdmin]);
+        appMode = await ApplicationMode.GetCurrentAsync();
+
+        if (IsSystemAdminPage)
+        {
+            DemoUser.UserId = "sys-admin";
+        }
+        else
+        {
+            companyId = await CurrentCompany.GetRequiredCompanyIdAsync([CompanyRole.CompanyAdmin]);
+        }
+
         await LoadAsync();
     }
 
@@ -174,9 +238,9 @@ else
     {
         await RunAsync(async () =>
         {
-            await CompanyAdminService.UpsertClientAsync(new CompanyClient(
-                clientForm.Id,
-                companyId,
+            var client = new CompanyClient(
+                string.IsNullOrWhiteSpace(clientForm.Id) ? CreateRowKey(clientForm.DisplayName) : clientForm.Id,
+                clientForm.CompanyId,
                 clientForm.DisplayName,
                 clientForm.PrimaryContactName,
                 clientForm.Email,
@@ -185,7 +249,17 @@ else
                 clientForm.AccessNotes,
                 clientForm.ClientTypeId,
                 clientForm.RateOverride,
-                clientForm.IsActive));
+                clientForm.IsActive,
+                clientForm.ServicePackageId);
+
+            if (IsSystemAdminPage)
+            {
+                await PlatformAdminService.UpsertBusinessClientAsync(client);
+            }
+            else
+            {
+                await CompanyAdminService.UpsertClientAsync(client);
+            }
 
             message = $"{clientForm.DisplayName} was saved.";
             ResetClientForm();
@@ -197,7 +271,16 @@ else
     {
         await RunAsync(async () =>
         {
-            await CompanyAdminService.UpsertClientAsync(client with { IsActive = isActive });
+            var updatedClient = client with { IsActive = isActive };
+            if (IsSystemAdminPage)
+            {
+                await PlatformAdminService.UpsertBusinessClientAsync(updatedClient);
+            }
+            else
+            {
+                await CompanyAdminService.UpsertClientAsync(updatedClient);
+            }
+
             message = $"{client.DisplayName} was {(isActive ? "reactivated" : "archived")}.";
         });
     }
@@ -224,15 +307,46 @@ else
 
     private async Task LoadAsync()
     {
-        clients = await CompanyAdminService.GetClientsAsync(companyId);
-        clientTypes = await CompanyAdminService.GetClientTypesAsync(companyId);
+        if (IsSystemAdminPage)
+        {
+            companies = await PlatformAdminService.GetCompaniesAsync();
+            companyTypes = await PlatformAdminService.GetCompanyTypesAsync();
+            platformClientRows = await PlatformAdminService.GetBusinessClientManagementRowsAsync();
+
+            if (string.IsNullOrWhiteSpace(clientForm.CompanyId))
+            {
+                clientForm.CompanyId = AvailableCompanies.FirstOrDefault()?.Id ?? "";
+            }
+
+            clientTypes = string.IsNullOrWhiteSpace(clientForm.CompanyId)
+                ? []
+                : await PlatformAdminService.GetClientTypesForCompanyAsync(clientForm.CompanyId);
+            servicePackages = await LoadServicePackagesAsync(clientForm.CompanyId);
+        }
+        else
+        {
+            clientForm.CompanyId = companyId;
+            companyClients = await CompanyAdminService.GetClientsAsync(companyId);
+            clientTypes = await CompanyAdminService.GetClientTypesAsync(companyId);
+            servicePackages = await LoadServicePackagesAsync(companyId);
+        }
     }
 
-    private void EditClient(CompanyClient client)
+    private void EditClient(BusinessClientManagementRow row)
     {
-        clientForm = ClientForm.FromClient(client);
+        clientForm = ClientForm.FromClient(row.Client);
         clientEditorExpanded = true;
         clientListExpanded = true;
+        _ = ReloadClientTypesForSelectedCompanyAsync();
+    }
+
+    private async Task ReloadClientTypesForSelectedCompanyAsync()
+    {
+        if (IsSystemAdminPage && !string.IsNullOrWhiteSpace(clientForm.CompanyId))
+        {
+            clientTypes = await PlatformAdminService.GetClientTypesForCompanyAsync(clientForm.CompanyId);
+            StateHasChanged();
+        }
     }
 
     private void ShowCreateClient()
@@ -248,19 +362,88 @@ else
         clientEditorExpanded = false;
     }
 
-    private void ResetClientForm() => clientForm = new()
+    private void ResetClientForm()
     {
-        ClientTypeId = ActiveClientTypes.FirstOrDefault()?.Id ?? ""
-    };
+        var selectedCompanyId = IsSystemAdminPage
+            ? AvailableCompanies.FirstOrDefault()?.Id ?? ""
+            : companyId;
+
+        clientForm = new()
+        {
+            CompanyId = selectedCompanyId,
+            ClientTypeId = ActiveClientTypes.FirstOrDefault()?.Id ?? ""
+        };
+    }
+
+    private async Task OnCompanyChangedAsync(string selectedCompanyId)
+    {
+        clientForm.CompanyId = selectedCompanyId;
+        clientTypes = string.IsNullOrWhiteSpace(selectedCompanyId)
+            ? []
+            : await PlatformAdminService.GetClientTypesForCompanyAsync(selectedCompanyId);
+        clientForm.ClientTypeId = ActiveClientTypes.FirstOrDefault()?.Id ?? "";
+        servicePackages = await LoadServicePackagesAsync(selectedCompanyId);
+        clientForm.ServicePackageId = ActiveServicePackages.FirstOrDefault()?.Id;
+    }
 
     private void ToggleClientList() => clientListExpanded = !clientListExpanded;
 
-    private string GetClientTypeName(string clientTypeId) =>
-        clientTypes?.FirstOrDefault(t => t.Id == clientTypeId)?.Name ?? clientTypeId;
+    private string GetClientTypeName(BusinessClientManagementRow row) =>
+        row.ClientType?.Name
+        ?? clientTypes?.FirstOrDefault(t => string.Equals(t.Id, row.Client.ClientTypeId, StringComparison.OrdinalIgnoreCase))?.Name
+        ?? row.Client.ClientTypeId;
+
+    private string GetServicePackageName(string? servicePackageId) =>
+        string.IsNullOrWhiteSpace(servicePackageId)
+            ? "-"
+            : ActiveServicePackages.FirstOrDefault(package => string.Equals(package.Id, servicePackageId, StringComparison.OrdinalIgnoreCase))?.Name
+                ?? servicePackageId;
+
+    private async Task<IReadOnlyList<ServicePackage>> LoadServicePackagesAsync(string selectedCompanyId)
+    {
+        var packages = new List<ServicePackage>();
+        packages.AddRange(await CompanyAdminService.GetServicePackagesAsync(appMode.GlobalCatalogCompanyId));
+
+        if (!string.IsNullOrWhiteSpace(selectedCompanyId))
+        {
+            packages.AddRange(await CompanyAdminService.GetServicePackagesAsync(selectedCompanyId));
+        }
+
+        return packages;
+    }
+
+    private bool CompanyMatchesMode(Company company)
+    {
+        var type = companyTypes?.FirstOrDefault(t => string.Equals(t.Id, company.CompanyTypeId, StringComparison.OrdinalIgnoreCase));
+        var searchable = $"{company.CompanyTypeId} {type?.Name} {type?.Description}";
+
+        if (appMode.IsPoolMode)
+        {
+            return ContainsAny(searchable, "pool", "clean");
+        }
+
+        return ContainsAny(searchable, "landscape", "lawn", "yard", "tree");
+    }
+
+    private static bool ContainsAny(string value, params string[] terms) =>
+        terms.Any(term => value.Contains(term, StringComparison.OrdinalIgnoreCase));
+
+    private static bool GetChecked(ChangeEventArgs args) => args.Value is bool value && value;
+
+    private static string CreateRowKey(string value)
+    {
+        var chars = value.Trim().ToLowerInvariant()
+            .Select(ch => char.IsLetterOrDigit(ch) ? ch : '-')
+            .ToArray();
+        var slug = string.Join('-', new string(chars).Split('-', StringSplitOptions.RemoveEmptyEntries));
+        var rowKey = $"{(string.IsNullOrWhiteSpace(slug) ? "business-client" : slug)}-{Guid.NewGuid():N}";
+        return rowKey[..Math.Min(64, rowKey.Length)];
+    }
 
     private sealed class ClientForm
     {
         public string Id { get; set; } = "";
+        public string CompanyId { get; set; } = "";
         public string DisplayName { get; set; } = "";
         public string PrimaryContactName { get; set; } = "";
         public string Email { get; set; } = "";
@@ -269,12 +452,14 @@ else
         public string AccessNotes { get; set; } = "";
         public string ClientTypeId { get; set; } = "";
         public decimal? RateOverride { get; set; }
+        public string? ServicePackageId { get; set; }
         public bool IsActive { get; set; } = true;
         public bool IsEditing { get; set; }
 
         public static ClientForm FromClient(CompanyClient client) => new()
         {
             Id = client.Id,
+            CompanyId = client.CompanyId,
             DisplayName = client.DisplayName,
             PrimaryContactName = client.PrimaryContactName,
             Email = client.Email,
@@ -283,6 +468,7 @@ else
             AccessNotes = client.AccessNotes,
             ClientTypeId = client.ClientTypeId,
             RateOverride = client.RateOverride,
+            ServicePackageId = client.ServicePackageId,
             IsActive = client.IsActive,
             IsEditing = true
         };

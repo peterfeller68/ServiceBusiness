@@ -6,9 +6,11 @@
 @using System.Text
 @using ServiceBusiness.Domain
 @inject ServiceBusiness.Application.CompanyAdminService CompanyAdminService
+@inject ServiceBusiness.Application.OnboardingService OnboardingService
 @inject ServiceBusiness.Application.ICurrentUserContext CurrentUser
 @inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
 @inject ServiceBusiness.Web.CurrentCompanyContext CurrentCompany
+@inject ServiceBusiness.Web.ApplicationModeService ApplicationMode
 @inject NavigationManager Navigation
 
 <PageTitle>Services</PageTitle>
@@ -37,132 +39,130 @@
 }
 else
 {
-    @if (!IsHomeOwnerRoute)
+    @if (IsSystemAdminRoute)
     {
     <section class="management-panel">
         <div class="management-panel-header">
             <h2>Seed Services</h2>
+            <button class="icon-button" type="button" title="Toggle seed services" @onclick="ToggleSeedPanel">@(seedExpanded ? "^" : "v")</button>
         </div>
-        <div class="management-panel-body">
-            <div class="form-grid">
-                <label class="wide">
-                    Services CSV
-                    <InputFile OnChange="OnSeedFileSelected" accept=".csv,text/csv" />
-                </label>
-            </div>
-            <div class="form-actions">
-                <button class="button primary" type="button" @onclick="SeedServicesAsync" disabled="@(seedFile is null)">Seed Table</button>
-            </div>
-            @if (!string.IsNullOrWhiteSpace(seedFileName))
-            {
-                <p class="form-note">@seedFileName selected.</p>
-            }
-        </div>
-    </section>
-    }
-
-    @if (!IsHomeOwnerRoute)
-    {
-    <section class="management-panel">
-        <div class="management-panel-header">
-            <h2>Service Categories</h2>
-            <div class="management-panel-actions">
-                <button class="button primary" type="button" @onclick="ShowCreateCategory">Create</button>
-                <button class="icon-button" type="button" title="Toggle service categories" @onclick="ToggleCategoryList">@(categoryListExpanded ? "^" : "v")</button>
-            </div>
-        </div>
-        @if (categoryListExpanded)
+        @if (seedExpanded)
         {
             <div class="management-panel-body">
-                @if (categoryEditorExpanded)
-                {
-                    <EditForm Model="categoryForm" OnValidSubmit="SaveCategoryAsync" FormName="service-category-editor">
-                        <div class="editor-panel">
-                            <h3>@(categoryForm.IsEditing ? "Edit Category" : "Create Category")</h3>
-                            <label>
-                                Name
-                                <InputText class="form-control" @bind-Value="categoryForm.Name" />
-                            </label>
-                            <label>
-                                Description
-                                <InputTextArea class="form-control" @bind-Value="categoryForm.Description" />
-                            </label>
-                            <label class="switch-control" title="Toggle active state">
-                                <input type="checkbox" checked="@categoryForm.IsActive" @onchange="args => categoryForm.IsActive = GetChecked(args)" />
-                                <span></span>
-                                <small>Active</small>
-                            </label>
-                            <div class="form-actions">
-                                <button class="button primary" type="submit">Save Category</button>
-                                <button class="button" type="button" @onclick="HideCategoryEditor">Cancel</button>
-                            </div>
-                        </div>
-                    </EditForm>
-                }
                 <div class="form-grid">
                     <label class="wide">
-                        Filter categories
-                        <input class="form-control" @bind="categoryFilter" @bind:event="oninput" placeholder="Filter by active state, category, or description" />
+                        Services CSV
+                        <InputFile OnChange="OnSeedFileSelected" accept=".csv,text/csv" />
                     </label>
                 </div>
-                <div class="management-table-wrap">
-                    <table class="management-table">
-                        <thead>
-                            <tr>
-                                <th><button class="table-sort-button" type="button" @onclick="() => SortCategories(CategorySortColumn.Active)">Active @GetCategorySortIndicator(CategorySortColumn.Active)</button></th>
-                                <th><button class="table-sort-button" type="button" @onclick="() => SortCategories(CategorySortColumn.Category)">Category @GetCategorySortIndicator(CategorySortColumn.Category)</button></th>
-                                <th><button class="table-sort-button" type="button" @onclick="() => SortCategories(CategorySortColumn.Description)">Description @GetCategorySortIndicator(CategorySortColumn.Description)</button></th>
-                                <th class="actions">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var group in FilteredCategoryGroups)
-                            {
-                                <tr>
-                                    <td>
-                                        <label class="switch-control" title="Toggle active state">
-                                            <input type="checkbox" checked="@group.Category.IsActive" @onchange="args => ToggleCategoryActiveAsync(group.Category, args)" />
-                                            <span></span>
-                                        </label>
-                                    </td>
-                                    <td>@group.Category.Name</td>
-                                    <td>@group.Category.Description</td>
-                                    <td class="actions">
-                                        <button class="icon-button icon-only" type="button" title="Edit category" aria-label="Edit category" @onclick="() => EditCategory(group.Category)">
-                                            <span class="action-icon edit-icon" aria-hidden="true"></span>
-                                        </button>
-                                        @if (group.Category.IsSystemManaged)
-                                        {
-                                            <button class="icon-button icon-only" type="button" title="Copy as custom category" aria-label="Copy as custom category" @onclick="() => CopyCategoryAsync(group.Category)">
-                                                <span class="action-icon copy-icon" aria-hidden="true"></span>
-                                            </button>
-                                        }
-                                    </td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
+                <div class="form-actions">
+                    <button class="button primary" type="button" @onclick="SeedServicesAsync" disabled="@(seedFile is null)">Seed Table</button>
                 </div>
+                @if (!string.IsNullOrWhiteSpace(seedFileName))
+                {
+                    <p class="form-note">@seedFileName selected.</p>
+                }
             </div>
         }
     </section>
     }
 
+    @if (CanManageServiceCategories)
+    {
+        <section class="management-panel">
+            <div class="management-panel-header">
+                <h2>Service Categories</h2>
+                <div class="management-panel-actions">
+                    <button class="button primary" type="button" @onclick="ShowCreateCategory">Create</button>
+                    <button class="icon-button" type="button" title="Toggle service categories" @onclick="ToggleCategoryList">@(categoryListExpanded ? "^" : "v")</button>
+                </div>
+            </div>
+            @if (categoryListExpanded)
+            {
+                <div class="management-panel-body">
+                    @if (categoryEditorExpanded)
+                    {
+                        <EditForm Model="categoryForm" OnValidSubmit="SaveCategoryAsync" FormName="service-category-editor">
+                            <div class="editor-panel">
+                                <h3>@(categoryForm.IsEditing ? "Edit Category" : "Create Category")</h3>
+                                <label>
+                                    Name
+                                    <InputText class="form-control" @bind-Value="categoryForm.Name" />
+                                </label>
+                                <label>
+                                    Description
+                                    <InputTextArea class="form-control" @bind-Value="categoryForm.Description" />
+                                </label>
+                                <label class="switch-control" title="Toggle active state">
+                                    <input type="checkbox" checked="@categoryForm.IsActive" @onchange="args => categoryForm.IsActive = GetChecked(args)" />
+                                    <span></span>
+                                    <small>Active</small>
+                                </label>
+                                <div class="form-actions">
+                                    <button class="button primary" type="submit">Save Category</button>
+                                    <button class="button" type="button" @onclick="HideCategoryEditor">Cancel</button>
+                                </div>
+                            </div>
+                        </EditForm>
+                    }
+                    <div class="form-grid">
+                        <label class="wide">
+                            Filter categories
+                            <input class="form-control" @bind="categoryFilter" @bind:event="oninput" placeholder="Filter by active state, category, or description" />
+                        </label>
+                    </div>
+                    <div class="management-table-wrap">
+                        <table class="management-table">
+                            <thead>
+                                <tr>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortCategories(CategorySortColumn.Active)">Active @GetCategorySortIndicator(CategorySortColumn.Active)</button></th>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortCategories(CategorySortColumn.Category)">Category @GetCategorySortIndicator(CategorySortColumn.Category)</button></th>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortCategories(CategorySortColumn.Description)">Description @GetCategorySortIndicator(CategorySortColumn.Description)</button></th>
+                                    <th class="actions">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var group in FilteredCategoryGroups)
+                                {
+                                    <tr>
+                                        <td>
+                                            <label class="switch-control" title="Toggle active state">
+                                                <input type="checkbox" checked="@group.Category.IsActive" @onchange="args => ToggleCategoryActiveAsync(group.Category, args)" />
+                                                <span></span>
+                                            </label>
+                                        </td>
+                                        <td>@group.Category.Name</td>
+                                        <td>@group.Category.Description</td>
+                                        <td class="actions">
+                                            <button class="icon-button icon-only" type="button" title="Edit category" aria-label="Edit category" @onclick="() => EditCategory(group.Category)">
+                                                <span class="action-icon edit-icon" aria-hidden="true"></span>
+                                            </button>
+                                            <button class="icon-button icon-only danger" type="button" title="Delete category" aria-label="Delete category" @onclick="() => SetCategoryActiveAsync(group.Category, false)">
+                                                <span class="action-icon delete-icon" aria-hidden="true"></span>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+        </section>
+    }
+
     <section class="management-panel">
         <div class="management-panel-header">
-            <h2>@(IsHomeOwnerRoute ? "Configured Services" : "Services")</h2>
+            <h2>Services</h2>
             <div class="management-panel-actions">
-                @if (!IsHomeOwnerRoute)
-                {
-                    <button class="button primary" type="button" @onclick="ShowCreateService">Create</button>
-                }
+                <button class="button primary" type="button" @onclick="ShowCreateService">Create</button>
                 <button class="icon-button" type="button" title="Toggle services" @onclick="ToggleServiceList">@(serviceListExpanded ? "^" : "v")</button>
             </div>
         </div>
         @if (serviceListExpanded)
         {
             <div class="management-panel-body">
-                @if (serviceEditorExpanded && !IsHomeOwnerRoute)
+                @if (serviceEditorExpanded)
                 {
                     @ServiceEditor()
                 }
@@ -183,6 +183,7 @@ else
                                 {
                                     <th><button class="table-sort-button" type="button" @onclick="() => SortServices(ServiceSortColumn.Duration)">Duration @GetServiceSortIndicator(ServiceSortColumn.Duration)</button></th>
                                     <th><button class="table-sort-button" type="button" @onclick="() => SortServices(ServiceSortColumn.Price)">Price @GetServiceSortIndicator(ServiceSortColumn.Price)</button></th>
+                                    <th><button class="table-sort-button" type="button" @onclick="() => SortServices(ServiceSortColumn.Taxable)">Taxable @GetServiceSortIndicator(ServiceSortColumn.Taxable)</button></th>
                                 }
                                 <th><button class="table-sort-button" type="button" @onclick="() => SortServices(ServiceSortColumn.Description)">Description @GetServiceSortIndicator(ServiceSortColumn.Description)</button></th>
                                 <th class="actions">Action</th>
@@ -204,24 +205,16 @@ else
                                     {
                                         <td>@row.Service.DefaultDurationMinutes min</td>
                                         <td>@row.Service.DefaultPrice.ToString("C")</td>
+                                        <td>@(row.Service.IsTaxable ? "Yes" : "No")</td>
                                     }
                                     <td>@row.Service.Description</td>
                                     <td class="actions">
                                         <button class="icon-button icon-only" type="button" title="Edit service" aria-label="Edit service" @onclick="() => EditService(row.Service)">
                                             <span class="action-icon edit-icon" aria-hidden="true"></span>
                                         </button>
-                                        @if (row.Category.IsSystemManaged)
-                                        {
-                                            <button class="icon-button icon-only" type="button" title="Copy service" aria-label="Copy service" @onclick="() => CopyServiceAsync(row.Service)">
-                                                <span class="action-icon copy-icon" aria-hidden="true"></span>
-                                            </button>
-                                        }
-                                        @if (IsHomeOwnerRoute)
-                                        {
-                                            <button class="icon-button icon-only danger" type="button" title="Delete service" aria-label="Delete service" @onclick="() => DeleteServiceAsync(row.Service)">
-                                                <span class="action-icon delete-icon" aria-hidden="true"></span>
-                                            </button>
-                                        }
+                                        <button class="icon-button icon-only danger" type="button" title="Delete service" aria-label="Delete service" @onclick="() => DeleteServiceAsync(row.Service)">
+                                            <span class="action-icon delete-icon" aria-hidden="true"></span>
+                                        </button>
                                     </td>
                                 </tr>
                             }
@@ -232,23 +225,18 @@ else
         }
     </section>
 
-    @if (IsHomeOwnerRoute)
+    @if (CanAddGlobalServices)
     {
         <section class="management-panel">
             <div class="management-panel-header">
                 <h2>Add Services</h2>
                 <div class="management-panel-actions">
-                    <button class="button primary" type="button" @onclick="ShowCreateService">Create</button>
                     <button class="icon-button" type="button" title="Toggle add services" @onclick="ToggleAddServicePanel">@(addServiceExpanded ? "^" : "v")</button>
                 </div>
             </div>
             @if (addServiceExpanded)
             {
                 <div class="management-panel-body">
-                    @if (serviceEditorExpanded)
-                    {
-                        @ServiceEditor()
-                    }
                     <div class="form-grid">
                         <label class="wide">
                             Find global services
@@ -273,7 +261,9 @@ else
                                         <td>@row.Category.Name</td>
                                         <td>@row.Service.Description</td>
                                         <td class="actions">
-                                            <button class="button" type="button" @onclick="() => AddGlobalServiceAsync(row.Service.Id)">Choose</button>
+                                            <button class="icon-button icon-only" type="button" title="Choose service" aria-label="Choose service" @onclick="() => AddGlobalServiceAsync(row.Service.Id)">
+                                                <span class="action-icon choose-icon" aria-hidden="true"></span>
+                                            </button>
                                         </td>
                                     </tr>
                                 }
@@ -288,6 +278,7 @@ else
 
 @code {
     private string companyId = "";
+    private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
     private CatalogOverview? catalog;
     private CatalogOverview? globalCatalog;
     private ServiceCategoryForm categoryForm = new();
@@ -295,6 +286,7 @@ else
     private bool categoryListExpanded = true;
     private bool serviceListExpanded = true;
     private bool addServiceExpanded = true;
+    private bool seedExpanded = true;
     private bool categoryEditorExpanded;
     private bool serviceEditorExpanded;
     private IBrowserFile? seedFile;
@@ -310,15 +302,18 @@ else
     private string? errorMessage;
     private bool IsSystemAdminRoute => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("admin/", StringComparison.OrdinalIgnoreCase);
     private bool IsHomeOwnerRoute => string.Equals(Navigation.ToBaseRelativePath(Navigation.Uri).Trim('/'), "settings/services", StringComparison.OrdinalIgnoreCase);
+    private bool IsBusinessOwnerRoute => string.Equals(Navigation.ToBaseRelativePath(Navigation.Uri).Trim('/'), "catalog/services", StringComparison.OrdinalIgnoreCase);
+    private bool CanAddGlobalServices => IsHomeOwnerRoute || IsBusinessOwnerRoute;
+    private bool CanManageServiceCategories => IsSystemAdminRoute;
     private string PageScope => IsSystemAdminRoute ? "System Administrator" : IsHomeOwnerRoute ? "Home Owner" : "Company Admin";
     private string ServiceFilterPlaceholder => IsHomeOwnerRoute
         ? "Filter by active state, name, category, or description"
-        : "Filter by active state, name, category, duration, price, or description";
+        : "Filter by active state, name, category, duration, price, taxable, or description";
     private IReadOnlyList<ServiceCategory> ServiceCategories => catalog?.ServiceGroups.Select(g => g.Category).ToList() ?? [];
     private IReadOnlyList<ServiceCategory> GlobalServiceCategories => globalCatalog?.ServiceGroups.Select(g => g.Category).ToList() ?? [];
-    private IReadOnlyList<ServiceCategory> AvailableServiceCategories => IsHomeOwnerRoute
-        ? GlobalServiceCategories
-            .Concat(ServiceCategories)
+    private IReadOnlyList<ServiceCategory> AvailableServiceCategories => CanAddGlobalServices
+        ? ServiceCategories
+            .Concat(GlobalServiceCategories)
             .GroupBy(category => category.Id, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
             .OrderBy(category => category.Name)
@@ -343,13 +338,20 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        appMode = await ApplicationMode.GetCurrentAsync();
         if (IsSystemAdminRoute)
         {
             DemoUser.UserId = "sys-admin";
-            companyId = "global";
+            companyId = appMode.GlobalCatalogCompanyId;
         }
         else if (IsHomeOwnerRoute)
         {
+            if (!await IsIndependentHomeOwnerAsync())
+            {
+                Navigation.NavigateTo("dashboard", replace: true);
+                return;
+            }
+
             companyId = CurrentUser.UserId;
         }
         else
@@ -436,10 +438,7 @@ else
     {
         await RunAsync(async () =>
         {
-            if (IsHomeOwnerRoute)
-            {
-                await EnsureHomeOwnerServiceCategoryAsync(serviceForm.CategoryId);
-            }
+            await EnsureSelectedGlobalServiceCategoryAsync(serviceForm.CategoryId);
 
             await CompanyAdminService.UpsertServiceAsync(new ServiceOffering(
                 GetServiceRowKey(),
@@ -470,7 +469,7 @@ else
             var row = GlobalServiceRows.FirstOrDefault(row => row.Service.Id == serviceId)
                 ?? throw new InvalidOperationException("Global service was not found.");
 
-            await EnsureHomeOwnerServiceCategoryAsync(row.Service.CategoryId);
+            await EnsureSelectedGlobalServiceCategoryAsync(row.Service.CategoryId);
             await CompanyAdminService.UpsertServiceAsync(row.Service with
             {
                 CompanyId = companyId,
@@ -588,9 +587,9 @@ else
     private async Task LoadAsync()
     {
         catalog = await CompanyAdminService.GetCatalogOverviewAsync(companyId);
-        if (IsHomeOwnerRoute)
+        if (CanAddGlobalServices)
         {
-            globalCatalog = await CompanyAdminService.GetCatalogOverviewAsync("global");
+            globalCatalog = await CompanyAdminService.GetCatalogOverviewAsync(appMode.GlobalCatalogCompanyId);
         }
         else
         {
@@ -598,9 +597,15 @@ else
         }
     }
 
-    private async Task EnsureHomeOwnerServiceCategoryAsync(string? categoryId)
+    private async Task<bool> IsIndependentHomeOwnerAsync()
     {
-        if (!IsHomeOwnerRoute || string.IsNullOrWhiteSpace(categoryId))
+        var access = await OnboardingService.GetAccessOverviewAsync(CurrentUser.UserId);
+        return !access.User.IsSystemAdmin && access.Companies.Count == 0;
+    }
+
+    private async Task EnsureSelectedGlobalServiceCategoryAsync(string? categoryId)
+    {
+        if (!CanAddGlobalServices || string.IsNullOrWhiteSpace(categoryId))
         {
             return;
         }
@@ -670,6 +675,8 @@ else
 
     private void ToggleAddServicePanel() => addServiceExpanded = !addServiceExpanded;
 
+    private void ToggleSeedPanel() => seedExpanded = !seedExpanded;
+
     private void SortCategories(CategorySortColumn column)
     {
         if (categorySortColumn == column)
@@ -729,6 +736,7 @@ else
             ServiceSortColumn.Name => ApplyServiceSort(rows, row => row.Service.Name),
             ServiceSortColumn.Category => ApplyServiceSort(rows, row => row.Category.Name),
             ServiceSortColumn.Description => ApplyServiceSort(rows, row => row.Service.Description),
+            ServiceSortColumn.Taxable => ApplyServiceSort(rows, row => row.Service.IsTaxable ? "1" : "0"),
             ServiceSortColumn.Duration => serviceSortDescending
                 ? rows.OrderByDescending(row => row.Service.DefaultDurationMinutes)
                 : rows.OrderBy(row => row.Service.DefaultDurationMinutes),
@@ -779,8 +787,9 @@ else
             ContainsFilter(row.Category.Name, serviceFilter) ||
             ContainsFilter(row.Service.Description, serviceFilter) ||
             (!IsHomeOwnerRoute && (
-            ContainsFilter($"{row.Service.DefaultDurationMinutes} min", serviceFilter) ||
-            ContainsFilter(row.Service.DefaultPrice.ToString("C"), serviceFilter)));
+                ContainsFilter($"{row.Service.DefaultDurationMinutes} min", serviceFilter) ||
+                ContainsFilter(row.Service.DefaultPrice.ToString("C"), serviceFilter) ||
+                ContainsFilter(row.Service.IsTaxable ? "taxable" : "not taxable", serviceFilter)));
     }
 
     private bool MatchesGlobalServiceFilter(ServiceGridRow row)
@@ -836,7 +845,8 @@ else
         Category,
         Description,
         Duration,
-        Price
+        Price,
+        Taxable
     }
 
     private sealed class ServiceCategoryForm

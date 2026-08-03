@@ -19,7 +19,7 @@
 
 <div class="nav-scrollable" onclick="if (event.target.closest('a.nav-link')) document.querySelector('.navbar-toggler').checked = false">
     <nav class="nav flex-column">
-        @if (!isAuthenticated)
+        @if (!isAuthenticated || IsPendingApprovalOnly)
         {
             <div class="nav-item px-3">
                 <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
@@ -28,13 +28,41 @@
             </div>
         }
 
-        @if (isAuthenticated)
+        @if (isAuthenticated && !IsPendingApprovalOnly)
         {
             <div class="nav-item px-3">
                 <NavLink class="nav-link" href="dashboard">
                     <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Dashboard
                 </NavLink>
             </div>
+
+            @if (isSystemAdmin)
+            {
+                <button class="nav-section-toggle px-3" type="button" @onclick="ToggleSystemAdministrator" @onclick:stopPropagation="true" aria-expanded="@systemAdministratorExpanded">
+                    <span>@(systemAdministratorExpanded ? "v" : ">")</span> System Administrator
+                </button>
+                @if (systemAdministratorExpanded)
+                {
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link nested" href="admin/delete-user">
+                            <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Delete User
+                        </NavLink>
+                    </div>
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link nested" href="admin/roles">
+                            <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> User Roles
+                        </NavLink>
+                    </div>
+                    @if (appMode.IsPoolMode)
+                    {
+                        <div class="nav-item px-3">
+                            <NavLink class="nav-link nested" href="admin/catalog/poolequipment">
+                                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Pool Equipment
+                            </NavLink>
+                        </div>
+                    }
+                }
+            }
 
             @if (ShowSettingsSection)
             {
@@ -43,30 +71,21 @@
                 </button>
                 @if (settingsExpanded)
                 {
-                    @if (!isIndependentHomeOwner)
-                    {
-                        <div class="nav-item px-3">
-                            <NavLink class="nav-link nested" href="settings">
-                                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> General
-                            </NavLink>
-                        </div>
-                    }
-
                     @if (isSystemAdmin)
                     {
                         <div class="nav-item px-3">
-                            <NavLink class="nav-link nested" href="admin/companies">
-                                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Companies
+                            <NavLink class="nav-link nested" href="admin/service-clients">
+                                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Service Clients
+                            </NavLink>
+                        </div>
+                        <div class="nav-item px-3">
+                            <NavLink class="nav-link nested" href="admin/clients">
+                                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Business Clients
                             </NavLink>
                         </div>
                         <div class="nav-item px-3">
                             <NavLink class="nav-link nested" href="admin/users">
                                 <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Users
-                            </NavLink>
-                        </div>
-                        <div class="nav-item px-3">
-                            <NavLink class="nav-link nested" href="admin/roles">
-                                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Roles
                             </NavLink>
                         </div>
                     }
@@ -75,7 +94,7 @@
                     {
                         <div class="nav-item px-3">
                             <NavLink class="nav-link nested" href="clients">
-                                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Customers
+                                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Business Clients
                             </NavLink>
                         </div>
                         <div class="nav-item px-3">
@@ -92,8 +111,8 @@
                             @if (appMode.IsPoolMode)
                             {
                                 <div class="nav-item px-3">
-                                    <NavLink class="nav-link nested" href="admin/catalog/poolequipment">
-                                        <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Pool Equipment
+                                    <NavLink class="nav-link nested" href="poolequipment">
+                                        <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Pool Configuration
                                     </NavLink>
                                 </div>
                             }
@@ -107,14 +126,19 @@
                                     <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Services
                                 </NavLink>
                             </div>
+                            <div class="nav-item px-3">
+                                <NavLink class="nav-link nested" href="admin/catalog/servicepackages">
+                                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Service Packages
+                                </NavLink>
+                            </div>
                         }
                         else
                         {
                             @if (appMode.IsPoolMode)
                             {
                                 <div class="nav-item px-3">
-                                    <NavLink class="nav-link nested" href="catalog/poolequipment">
-                                        <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Pool Equipment
+                                    <NavLink class="nav-link nested" href="poolequipment">
+                                        <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Pool Configuration
                                     </NavLink>
                                 </div>
                             }
@@ -128,28 +152,68 @@
                                     <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Services
                                 </NavLink>
                             </div>
+                            <div class="nav-item px-3">
+                                <NavLink class="nav-link nested" href="catalog/servicepackages">
+                                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Service Packages
+                                </NavLink>
+                            </div>
                         }
-                    }
-
-                    @if (appMode.IsPoolMode && !isSystemAdmin && HasRole(CompanyRole.CompanyClientUser))
-                    {
-                        <div class="nav-item px-3">
-                            <NavLink class="nav-link nested" href="poolequipment">
-                                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Pool Equipment
-                            </NavLink>
-                        </div>
                     }
 
                     @if (appMode.IsPoolMode && isIndependentHomeOwner)
                     {
                         <div class="nav-item px-3">
                             <NavLink class="nav-link nested" href="poolequipment">
-                                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Pool Equipment
+                                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Pool Configuration
                             </NavLink>
                         </div>
                         <div class="nav-item px-3">
                             <NavLink class="nav-link nested" href="settings/services">
                                 <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Services
+                            </NavLink>
+                        </div>
+                    }
+                }
+            }
+
+            @if (ShowVisitSchedulingSection)
+            {
+                <button class="nav-section-toggle px-3" type="button" @onclick="ToggleVisitScheduling" @onclick:stopPropagation="true" aria-expanded="@visitSchedulingExpanded">
+                    <span>@(visitSchedulingExpanded ? "v" : ">")</span> Visit Scheduling
+                </button>
+                @if (visitSchedulingExpanded)
+                {
+                    @if (isSystemAdmin)
+                    {
+                        <div class="nav-item px-3">
+                            <NavLink class="nav-link nested" href="admin/visits">
+                                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Visits
+                            </NavLink>
+                        </div>
+                        <div class="nav-item px-3">
+                            <NavLink class="nav-link nested" href="admin/invoices">
+                                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Invoices
+                            </NavLink>
+                        </div>
+                    }
+                    @if (HasRole(CompanyRole.CompanyAdmin))
+                    {
+                        <div class="nav-item px-3">
+                            <NavLink class="nav-link nested" href="visits">
+                                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Visits
+                            </NavLink>
+                        </div>
+                        <div class="nav-item px-3">
+                            <NavLink class="nav-link nested" href="invoices">
+                                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Invoices
+                            </NavLink>
+                        </div>
+                    }
+                    @if (HasRole(CompanyRole.CompanyUser))
+                    {
+                        <div class="nav-item px-3">
+                            <NavLink class="nav-link nested" href="field">
+                                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Assigned Visits
                             </NavLink>
                         </div>
                     }
@@ -196,7 +260,7 @@
             </div>
         }
 
-        @if (appMode.DevTest)
+        @if (appMode.DevTest && !IsPendingApprovalOnly)
         {
             <button class="nav-section-toggle px-3" type="button" @onclick="ToggleTest" @onclick:stopPropagation="true" aria-expanded="@testExpanded">
                 <span>@(testExpanded ? "v" : ">")</span> Test
@@ -219,11 +283,14 @@
 </div>
 
 @code {
+    private IReadOnlyList<CompanyAccess> allAccess = [];
     private IReadOnlyList<CompanyAccess> activeAccess = [];
     private bool isAuthenticated;
     private bool isSystemAdmin;
     private bool isIndependentHomeOwner;
     private bool settingsExpanded = true;
+    private bool visitSchedulingExpanded = true;
+    private bool systemAdministratorExpanded = true;
     private bool logExpanded = true;
     private bool reportsExpanded = true;
     private bool helpExpanded = true;
@@ -272,6 +339,7 @@
             ?? CurrentUser.UserId;
         var overview = await OnboardingService.GetAccessOverviewAsync(userId);
         isSystemAdmin = overview.User.IsSystemAdmin;
+        allAccess = overview.Companies;
         activeAccess = overview.Companies
             .Where(c => c.Status == MembershipStatus.Active)
             .ToList();
@@ -280,11 +348,14 @@
 
     private void ResetMenuState()
     {
+        allAccess = [];
         activeAccess = [];
         isAuthenticated = false;
         isSystemAdmin = false;
         isIndependentHomeOwner = false;
+        systemAdministratorExpanded = true;
         settingsExpanded = true;
+        visitSchedulingExpanded = true;
         logExpanded = true;
         reportsExpanded = true;
         helpExpanded = true;
@@ -298,13 +369,28 @@
 
     private bool HasRole(CompanyRole role) => activeAccess.Any(a => a.Role == role);
 
+    private bool IsPendingApprovalOnly =>
+        isAuthenticated &&
+        !isSystemAdmin &&
+        !isIndependentHomeOwner &&
+        activeAccess.Count == 0 &&
+        allAccess.Any(a => a.Status == MembershipStatus.Pending);
+
     private bool ShowSettingsSection =>
         isSystemAdmin ||
         HasRole(CompanyRole.CompanyAdmin) ||
-        HasRole(CompanyRole.CompanyClientUser) ||
         isIndependentHomeOwner;
 
+    private bool ShowVisitSchedulingSection =>
+        isSystemAdmin ||
+        HasRole(CompanyRole.CompanyAdmin) ||
+        HasRole(CompanyRole.CompanyUser);
+
     private void ToggleSettings() => settingsExpanded = !settingsExpanded;
+
+    private void ToggleVisitScheduling() => visitSchedulingExpanded = !visitSchedulingExpanded;
+
+    private void ToggleSystemAdministrator() => systemAdministratorExpanded = !systemAdministratorExpanded;
 
     private void ToggleLog() => logExpanded = !logExpanded;
 
