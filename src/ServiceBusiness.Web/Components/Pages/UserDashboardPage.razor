@@ -430,6 +430,36 @@ else if (IsBusinessOwner)
 
         <section class="management-panel">
             <div class="management-panel-header">
+                <h2>Assigned Visits Today</h2>
+                <div class="management-panel-actions">
+                    <button class="icon-button" type="button" title="Toggle assigned visits today" @onclick="ToggleBusinessOwnerTodayVisitsPanel">@(businessOwnerTodayVisitsExpanded ? "^" : "v")</button>
+                </div>
+            </div>
+            @if (businessOwnerTodayVisitsExpanded)
+            {
+                <div class="management-panel-body">
+                    @BusinessOwnerAssignedVisitsTable(BusinessOwnerAssignedTodayVisits, true, true, "No assigned visits for today.")
+                </div>
+            }
+        </section>
+
+        <section class="management-panel">
+            <div class="management-panel-header">
+                <h2>Upcoming Visits</h2>
+                <div class="management-panel-actions">
+                    <button class="icon-button" type="button" title="Toggle upcoming visits" @onclick="ToggleBusinessOwnerUpcomingVisitsPanel">@(businessOwnerUpcomingVisitsExpanded ? "^" : "v")</button>
+                </div>
+            </div>
+            @if (businessOwnerUpcomingVisitsExpanded)
+            {
+                <div class="management-panel-body">
+                    @BusinessOwnerAssignedVisitsTable(BusinessOwnerUpcomingVisits, false, false, "No upcoming assigned visits.")
+                </div>
+            }
+        </section>
+
+        <section class="management-panel">
+            <div class="management-panel-header">
                 <h2>Unscheduled and Scheduled Visits</h2>
                 <div class="management-panel-actions">
                     <button class="icon-button" type="button" title="Toggle visits" @onclick="ToggleBusinessOwnerVisitsPanel">@(businessOwnerVisitsExpanded ? "^" : "v")</button>
@@ -856,6 +886,7 @@ else
     private IReadOnlyList<ServiceVisit> businessOwnerVisits = [];
     private IReadOnlyList<CompanyUserManagementRow> businessOwnerEmployees = [];
     private IReadOnlyList<CompanyClient> businessOwnerClients = [];
+    private IReadOnlyList<ServiceOffering> businessOwnerServices = [];
     private Dictionary<string, string> businessOwnerVisitAssignees = new(StringComparer.OrdinalIgnoreCase);
     private ServicePackage? businessClientServicePackage;
     private PoolEquipmentOverview? businessClientPoolEquipment;
@@ -876,7 +907,9 @@ else
     private bool servicePackageExpanded = true;
     private bool serviceHistoryExpanded = true;
     private bool approvalsExpanded = true;
-    private bool businessOwnerVisitsExpanded = true;
+    private bool businessOwnerTodayVisitsExpanded = true;
+    private bool businessOwnerUpcomingVisitsExpanded;
+    private bool businessOwnerVisitsExpanded;
     private bool businessClientUpcomingExpanded = true;
     private bool businessClientServicePackageExpanded;
     private bool businessClientPoolConfigurationExpanded;
@@ -923,6 +956,23 @@ else
     private int SystemServiceCount => systemCatalog?.ServiceGroups.SelectMany(group => group.Services).Count(service => service.IsActive) ?? 0;
     private int SystemServicePackageCount => systemServicePackages.Count(package => package.IsActive);
     private int BusinessOwnerServicePackageCount => businessOwnerServicePackages.Count(package => package.IsActive);
+    private IReadOnlyList<ServiceVisit> BusinessOwnerAssignedTodayVisits => businessOwnerVisits
+        .Where(visit => visit.Status is VisitStatus.Assigned or VisitStatus.InProgress)
+        .Where(visit => string.Equals(visit.AssignedUserId, CurrentUser.UserId, StringComparison.OrdinalIgnoreCase))
+        .Where(visit => visit.ScheduledDate == DateOnly.FromDateTime(DateTime.Today))
+        .OrderBy(visit => visit.ServiceWindowStart)
+        .ThenBy(visit => visit.RouteOrder)
+        .ThenBy(visit => visit.VisitName)
+        .ToList();
+    private IReadOnlyList<ServiceVisit> BusinessOwnerUpcomingVisits => businessOwnerVisits
+        .Where(visit => visit.Status is VisitStatus.Assigned or VisitStatus.InProgress)
+        .Where(visit => string.Equals(visit.AssignedUserId, CurrentUser.UserId, StringComparison.OrdinalIgnoreCase))
+        .Where(visit => visit.ScheduledDate > DateOnly.FromDateTime(DateTime.Today))
+        .OrderBy(visit => visit.ScheduledDate)
+        .ThenBy(visit => visit.ServiceWindowStart)
+        .ThenBy(visit => visit.RouteOrder)
+        .ThenBy(visit => visit.VisitName)
+        .ToList();
     private IReadOnlyList<ServiceVisit> BusinessOwnerPendingVisits => businessOwnerVisits
         .Where(visit => visit.Status is VisitStatus.New or VisitStatus.Unscheduled or VisitStatus.Scheduled)
         .OrderBy(visit => visit.ScheduledDate == default ? DateOnly.MaxValue : visit.ScheduledDate)
@@ -1341,6 +1391,63 @@ else
         }
     </div>;
 
+    private RenderFragment BusinessOwnerAssignedVisitsTable(IReadOnlyList<ServiceVisit> rows, bool allowComplete, bool allowEdit, string emptyText) => @<div>
+        @if (rows.Count == 0)
+        {
+            <p>@emptyText</p>
+        }
+        else
+        {
+            <div class="management-table-wrap">
+                <table class="management-table">
+                    <thead>
+                        <tr>
+                            <th>Visit Type</th>
+                            <th>Visit Date</th>
+                            <th>Visit Name</th>
+                            <th>Business Client</th>
+                            <th>Assigned To</th>
+                            <th>Status</th>
+                            <th>Notes</th>
+                            <th class="actions">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var visit in rows)
+                        {
+                            <tr>
+                                <td>@DisplayVisitType(visit.VisitType)</td>
+                                <td>@DisplayVisitDate(visit)</td>
+                                <td>@DisplayVisitName(visit)</td>
+                                <td>@GetBusinessOwnerClientName(visit)</td>
+                                <td>@GetBusinessOwnerAssigneeName(visit)</td>
+                                <td>@DisplayVisitStatus(visit.Status)</td>
+                                <td>@visit.NotesToBusinessClient</td>
+                                <td class="actions">
+                                    @if (allowComplete)
+                                    {
+                                        <button class="icon-button icon-only" type="button" title="Complete visit" aria-label="Complete visit" @onclick="() => CompleteBusinessOwnerVisitAsync(visit)">
+                                            <span class="action-icon check-icon" aria-hidden="true"></span>
+                                        </button>
+                                    }
+                                    @if (allowEdit)
+                                    {
+                                        <a class="icon-button icon-only" href="visits" title="Edit visit" aria-label="Edit visit">
+                                            <span class="action-icon edit-icon" aria-hidden="true"></span>
+                                        </a>
+                                    }
+                                    <button class="icon-button icon-only" type="button" title="Show visit info" aria-label="Show visit info" @onclick="() => ShowVisitInfo(visit)">
+                                        <span class="action-icon info-icon" aria-hidden="true"></span>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>;
+
     private RenderFragment BusinessEmployeeVisitsTable(IReadOnlyList<ServiceHistoryItem> rows, bool allowComplete, bool allowReopen, bool allowEdit, string emptyText) => @<div>
         @if (rows.Count == 0)
         {
@@ -1486,8 +1593,17 @@ else
             .OrderBy(client => client.DisplayName)
             .ToList();
         businessOwnerEmployees = (await CompanyAdminService.GetCompanyUserManagementOverviewAsync(companyId)).Users
-            .Where(row => row.Membership.Role == CompanyRole.CompanyUser && row.Membership.Status == MembershipStatus.Active)
+            .Where(row => row.Membership.Role is CompanyRole.CompanyAdmin or CompanyRole.CompanyUser && row.Membership.Status == MembershipStatus.Active)
             .OrderBy(row => row.User.DisplayName)
+            .ToList();
+        var companyServices = await CompanyAdminService.GetServicesAsync(companyId);
+        var globalCatalog = await CompanyAdminService.GetCatalogOverviewAsync(appMode.GlobalCatalogCompanyId);
+        businessOwnerServices = companyServices
+            .Concat(globalCatalog.ServiceGroups.SelectMany(group => group.Services))
+            .Where(service => service.IsActive)
+            .GroupBy(service => service.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(service => service.Name)
             .ToList();
         businessOwnerVisitAssignees = businessOwnerVisits.ToDictionary(
             visit => visit.Id,
@@ -1686,6 +1802,26 @@ else
         businessEmployeeVisitForm.OutOfScopeServiceIds = ids;
     }
 
+    private async Task CompleteBusinessOwnerVisitAsync(ServiceVisit visit)
+    {
+        message = null;
+        errorMessage = null;
+        try
+        {
+            await CompanyAdminService.SetVisitStatusAsync(visit.CompanyId, visit.Id, VisitStatus.Completed);
+            message = "Visit was marked complete.";
+            await LoadBusinessOwnerDashboardAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
     private async Task AssignBusinessOwnerVisitAsync(ServiceVisit visit)
     {
         message = null;
@@ -1789,6 +1925,10 @@ else
 
     private void ToggleApprovalsPanel() => approvalsExpanded = !approvalsExpanded;
 
+    private void ToggleBusinessOwnerTodayVisitsPanel() => businessOwnerTodayVisitsExpanded = !businessOwnerTodayVisitsExpanded;
+
+    private void ToggleBusinessOwnerUpcomingVisitsPanel() => businessOwnerUpcomingVisitsExpanded = !businessOwnerUpcomingVisitsExpanded;
+
     private void ToggleBusinessOwnerVisitsPanel() => businessOwnerVisitsExpanded = !businessOwnerVisitsExpanded;
 
     private void ToggleBusinessClientUpcomingPanel() => businessClientUpcomingExpanded = !businessClientUpcomingExpanded;
@@ -1855,6 +1995,11 @@ else
         businessOwnerClients.FirstOrDefault(client => string.Equals(client.Id, visit.CompanyClientId, StringComparison.OrdinalIgnoreCase))?.DisplayName
         ?? visit.CompanyClientId;
 
+    private string GetBusinessOwnerAssigneeName(ServiceVisit visit) =>
+        businessOwnerEmployees.FirstOrDefault(employee => string.Equals(employee.User.Id, visit.AssignedUserId, StringComparison.OrdinalIgnoreCase))?.User.DisplayName
+        ?? visit.AssignedUserId
+        ?? "Unassigned";
+
     private string GetDashboardVisitClientName(ServiceVisit visit) =>
         businessOwnerClients.FirstOrDefault(client => string.Equals(client.Id, visit.CompanyClientId, StringComparison.OrdinalIgnoreCase))?.DisplayName
         ?? businessClient?.DisplayName
@@ -1863,7 +2008,8 @@ else
         ?? visit.CompanyClientId;
 
     private ServiceOffering? GetDashboardService(string serviceId) =>
-        businessEmployeeServices
+        businessOwnerServices
+            .Concat(businessEmployeeServices)
             .Concat(BusinessClientAvailableServices)
             .FirstOrDefault(service => string.Equals(service.Id, serviceId, StringComparison.OrdinalIgnoreCase));
 

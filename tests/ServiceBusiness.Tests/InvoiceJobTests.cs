@@ -83,6 +83,59 @@ public sealed class InvoiceJobTests
     }
 
     [Fact]
+    public async Task Invoicing_service_recreates_invoice_when_visit_has_stale_invoice_id()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var visit = (await store.GetVisitAsync("clearwater", "visit-4"))! with
+        {
+            Status = VisitStatus.Closed,
+            InvoiceId = "invoice-visit-stale"
+        };
+        await store.UpsertVisitAsync(visit);
+        var invoicing = new InvoicingJobService(store);
+
+        var invoices = await invoicing.CreateInvoicesForCompletedVisitsAsync();
+
+        var invoice = Assert.Single(invoices);
+        Assert.NotEqual("invoice-visit-stale", invoice.InvoiceId);
+        Assert.Equal("000001", invoice.InvoiceId);
+        var updatedVisit = await store.GetVisitAsync("clearwater", "visit-4");
+        Assert.Equal(invoice.InvoiceId, updatedVisit!.InvoiceId);
+        Assert.NotNull(await store.GetInvoiceAsync("clearwater", invoice.InvoiceId));
+    }
+
+    [Fact]
+    public async Task Invoicing_service_blocks_creation_when_visit_invoice_id_has_matching_invoice()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var visit = (await store.GetVisitAsync("clearwater", "visit-4"))! with
+        {
+            Status = VisitStatus.Closed,
+            InvoiceId = "000123"
+        };
+        await store.UpsertVisitAsync(visit);
+        await store.UpsertInvoiceAsync(new Invoice(
+            Guid.NewGuid().ToString("N"),
+            "clearwater",
+            "000123",
+            DateOnly.FromDateTime(DateTime.Today),
+            null,
+            visit.CompanyClientId,
+            visit.Id,
+            null,
+            [],
+            [],
+            0m,
+            InvoiceStatus.New,
+            "<html></html>",
+            DateTimeOffset.UtcNow));
+        var invoicing = new InvoicingJobService(store);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            invoicing.CreateInvoiceForVisitAsync("clearwater", "visit-4"));
+    }
+
+    [Fact]
     public async Task Scheduled_job_runner_creates_invoices_and_processes_new_email_logs()
     {
         var store = new InMemoryServiceBusinessStore(new SystemSettings(SystemMode.Pool, DevTest: true));

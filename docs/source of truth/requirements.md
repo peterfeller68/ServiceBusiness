@@ -606,7 +606,7 @@ Company Admins can:
 Company Client Users can:
 
 - View invoices.
-- View generated invoice HTML.
+- View generated invoice HTML as a rendered preview.
 
 System Administrators can:
 
@@ -618,6 +618,8 @@ Invoice requirements:
 - Ad-hoc visits bill planned services, out-of-scope services, and out-of-scope materials.
 - Service package visits treat planned services as included and bill out-of-scope services and out-of-scope materials.
 - Creating an invoice stores an invoice snapshot, updates the service visit invoice id, and queues an invoice email.
+- A service visit invoice id is valid only when it references an existing invoice record for the same service client.
+- Closed visits with stale invoice ids and no matching invoice record remain eligible for invoice creation.
 
 System requirements:
 

@@ -1,75 +1,223 @@
 @page "/admin/email-log"
+@page "/logs/email"
 @rendermode InteractiveServer
+@using ServiceBusiness.Application
 @using ServiceBusiness.Domain
-@inject ServiceBusiness.Application.PlatformAdminService PlatformAdminService
-@inject ServiceBusiness.Web.DemoCurrentUserContext DemoUser
+@inject EmailLogService EmailLogService
+@inject OnboardingService OnboardingService
+@inject PlatformAdminService PlatformAdminService
+@inject ICurrentUserContext CurrentUser
+@inject ServiceBusiness.Web.ApplicationModeService ApplicationMode
 
 <PageTitle>Email Log</PageTitle>
 
 <section class="page-header">
     <div>
-        <p class="eyebrow">System Administrator</p>
+        <p class="eyebrow">@PageEyebrow</p>
         <h1>Email Log</h1>
-        <p class="lede">Review email notification attempts, reroutes, failures, and suppressed sends.</p>
+        <p class="lede">Review email notification attempts, delivery state, failures, and message bodies.</p>
     </div>
-    <a class="button" href="admin">Dashboard</a>
 </section>
 
-@if (emailLogs is null)
+@if (isLoading)
 {
     <p>Loading email log...</p>
 }
-else if (emailLogs.Count == 0)
+else if (!CanViewLogs)
 {
     <div class="callout">
-        <strong>No emails logged yet</strong>
-        <p>Email notifications will appear here after visit completion or access approval decisions.</p>
+        <strong>No access</strong>
+        <p>Email logs are not available for your current role.</p>
     </div>
 }
 else
 {
     <section class="section">
-        <h2>Recent Emails</h2>
-        <div class="data-list">
-            @foreach (var email in emailLogs.Take(25))
+        <h2>Status Counts</h2>
+        <div class="metric-grid">
+            @foreach (var status in Enum.GetValues<EmailDeliveryStatus>())
             {
-                <article class="row-card">
-                    <div>
-                        <strong>@email.Subject</strong>
-                        <p>@email.RecipientEmail &middot; @email.EmailType</p>
-                        @if (!string.IsNullOrWhiteSpace(email.FromEmail))
-                        {
-                            <small>From: @email.FromEmail</small>
-                        }
-                        @if (!string.IsNullOrWhiteSpace(email.CcEmail))
-                        {
-                            <small>CC: @email.CcEmail</small>
-                        }
-                        @if (!string.Equals(email.OriginalRecipientEmail, email.RecipientEmail, StringComparison.OrdinalIgnoreCase))
-                        {
-                            <small>Original recipient: @email.OriginalRecipientEmail</small>
-                        }
-                        @if (!string.IsNullOrWhiteSpace(email.FailureReason))
-                        {
-                            <small>@email.FailureReason</small>
-                        }
-                    </div>
-                    <div class="row-actions">
-                        <span class="status-pill">@email.Status</span>
-                        <small>@email.CreatedUtc.LocalDateTime.ToString("g")</small>
-                    </div>
+                <article>
+                    <span>@FormatStatus(status)</span>
+                    <strong>@CountStatus(status)</strong>
                 </article>
             }
         </div>
     </section>
+
+    <section class="section">
+        <div class="section-heading">
+            <div>
+                <h2>Email Details</h2>
+            </div>
+            <button class="icon-button" type="button" title="Toggle email details" @onclick="ToggleDetails">@(detailsExpanded ? "^" : "v")</button>
+        </div>
+
+        @if (detailsExpanded)
+        {
+            <div class="form-grid compact-grid">
+                <label>
+                    Date
+                    <InputDate class="form-control" @bind-Value="filterDate" />
+                </label>
+                <div class="form-actions align-end">
+                    <button class="button" type="button" @onclick="LoadAsync">Apply</button>
+                    <button class="button secondary" type="button" @onclick="ClearDateFilterAsync">Clear</button>
+                </div>
+            </div>
+
+            @if (emailLogs.Count == 0)
+            {
+                <div class="callout">
+                    <strong>No emails found</strong>
+                    <p>No email log entries match the current view.</p>
+                </div>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            @if (IsSystemAdmin)
+                            {
+                                <th>Service Client</th>
+                            }
+                            <th>From</th>
+                            <th>To</th>
+                            <th>CC</th>
+                            <th>Subject</th>
+                            <th>Status</th>
+                            <th>SendDate</th>
+                            <th>FailedMessage</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var email in emailLogs)
+                        {
+                            <tr>
+                                @if (IsSystemAdmin)
+                                {
+                                    <td>@GetCompanyName(email.CompanyId)</td>
+                                }
+                                <td>@DisplayText(email.FromEmail)</td>
+                                <td>@DisplayText(email.RecipientEmail)</td>
+                                <td>@DisplayText(email.CcEmail)</td>
+                                <td>@email.Subject</td>
+                                <td><span class="status-pill">@FormatStatus(email.Status)</span></td>
+                                <td>@DisplaySendDate(email)</td>
+                                <td>@DisplayText(email.FailureReason)</td>
+                                <td>
+                                    <button class="icon-button icon-only" type="button" title="View email body" aria-label="View email body" @onclick="() => ViewEmail(email)">
+                                        <span class="bi bi-eye" aria-hidden="true"></span>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        }
+    </section>
+}
+
+@if (selectedEmail is not null)
+{
+    <div class="photo-modal-backdrop" @onclick="CloseEmail">
+        <div class="photo-modal" @onclick:stopPropagation="true">
+            <div class="photo-modal-header">
+                <strong>@selectedEmail.Subject</strong>
+                <button class="icon-button icon-only" type="button" title="Close email body" aria-label="Close email body" @onclick="CloseEmail">x</button>
+            </div>
+            <div class="data-list">
+                <article class="row-card"><strong>From</strong><p>@DisplayText(selectedEmail.FromEmail)</p></article>
+                <article class="row-card"><strong>To</strong><p>@DisplayText(selectedEmail.RecipientEmail)</p></article>
+                <article class="row-card"><strong>CC</strong><p>@DisplayText(selectedEmail.CcEmail)</p></article>
+                <article class="row-card"><strong>Status</strong><p>@FormatStatus(selectedEmail.Status)</p></article>
+                <article class="row-card"><strong>Body</strong><p>@selectedEmail.Body</p></article>
+            </div>
+        </div>
+    </div>
 }
 
 @code {
-    private IReadOnlyList<EmailLogEntry>? emailLogs;
+    private bool isLoading = true;
+    private bool detailsExpanded = true;
+    private DateTime? filterDate;
+    private UserAccessOverview? overview;
+    private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
+    private IReadOnlyList<Company> companies = [];
+    private IReadOnlyList<EmailLogEntry> emailLogs = [];
+    private EmailLogEntry? selectedEmail;
+
+    private bool IsSystemAdmin => overview?.User.IsSystemAdmin == true;
+    private bool IsBusinessOwner => overview?.Companies.Any(access => access.Status == MembershipStatus.Active && access.Role == CompanyRole.CompanyAdmin) == true;
+    private bool IsBusinessEmployee => overview?.Companies.Any(access => access.Status == MembershipStatus.Active && access.Role == CompanyRole.CompanyUser) == true;
+    private bool IsBusinessClient => overview?.Companies.Any(access => access.Status == MembershipStatus.Active && access.Role == CompanyRole.CompanyClientUser) == true;
+    private bool IsIndependentHomeOwner => overview is not null && !IsSystemAdmin && overview.Companies.Count == 0;
+    private bool CanViewLogs => IsSystemAdmin || IsBusinessOwner || IsBusinessClient || IsIndependentHomeOwner;
+    private string PageEyebrow => IsSystemAdmin
+        ? "System Administrator"
+        : IsBusinessOwner
+            ? "Business Owner"
+            : IsBusinessClient
+                ? "Business Client"
+                : IsBusinessEmployee
+                    ? "Business Employee"
+                    : "Independent Home Owner";
 
     protected override async Task OnInitializedAsync()
     {
-        DemoUser.UserId = "sys-admin";
-        emailLogs = await PlatformAdminService.GetEmailLogsAsync();
+        appMode = await ApplicationMode.GetCurrentAsync();
+        overview = await OnboardingService.GetAccessOverviewAsync(CurrentUser.UserId);
+        if (CanViewLogs)
+        {
+            if (IsSystemAdmin)
+            {
+                companies = await PlatformAdminService.GetCompaniesAsync();
+            }
+
+            await LoadAsync();
+        }
+
+        isLoading = false;
     }
+
+    private async Task LoadAsync()
+    {
+        var date = filterDate.HasValue ? DateOnly.FromDateTime(filterDate.Value) : (DateOnly?)null;
+        emailLogs = await EmailLogService.GetVisibleEmailLogsAsync(appMode.Mode, date);
+    }
+
+    private async Task ClearDateFilterAsync()
+    {
+        filterDate = null;
+        await LoadAsync();
+    }
+
+    private int CountStatus(EmailDeliveryStatus status) => emailLogs.Count(email => email.Status == status);
+
+    private string GetCompanyName(string? companyId)
+    {
+        if (string.IsNullOrWhiteSpace(companyId))
+        {
+            return "Platform";
+        }
+
+        return companies.FirstOrDefault(company => string.Equals(company.Id, companyId, StringComparison.OrdinalIgnoreCase))?.Name
+            ?? companyId;
+    }
+
+    private static string DisplaySendDate(EmailLogEntry email) =>
+        email.SentUtc?.LocalDateTime.ToString("g") ?? "-";
+
+    private static string DisplayText(string? value) => string.IsNullOrWhiteSpace(value) ? "-" : value;
+
+    private static string FormatStatus(EmailDeliveryStatus status) => status.ToString();
+
+    private void ToggleDetails() => detailsExpanded = !detailsExpanded;
+
+    private void ViewEmail(EmailLogEntry email) => selectedEmail = email;
+
+    private void CloseEmail() => selectedEmail = null;
 }

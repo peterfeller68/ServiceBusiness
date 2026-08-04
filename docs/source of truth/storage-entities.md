@@ -708,6 +708,7 @@ Fields:
 Current implementation notes:
 
 - Completion details are stored directly on `ServiceVisit`.
+- `InvoiceId` is a denormalized link to the `Invoices` table and is valid only when a matching invoice row exists for the same company.
 - `ArrivedUtc`, `CanceledUtc`, `SkippedUtc`, `CancelReason`, `CreatedUtc`, and `UpdatedUtc` are not stored on the current `ServiceVisit` record.
 - Date/user/client lookup tables are not separate physical tables in the current Azure Table implementation; queries read the service-client partition and filter in application code.
 

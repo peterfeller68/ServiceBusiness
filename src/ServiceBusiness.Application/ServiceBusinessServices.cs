@@ -3122,8 +3122,13 @@ public sealed class InvoicingJobService(IServiceBusinessStore store)
         foreach (var company in companies.Where(company => company.Status == CompanyStatus.Active))
         {
             var visits = await store.GetVisitsAsync(company.Id, cancellationToken);
-            foreach (var visit in visits.Where(visit => visit.Status == VisitStatus.Closed && string.IsNullOrWhiteSpace(visit.InvoiceId)))
+            foreach (var visit in visits.Where(visit => visit.Status == VisitStatus.Closed))
             {
+                if (await HasExistingInvoiceAsync(visit, cancellationToken))
+                {
+                    continue;
+                }
+
                 created.Add(await CreateInvoiceForVisitAsync(company.Id, visit.Id, cancellationToken));
             }
         }
@@ -3145,7 +3150,7 @@ public sealed class InvoicingJobService(IServiceBusinessStore store)
             throw new InvalidOperationException("Invoices can only be created from closed visits.");
         }
 
-        if (!string.IsNullOrWhiteSpace(visit.InvoiceId))
+        if (await HasExistingInvoiceAsync(visit, cancellationToken))
         {
             throw new InvalidOperationException("This visit already has an invoice.");
         }
@@ -3220,6 +3225,21 @@ public sealed class InvoicingJobService(IServiceBusinessStore store)
             DateTimeOffset.UtcNow);
 
         return invoice with { InvoiceHtml = BuildInvoiceHtml(company, client, visit, invoice) };
+    }
+
+    public async Task<bool> VisitHasExistingInvoiceAsync(
+        ServiceVisit visit,
+        CancellationToken cancellationToken = default) =>
+        await HasExistingInvoiceAsync(visit, cancellationToken);
+
+    private async Task<bool> HasExistingInvoiceAsync(ServiceVisit visit, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(visit.InvoiceId))
+        {
+            return false;
+        }
+
+        return await store.GetInvoiceAsync(visit.CompanyId, visit.InvoiceId, cancellationToken) is not null;
     }
 
     private async Task<string> GetNextInvoiceIdAsync(string companyId, CancellationToken cancellationToken)

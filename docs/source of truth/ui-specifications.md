@@ -800,7 +800,7 @@ Purpose:
 
 Content:
 
-- Create Invoice selector for closed visits without invoice ids.
+- Create Invoice selector for closed visits without valid invoice records.
 - Collapsible New Invoices panel.
 - Collapsible Invoiced Invoices panel.
 - Collapsible Paid Invoices panel.
@@ -811,7 +811,7 @@ Actions:
 - Create invoice.
 - Mark New invoice as Invoiced.
 - Mark Invoiced invoice as Paid.
-- View generated invoice HTML.
+- View generated invoice HTML as a rendered preview.
 - Show invoice detail.
 - Delete invoice.
 
@@ -825,6 +825,7 @@ Business Owner differences:
 
 - Uses `/invoices`.
 - Shows and manages invoices for the active service client.
+- The Create Invoice panel remains available when no invoice records exist yet.
 
 ### 5.23 Messages Inbox
 
