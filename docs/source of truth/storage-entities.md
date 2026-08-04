@@ -671,18 +671,17 @@ Fields:
 
 Purpose:
 
-- Stores actual scheduled visits.
+- Stores actual service visits and the current visit completion snapshot.
 
 Suggested keys:
 
-- `PartitionKey`: `COMPANY#{CompanyId}#DATE#{yyyyMMdd}`
-- `RowKey`: `VISIT#{ServiceVisitId}`
+- `PartitionKey`: `COMPANY_{CompanyId}`
+- `RowKey`: `{VisitId}`
 
 Fields:
 
+- `Id`
 - `CompanyId`
-- `ServiceVisitId`
-- `RecurringScheduleId`
 - `CompanyClientId`
 - `AssignedUserId`
 - `ScheduledDate`
@@ -691,21 +690,32 @@ Fields:
 - `Status`
 - `PlannedServiceIds`
 - `RouteOrder`
-- `StartedUtc`
-- `ArrivedUtc`
-- `CompletedUtc`
-- `CanceledUtc`
-- `SkippedUtc`
-- `CancelReason`
 - `Notes`
-- `CreatedUtc`
-- `UpdatedUtc`
+- `StartedUtc`
+- `CompletedUtc`
+- `VisitType`
+- `VisitName`
+- `NotesToBusinessClient`
+- `NotesToServiceClient`
+- `InternalNotes`
+- `InvoiceId`
+- `OutOfScopeServiceIds`
+- `OutOfScopeMaterials`
+- `CompletedByUserId`
+- `CompletedServiceIds`
+- `MaterialsUsed`
+
+Current implementation notes:
+
+- Completion details are stored directly on `ServiceVisit`.
+- `ArrivedUtc`, `CanceledUtc`, `SkippedUtc`, `CancelReason`, `CreatedUtc`, and `UpdatedUtc` are not stored on the current `ServiceVisit` record.
+- Date/user/client lookup tables are not separate physical tables in the current Azure Table implementation; queries read the service-client partition and filter in application code.
 
 ### 6.3 ServiceVisitsByUserDate
 
 Purpose:
 
-- Lookup table for field-user daily assignments.
+- Future lookup table for field-user daily assignments.
 
 Suggested keys:
 
@@ -729,7 +739,7 @@ Fields:
 
 Purpose:
 
-- Lookup table for client service history.
+- Future lookup table for client visit history.
 
 Suggested keys:
 
@@ -748,6 +758,11 @@ Fields:
 - `CustomerVisibleSummary`
 
 ## 7. Visit Completion Tables
+
+Current implementation:
+
+- Visit completion details are stored directly on `ServiceVisit`.
+- Separate visit completion tables are reserved for a future normalized storage model.
 
 ### 7.1 VisitServicesPerformed
 
@@ -875,32 +890,43 @@ Fields:
 
 Purpose:
 
-- Stores invoice snapshots and Stripe references.
+- Stores invoice snapshots generated from closed service visits.
 
 Suggested keys:
 
-- `PartitionKey`: `COMPANY#{CompanyId}#DATE#{yyyyMM}`
-- `RowKey`: `INVOICE#{InvoiceId}`
+- `PartitionKey`: `COMPANY_{CompanyId}`
+- `RowKey`: `{InvoiceId}`
 
 Fields:
 
+- `InvoiceGuid`
 - `CompanyId`
 - `InvoiceId`
-- `CompanyClientId`
-- `StripeInvoiceId`
-- `InvoiceNumber`
 - `InvoiceDate`
-- `DueDate`
-- `AmountSubtotal`
-- `AmountTax`
-- `AmountTotal`
-- `AmountPaid`
-- `Currency`
+- `PaidDate`
+- `CompanyClientId`
+- `VisitId`
+- `ServicePackageId`
+- `AdditionalServices`
+- `Materials`
+- `TotalCost`
 - `Status`
+- `InvoiceHtml`
+- `CreatedUtc`
+
+Status values:
+
+- `New`
+- `Invoiced`
+- `Paid`
+
+Future payment-provider fields:
+
+- `StripeInvoiceId`
 - `HostedInvoiceUrl`
 - `PdfUrl`
-- `CreatedUtc`
-- `UpdatedUtc`
+- `AmountPaid`
+- `Currency`
 
 ### 9.3 Payments
 
@@ -1005,7 +1031,7 @@ Fields:
 
 Purpose:
 
-- Stores email send attempts and status.
+- Future normalized queue/job table for email send attempts and status. The current implementation uses `EmailLogs` rows with `New` status as the email job backlog.
 
 Suggested keys:
 
@@ -1038,7 +1064,7 @@ Purpose:
 Suggested keys:
 
 - `PartitionKey`: `COMPANY#{CompanyId}` when company-scoped, otherwise `PLATFORM`
-- `RowKey`: `EMAILLOG#{CreatedUtcTicks}#{EmailLogId}`
+- `RowKey`: `{EmailLogId}`
 
 Fields:
 
@@ -1048,6 +1074,8 @@ Fields:
 - `RecipientUserId`
 - `OriginalRecipientEmail`
 - `RecipientEmail`
+- `FromEmail`
+- `CcEmail`
 - `Subject`
 - `Body`
 - `Status`
@@ -1058,6 +1086,7 @@ Fields:
 
 Statuses:
 
+- `New`
 - `Queued`
 - `Sent`
 - `Failed`

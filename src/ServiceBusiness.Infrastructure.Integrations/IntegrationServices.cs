@@ -170,3 +170,37 @@ public sealed class AzureCommunicationEmailNotificationQueue(
             : recipientUser.NotificationEmail;
     }
 }
+
+public sealed class AzureCommunicationEmailSender(IConfiguration configuration) : IEmailSender
+{
+    private readonly string? connectionString = configuration["Email:AzureCommunicationServices:ConnectionString"];
+    private readonly string? senderAddress = configuration["Email:AzureCommunicationServices:SenderAddress"];
+
+    public async Task<ServiceBusiness.Application.EmailSendResult> SendAsync(EmailLogEntry email, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString) || string.IsNullOrWhiteSpace(senderAddress))
+        {
+            return ServiceBusiness.Application.EmailSendResult.Failed("Azure Communication Services email settings are not configured.");
+        }
+
+        try
+        {
+            var emailClient = new EmailClient(connectionString);
+            var message = new EmailMessage(
+                senderAddress,
+                email.RecipientEmail,
+                new EmailContent(email.Subject)
+                {
+                    PlainText = email.Body,
+                    Html = email.Body
+                });
+
+            var operation = await emailClient.SendAsync(WaitUntil.Completed, message, cancellationToken);
+            return ServiceBusiness.Application.EmailSendResult.Sent(operation.Id);
+        }
+        catch (Exception ex) when (ex is RequestFailedException or InvalidOperationException)
+        {
+            return ServiceBusiness.Application.EmailSendResult.Failed(ex.Message);
+        }
+    }
+}

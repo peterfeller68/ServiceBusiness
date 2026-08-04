@@ -427,8 +427,12 @@ Current implementation:
 - `Pool` mode brands the application as `PoolShark` and uses the pool waterfall hero image.
 - `Landscape` mode brands the application as `TreeShark` and uses the mature fruit-tree landscape hero image.
 - Dashboard pages show the current mode's hero image.
-- The company admin dashboard shows setup tiles for Customers, Employees, Pool Equipment in Pool mode, Materials, and Services.
-- The company admin dashboard shows pending employee and pending customer approval tiles; selecting a tile opens the matching pending approval panel with approve and reject actions.
+- The `/dashboard` page is persona-aware for System Administrators, Business Owners, Business Employees, Business Clients, Independent Home Owners, and pending-only users.
+- The business owner dashboard shows health metrics for Business Clients, Users, Pool Configurations in Pool mode, Materials, Services, and Service Packages.
+- The business owner dashboard shows pending approval controls, assigned visits today, upcoming visits, unscheduled/scheduled visits, and workspace links.
+- The business employee dashboard shows assigned visits today, upcoming visits, and recently completed visits scoped to the signed-in employee.
+- The business client dashboard shows upcoming visits, service package, Pool Configuration in Pool mode, and completed visits.
+- The independent homeowner dashboard shows Pool Equipment and Service History panels.
 - Authenticated navigation hides Home; public navigation still shows Home and Help.
 - Landscape mode hides Pool Equipment navigation and redirects direct Pool Equipment routes back to the dashboard.
 - System Administrators can change `SystemMode` from the General Settings page.
@@ -438,12 +442,13 @@ Current implementation:
 Company Admins can:
 
 - Create one-time visits.
-- Create recurring schedules.
-- Assign visits to Company Users.
+- Create ad-hoc and service package visits.
+- Assign visits to active Company Users or Company Admins.
 - Reassign visits.
 - Reschedule visits.
-- Cancel visits.
-- View daily, weekly, monthly, and custom date range schedules.
+- View visits in grouped status panels.
+- Complete and close visits.
+- Delete visits that are not completed or closed.
 
 Schedule fields:
 
@@ -453,27 +458,39 @@ Schedule fields:
 - Scheduled date.
 - Scheduled start window.
 - Scheduled end window.
-- Recurrence type.
-- Recurrence interval.
+- Visit type.
+- Visit name.
 - Services planned.
+- Completed planned services.
+- Out-of-scope services.
+- Out-of-scope materials.
+- Invoice id.
 - Status.
-- Notes.
+- Notes to business client.
+- Notes to service client.
+- Internal notes.
 
 Visit statuses:
 
+- New
+- Unscheduled
 - Scheduled
 - Assigned
 - InProgress
 - Completed
+- Closed
 - Canceled
 - Skipped
 
-Recurring schedule rules:
+Current implementation:
 
-- Weekly schedules generate visits on selected weekdays.
-- Bi-weekly schedules generate visits every other week from a start date.
-- Monthly schedules generate visits based on day of month or ordinal weekday.
-- Generated visits should be editable independently from the recurrence template.
+- Visit Scheduling is implemented at `/visits`, `/admin/visits`, and the legacy `/schedule` route.
+- Visits are grouped into Unscheduled and Scheduled, Assigned, Recently Completed, and Closed panels.
+- System Administrators manage visits across service clients matching the current application mode.
+- Business Owners manage visits for their active service client.
+- Business Employees work assigned visits from the Dashboard and Field page.
+- Business Clients view their own upcoming and completed visits from the Dashboard and can edit only Notes To Service Provider.
+- Recurring schedule templates, automatic generation, and calendar day/week/month views are future work.
 
 ## 11. Route Optimization Requirements
 
@@ -542,8 +559,9 @@ Email events:
 Email logging:
 
 - Every attempted email send must create an email log entry.
-- Email logs must include company ID when applicable, email type, recipient user ID, original recipient email, actual recipient email, subject, body, timestamp, status, provider message ID when available, and failure reason when applicable.
-- System Administrators can view recent email log entries from the platform dashboard.
+- Email logs must include company ID when applicable, email type, recipient user ID, original recipient email, actual recipient email, from email, CC email, subject, body, timestamp, status, provider message ID when available, and failure reason when applicable.
+- System Administrators, Business Owners, Business Clients, and Independent Home Owners can view role-scoped email log entries from Logs / Email Log.
+- Business Employees do not have email log access.
 - Test-user email must be routed to a configured test inbox when available and must not accidentally send to fake seeded addresses.
 - If a recipient user disables email notifications, the provider send is skipped and an email log entry is written with `Suppressed` status.
 
@@ -576,28 +594,37 @@ Optional future enhancement:
 
 ## 15. Billing and Stripe Requirements
 
-Stripe is used for payments.
+The current billing implementation supports application-managed invoices for completed service visits. Stripe payment processing remains a future integration.
 
 Company Admins can:
 
-- Connect or configure Stripe account details.
-- View payment status.
-- View invoices or payment records for company clients.
-- Trigger manual invoice generation if supported.
+- View invoices for company clients.
+- Create invoices from closed visits that do not already have an invoice id.
+- Move invoice status forward from New to Invoiced to Paid.
+- Delete invoices; deleting an invoice clears the related visit invoice id.
 
 Company Client Users can:
 
 - View invoices.
-- View payment history.
-- Open Stripe-hosted payment links.
+- View generated invoice HTML.
+
+System Administrators can:
+
+- View and manage invoices for service clients matching the current application mode.
+
+Invoice requirements:
+
+- Invoice ids increment per service client.
+- Ad-hoc visits bill planned services, out-of-scope services, and out-of-scope materials.
+- Service package visits treat planned services as included and bill out-of-scope services and out-of-scope materials.
+- Creating an invoice stores an invoice snapshot, updates the service visit invoice id, and queues an invoice email.
 
 System requirements:
 
-- Store Stripe customer IDs.
-- Store Stripe invoice IDs.
-- Store Stripe payment intent or charge IDs.
-- Store billing status and event history.
-- Process Stripe webhooks idempotently.
+- Store invoice snapshots, status, line items, totals, generated invoice HTML, and event timestamps.
+- Store payment provider references when Stripe is added.
+- Store billing status and event history when payment processing is added.
+- Process Stripe webhooks idempotently when Stripe is added.
 - Do not store raw card data.
 
 ## 16. Reporting Requirements
@@ -669,6 +696,8 @@ Audit fields:
 - Payment webhooks must be idempotent.
 - Schedule generation must avoid duplicate visit creation.
 - Background jobs should be retryable.
+- Current job services are callable application services and are invoked automatically by the WebApp hosted scheduler.
+- Retry metadata and dead-letter handling remain future operational work.
 - Important workflows should emit telemetry so operational failures can be diagnosed in Application Insights.
 - Critical persona workflows should have scenario tests, including application-level workflow tests and Playwright browser tests for high-value UI paths.
 

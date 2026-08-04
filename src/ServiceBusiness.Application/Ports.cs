@@ -58,6 +58,7 @@ public interface IServiceBusinessStore
     Task DeleteServiceAsync(string companyId, string serviceId, CancellationToken cancellationToken = default);
     Task DeleteServicePackageAsync(string companyId, string packageId, CancellationToken cancellationToken = default);
     Task DeleteVisitAsync(string companyId, string visitId, CancellationToken cancellationToken = default);
+    Task DeleteInvoiceAsync(string companyId, string invoiceId, CancellationToken cancellationToken = default);
     Task DeletePoolEquipmentItemAsync(EquipmentScope scope, string scopeOwnerId, string itemId, CancellationToken cancellationToken = default);
     Task UpsertVisitAsync(ServiceVisit visit, CancellationToken cancellationToken = default);
     Task UpsertInvoiceAsync(Invoice invoice, CancellationToken cancellationToken = default);
@@ -74,4 +75,19 @@ public interface INotificationQueue
 {
     Task QueueVisitCompletedEmailAsync(ServiceHistoryItem item, CancellationToken cancellationToken = default);
     Task QueueAccountApprovalDecisionEmailAsync(AccessRequest request, MembershipStatus decision, CancellationToken cancellationToken = default);
+}
+
+public interface IEmailSender
+{
+    Task<EmailSendResult> SendAsync(EmailLogEntry email, CancellationToken cancellationToken = default);
+}
+
+public sealed record EmailSendResult(
+    bool Succeeded,
+    string? ProviderMessageId = null,
+    string? FailureMessage = null)
+{
+    public static EmailSendResult Sent(string? providerMessageId = null) => new(true, providerMessageId);
+
+    public static EmailSendResult Failed(string failureMessage) => new(false, null, failureMessage);
 }

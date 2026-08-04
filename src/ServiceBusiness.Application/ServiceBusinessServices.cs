@@ -2134,7 +2134,30 @@ public sealed class CompanyAdminService(
             throw new InvalidOperationException("Invoice status can only move from New to Invoiced to Paid.");
         }
 
-        await store.UpsertInvoiceAsync(invoice with { Status = status }, cancellationToken);
+        await store.UpsertInvoiceAsync(invoice with
+        {
+            Status = status,
+            InvoiceDate = status == InvoiceStatus.Invoiced && invoice.InvoiceDate == default
+                ? DateOnly.FromDateTime(DateTime.Today)
+                : invoice.InvoiceDate,
+            PaidDate = status == InvoiceStatus.Paid && invoice.PaidDate is null
+                ? DateOnly.FromDateTime(DateTime.Today)
+                : invoice.PaidDate
+        }, cancellationToken);
+    }
+
+    public async Task DeleteInvoiceAsync(string companyId, string invoiceId, CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireSystemAdminOrAnyCompanyRoleAsync(companyId, [CompanyRole.CompanyAdmin], cancellationToken);
+        var invoice = await store.GetInvoiceAsync(companyId, invoiceId, cancellationToken)
+            ?? throw new InvalidOperationException("Invoice was not found.");
+        var visit = await store.GetVisitAsync(companyId, invoice.VisitId, cancellationToken);
+
+        await store.DeleteInvoiceAsync(companyId, invoiceId, cancellationToken);
+        if (visit is not null && string.Equals(visit.InvoiceId, invoice.InvoiceId, StringComparison.OrdinalIgnoreCase))
+        {
+            await store.UpsertVisitAsync(visit with { InvoiceId = null }, cancellationToken);
+        }
     }
 
     public async Task UpsertVisitAsync(ServiceVisit visit, CancellationToken cancellationToken = default)
@@ -3099,23 +3122,42 @@ public sealed class InvoicingJobService(IServiceBusinessStore store)
         foreach (var company in companies.Where(company => company.Status == CompanyStatus.Active))
         {
             var visits = await store.GetVisitsAsync(company.Id, cancellationToken);
-            foreach (var visit in visits.Where(visit => visit.Status == VisitStatus.Completed && string.IsNullOrWhiteSpace(visit.InvoiceId)))
+            foreach (var visit in visits.Where(visit => visit.Status == VisitStatus.Closed && string.IsNullOrWhiteSpace(visit.InvoiceId)))
             {
-                var client = await store.GetClientAsync(company.Id, visit.CompanyClientId, cancellationToken);
-                if (client is null)
-                {
-                    continue;
-                }
-
-                var invoice = await BuildInvoiceAsync(company, client, visit, cancellationToken);
-                await store.UpsertInvoiceAsync(invoice, cancellationToken);
-                await store.UpsertVisitAsync(visit with { InvoiceId = invoice.InvoiceId }, cancellationToken);
-                await QueueInvoiceEmailAsync(company, client, invoice, cancellationToken);
-                created.Add(invoice);
+                created.Add(await CreateInvoiceForVisitAsync(company.Id, visit.Id, cancellationToken));
             }
         }
 
         return created;
+    }
+
+    public async Task<Invoice> CreateInvoiceForVisitAsync(
+        string companyId,
+        string visitId,
+        CancellationToken cancellationToken = default)
+    {
+        var company = await store.GetCompanyAsync(companyId, cancellationToken)
+            ?? throw new InvalidOperationException("Service client was not found.");
+        var visit = await store.GetVisitAsync(companyId, visitId, cancellationToken)
+            ?? throw new InvalidOperationException("Visit was not found.");
+        if (visit.Status != VisitStatus.Closed)
+        {
+            throw new InvalidOperationException("Invoices can only be created from closed visits.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(visit.InvoiceId))
+        {
+            throw new InvalidOperationException("This visit already has an invoice.");
+        }
+
+        var client = await store.GetClientAsync(company.Id, visit.CompanyClientId, cancellationToken)
+            ?? throw new InvalidOperationException("Business client was not found.");
+        var invoice = await BuildInvoiceAsync(company, client, visit, cancellationToken);
+
+        await store.UpsertInvoiceAsync(invoice, cancellationToken);
+        await store.UpsertVisitAsync(visit with { InvoiceId = invoice.InvoiceId }, cancellationToken);
+        await QueueInvoiceEmailAsync(company, client, invoice, cancellationToken);
+        return invoice;
     }
 
     private async Task<Invoice> BuildInvoiceAsync(
@@ -3165,6 +3207,8 @@ public sealed class InvoicingJobService(IServiceBusinessStore store)
             Guid.NewGuid().ToString("N"),
             company.Id,
             invoiceId,
+            DateOnly.FromDateTime(DateTime.Today),
+            null,
             client.Id,
             visit.Id,
             servicePackageId,
@@ -3282,8 +3326,22 @@ public sealed class InvoicingJobService(IServiceBusinessStore store)
     private static string HtmlEncode(string? value) => WebUtility.HtmlEncode(value ?? "");
 }
 
-public sealed class EmailJobService(IServiceBusinessStore store)
+public sealed class EmailJobService
 {
+    private readonly IServiceBusinessStore store;
+    private readonly IEmailSender emailSender;
+
+    public EmailJobService(IServiceBusinessStore store)
+        : this(store, new SuccessfulEmailSender())
+    {
+    }
+
+    public EmailJobService(IServiceBusinessStore store, IEmailSender emailSender)
+    {
+        this.store = store;
+        this.emailSender = emailSender;
+    }
+
     public async Task<int> ProcessNewEmailLogsAsync(CancellationToken cancellationToken = default)
     {
         var settings = await store.GetSystemSettingsAsync(cancellationToken);
@@ -3295,18 +3353,22 @@ public sealed class EmailJobService(IServiceBusinessStore store)
 
         foreach (var log in logs)
         {
-            var updated = settings.DevTest || IsValidEmail(log.RecipientEmail)
-                ? log with
-                {
-                    Status = EmailDeliveryStatus.Sent,
-                    SentUtc = DateTimeOffset.UtcNow,
-                    FailureReason = null
-                }
-                : log with
-                {
-                    Status = EmailDeliveryStatus.Failed,
-                    FailureReason = "Recipient email address is not valid."
-                };
+            EmailLogEntry updated;
+            if (settings.DevTest || await IsTestRecipientAsync(log, cancellationToken))
+            {
+                updated = MarkSent(log, null);
+            }
+            else if (!IsValidEmail(log.RecipientEmail))
+            {
+                updated = MarkFailed(log, "Recipient email address is not valid.");
+            }
+            else
+            {
+                var result = await emailSender.SendAsync(log, cancellationToken);
+                updated = result.Succeeded
+                    ? MarkSent(log, result.ProviderMessageId)
+                    : MarkFailed(log, string.IsNullOrWhiteSpace(result.FailureMessage) ? "Email provider failed to send the message." : result.FailureMessage);
+            }
 
             await store.UpsertEmailLogAsync(updated, cancellationToken);
             processed++;
@@ -3315,8 +3377,181 @@ public sealed class EmailJobService(IServiceBusinessStore store)
         return processed;
     }
 
+    private async Task<bool> IsTestRecipientAsync(EmailLogEntry log, CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(log.RecipientUserId))
+        {
+            var recipientUser = await store.GetUserAsync(log.RecipientUserId, cancellationToken);
+            if (recipientUser?.IsTestUser == true)
+            {
+                return true;
+            }
+        }
+
+        var originalRecipient = await store.GetUserByEmailAsync(log.OriginalRecipientEmail, cancellationToken);
+        if (originalRecipient?.IsTestUser == true)
+        {
+            return true;
+        }
+
+        var recipient = await store.GetUserByEmailAsync(log.RecipientEmail, cancellationToken);
+        return recipient?.IsTestUser == true;
+    }
+
+    private static EmailLogEntry MarkSent(EmailLogEntry log, string? providerMessageId) => log with
+    {
+        Status = EmailDeliveryStatus.Sent,
+        ProviderMessageId = string.IsNullOrWhiteSpace(providerMessageId) ? log.ProviderMessageId : providerMessageId,
+        SentUtc = DateTimeOffset.UtcNow,
+        FailureReason = null
+    };
+
+    private static EmailLogEntry MarkFailed(EmailLogEntry log, string failureReason) => log with
+    {
+        Status = EmailDeliveryStatus.Failed,
+        FailureReason = failureReason
+    };
+
     private static bool IsValidEmail(string email) =>
         !string.IsNullOrWhiteSpace(email) && email.Contains('@', StringComparison.Ordinal);
+
+    private sealed class SuccessfulEmailSender : IEmailSender
+    {
+        public Task<EmailSendResult> SendAsync(EmailLogEntry email, CancellationToken cancellationToken = default) =>
+            Task.FromResult(EmailSendResult.Sent());
+    }
+}
+
+public sealed class ScheduledJobRunner(
+    InvoicingJobService invoicingJobService,
+    EmailJobService emailJobService)
+{
+    public async Task<ScheduledJobRunResult> RunOnceAsync(CancellationToken cancellationToken = default)
+    {
+        var invoices = await invoicingJobService.CreateInvoicesForCompletedVisitsAsync(cancellationToken);
+        var emailsProcessed = await emailJobService.ProcessNewEmailLogsAsync(cancellationToken);
+        return new ScheduledJobRunResult(invoices.Count, emailsProcessed);
+    }
+}
+
+public sealed record ScheduledJobRunResult(
+    int InvoicesCreated,
+    int EmailsProcessed);
+
+public sealed class EmailLogService(
+    IServiceBusinessStore store,
+    TenantAuthorizationService authorization)
+{
+    public async Task<IReadOnlyList<EmailLogEntry>> GetVisibleEmailLogsAsync(
+        SystemMode systemMode,
+        DateOnly? dateFilter = null,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await authorization.RequireCurrentUserAsync(cancellationToken);
+        var logs = await store.GetEmailLogsAsync(cancellationToken);
+        IEnumerable<EmailLogEntry> visibleLogs;
+
+        if (user.IsSystemAdmin)
+        {
+            var companies = await store.GetCompaniesAsync(cancellationToken);
+            var companyTypes = await store.GetCompanyTypesAsync(cancellationToken);
+            var visibleCompanyIds = companies
+                .Where(company => CompanyMatchesMode(company, companyTypes, systemMode))
+                .Select(company => company.Id)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            visibleLogs = logs.Where(log =>
+                string.IsNullOrWhiteSpace(log.CompanyId) ||
+                visibleCompanyIds.Contains(log.CompanyId));
+        }
+        else
+        {
+            var memberships = await store.GetMembershipsForUserAsync(user.Id, cancellationToken);
+            var activeMemberships = memberships
+                .Where(membership => membership.Status == MembershipStatus.Active)
+                .ToList();
+            var ownerCompanyIds = activeMemberships
+                .Where(membership => membership.Role == CompanyRole.CompanyAdmin)
+                .Select(membership => membership.CompanyId)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var hasEmployeeAccess = activeMemberships.Any(membership => membership.Role == CompanyRole.CompanyUser);
+            var clientMemberships = activeMemberships
+                .Where(membership => membership.Role == CompanyRole.CompanyClientUser)
+                .ToList();
+
+            if (ownerCompanyIds.Count > 0)
+            {
+                visibleLogs = logs.Where(log => !string.IsNullOrWhiteSpace(log.CompanyId) && ownerCompanyIds.Contains(log.CompanyId));
+            }
+            else if (hasEmployeeAccess && clientMemberships.Count == 0)
+            {
+                visibleLogs = [];
+            }
+            else
+            {
+                var recipientEmails = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    user.Email
+                };
+                if (!string.IsNullOrWhiteSpace(user.NotificationEmail))
+                {
+                    recipientEmails.Add(user.NotificationEmail);
+                }
+
+                foreach (var clientMembership in clientMemberships)
+                {
+                    var clients = await store.GetClientsAsync(clientMembership.CompanyId, cancellationToken);
+                    var client = ResolveClientForUser(clientMembership, user, clients);
+                    if (client is not null)
+                    {
+                        recipientEmails.Add(client.Email);
+                    }
+                }
+
+                visibleLogs = logs.Where(log =>
+                    string.Equals(log.RecipientUserId, user.Id, StringComparison.OrdinalIgnoreCase) ||
+                    recipientEmails.Contains(log.RecipientEmail) ||
+                    recipientEmails.Contains(log.OriginalRecipientEmail));
+            }
+        }
+
+        if (dateFilter is not null)
+        {
+            visibleLogs = visibleLogs.Where(log => DateOnly.FromDateTime(log.CreatedUtc.LocalDateTime) == dateFilter);
+        }
+
+        return visibleLogs
+            .OrderByDescending(log => log.CreatedUtc)
+            .ToList();
+    }
+
+    private static bool CompanyMatchesMode(Company company, IReadOnlyList<CompanyType> companyTypes, SystemMode systemMode)
+    {
+        var type = companyTypes.FirstOrDefault(t => string.Equals(t.Id, company.CompanyTypeId, StringComparison.OrdinalIgnoreCase));
+        var searchable = type is null ? company.CompanyTypeId : $"{type.Id} {type.Name} {type.Description}";
+        return systemMode == SystemMode.Pool
+            ? searchable.Contains("pool", StringComparison.OrdinalIgnoreCase)
+            : ContainsAny(searchable, "landscape", "landscaping", "lawn", "yard", "tree");
+    }
+
+    private static CompanyClient? ResolveClientForUser(
+        CompanyMembership membership,
+        AppUser user,
+        IReadOnlyList<CompanyClient> clients)
+    {
+        if (!string.IsNullOrWhiteSpace(membership.CompanyClientId))
+        {
+            var selectedClient = clients.FirstOrDefault(c => string.Equals(c.Id, membership.CompanyClientId, StringComparison.OrdinalIgnoreCase));
+            if (selectedClient is not null)
+            {
+                return selectedClient;
+            }
+        }
+
+        return clients.FirstOrDefault(c => string.Equals(c.Email, user.Email, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool ContainsAny(string value, params string[] terms) =>
+        terms.Any(term => value.Contains(term, StringComparison.OrdinalIgnoreCase));
 }
 
 public sealed class ClientPortalService(
@@ -3379,6 +3614,17 @@ public sealed class ClientPortalService(
         return (await store.GetVisitsForClientAsync(context.Membership.CompanyId, context.Client.Id, cancellationToken))
             .OrderBy(visit => visit.ScheduledDate == default ? DateOnly.MaxValue : visit.ScheduledDate)
             .ThenBy(visit => visit.ServiceWindowStart)
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<Invoice>> GetCurrentUserInvoicesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var context = await GetCurrentClientContextAsync(cancellationToken);
+        return (await store.GetInvoicesAsync(context.Membership.CompanyId, cancellationToken))
+            .Where(invoice => string.Equals(invoice.CompanyClientId, context.Client.Id, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(invoice => invoice.InvoiceDate)
+            .ThenByDescending(invoice => invoice.CreatedUtc)
             .ToList();
     }
 

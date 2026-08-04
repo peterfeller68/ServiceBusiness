@@ -502,6 +502,12 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
         await DeleteEntityIfExistsAsync("ServiceVisits", CompanyPartition(companyId), visitId, cancellationToken);
     }
 
+    public async Task DeleteInvoiceAsync(string companyId, string invoiceId, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        await DeleteEntityIfExistsAsync("Invoices", CompanyPartition(companyId), invoiceId, cancellationToken);
+    }
+
     public async Task UpsertVisitAsync(ServiceVisit visit, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);

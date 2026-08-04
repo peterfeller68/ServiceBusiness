@@ -78,6 +78,7 @@ builder.Services.AddSingleton<ApplicationModeService>();
 builder.Services.AddScoped<ICurrentUserContext, AuthenticatedCurrentUserContext>();
 builder.Services.AddScoped<CurrentCompanyContext>();
 builder.Services.AddSingleton<INotificationQueue, AzureCommunicationEmailNotificationQueue>();
+builder.Services.AddSingleton<IEmailSender, AzureCommunicationEmailSender>();
 builder.Services.AddScoped<TenantAuthorizationService>();
 builder.Services.AddScoped<PlatformAdminService>();
 builder.Services.AddScoped<CompanyAdminService>();
@@ -88,6 +89,10 @@ builder.Services.AddScoped<UserProfileService>();
 builder.Services.AddScoped<IndependentHomeOwnerService>();
 builder.Services.AddScoped<InvoicingJobService>();
 builder.Services.AddScoped<EmailJobService>();
+builder.Services.AddScoped<ScheduledJobRunner>();
+builder.Services.AddScoped<EmailLogService>();
+builder.Services.Configure<JobSchedulerOptions>(builder.Configuration.GetSection("Jobs:Scheduler"));
+builder.Services.AddHostedService<ServiceBusinessJobScheduler>();
 
 var app = builder.Build();
 

@@ -310,6 +310,16 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
         return Task.CompletedTask;
     }
 
+    public Task DeleteInvoiceAsync(string companyId, string invoiceId, CancellationToken cancellationToken = default)
+    {
+        lock (sync)
+        {
+            invoices.RemoveAll(existing => existing.CompanyId == companyId && existing.InvoiceId == invoiceId);
+        }
+
+        return Task.CompletedTask;
+    }
+
     public Task DeletePoolEquipmentItemAsync(EquipmentScope scope, string scopeOwnerId, string itemId, CancellationToken cancellationToken = default)
     {
         lock (sync)

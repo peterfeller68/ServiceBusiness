@@ -138,6 +138,14 @@ Responsibilities:
 - Run route optimization jobs.
 - Retry transient failures.
 
+Current implementation:
+
+- `InvoicingJobService` is a callable application service that creates invoices for closed visits without invoice ids.
+- `EmailJobService` is a callable application service that processes `EmailLogEntry` rows with `New` status.
+- `ScheduledJobRunner` runs the invoicing pass followed by the email pass.
+- The WebApp registers `ServiceBusinessJobScheduler` as a hosted service for automatic recurring job execution.
+- `Jobs:Scheduler:Enabled`, `Jobs:Scheduler:InitialDelaySeconds`, and `Jobs:Scheduler:IntervalMinutes` configure scheduler behavior.
+
 ## 5. Authentication Flow
 
 1. User clicks Sign In with Google.
@@ -320,7 +328,7 @@ Suggested webhook events:
 
 The application sends emails through Azure Communication Services when configured.
 
-Email sending flow:
+Target email sending flow:
 
 1. Application persists the source event, such as visit completion.
 2. Application creates an email job in Queue Storage.
@@ -337,7 +345,9 @@ Current implementation details:
 - If Azure Communication Services is configured, the queue sends email through `EmailClient` and logs `Sent` or `Failed`.
 - Test-user email is rerouted to `Email:TestRecipientEmail` when configured and logged with `TestRerouted` status.
 - Recipient users with `EmailNotificationsEnabled` set to `false` are logged with `Suppressed` status and are not sent to the provider.
-- The System Admin dashboard displays recent email log entries.
+- `EmailJobService` processes invoice email rows and other `New` email log rows through `IEmailSender`; test recipients and DevTest rows are marked `Sent` without provider delivery.
+- `ServiceBusinessJobScheduler` automatically invokes `ScheduledJobRunner`, which lets invoice email rows created by `InvoicingJobService` be processed by `EmailJobService`.
+- Logs / Email Log displays role-scoped email log entries for System Administrators, Business Owners, Business Clients, and Independent Home Owners.
 
 ## 11. Scheduling and Recurrence
 

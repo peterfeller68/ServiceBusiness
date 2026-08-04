@@ -351,6 +351,8 @@ public sealed record Invoice(
     string InvoiceGuid,
     string CompanyId,
     string InvoiceId,
+    DateOnly InvoiceDate,
+    DateOnly? PaidDate,
     string CompanyClientId,
     string VisitId,
     string? ServicePackageId,
