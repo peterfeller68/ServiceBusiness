@@ -99,7 +99,7 @@ else
         @if (closedExpanded)
         {
             <div class="management-panel-body">
-                @VisitTable(ClosedVisits)
+                @VisitTable(ClosedVisits, true)
             </div>
         }
     </section>
@@ -379,7 +379,7 @@ else
         }
     </div>;
 
-    private RenderFragment VisitTable(IReadOnlyList<ServiceVisit> rows) => @<div>
+    private RenderFragment VisitTable(IReadOnlyList<ServiceVisit> rows, bool showInvoiceId = false) => @<div>
         @if (rows.Count == 0)
         {
             <p>No visits in this panel.</p>
@@ -400,6 +400,10 @@ else
                             <th>Business Client</th>
                             <th>Assigned To</th>
                             <th>Status</th>
+                            @if (showInvoiceId)
+                            {
+                                <th>Invoice ID</th>
+                            }
                             <th class="actions">Action</th>
                         </tr>
                     </thead>
@@ -417,6 +421,10 @@ else
                                 <td>@GetClientName(visit)</td>
                                 <td>@GetEmployeeName(visit)</td>
                                 <td>@DisplayStatus(visit.Status)</td>
+                                @if (showInvoiceId)
+                                {
+                                    <td>@DisplayText(visit.InvoiceId)</td>
+                                }
                                 <td class="actions">
                                     <button class="icon-button icon-only" type="button" title="Edit visit" aria-label="Edit visit" @onclick="() => EditVisit(visit)">
                                         <span class="action-icon edit-icon" aria-hidden="true"></span>
@@ -729,6 +737,8 @@ else
 
     private static string DisplayVisitDate(ServiceVisit visit) =>
         visit.ScheduledDate == default ? "Unscheduled" : visit.ScheduledDate.ToString("d");
+
+    private static string DisplayText(string? value) => string.IsNullOrWhiteSpace(value) ? "-" : value;
 
     private static string DisplayVisitType(VisitType visitType) => visitType switch
     {

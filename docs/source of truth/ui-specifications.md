@@ -88,34 +88,23 @@ Current implementation:
 
 Purpose:
 
-- Provide platform overview.
+- Provide a mode-filtered platform overview and approval workspace.
 
 Content:
 
-- Active companies count.
-- Total users count.
-- System admins count.
-- Disabled users count.
-- Pending access count.
-- Pending company setup count.
-- Suspended companies count.
-- Active user count.
-- Email log count.
-- Recent sent-email log entries.
+- System Health metrics for Service Clients, Business Clients, Users, Materials, Services, and Service Packages.
+- Pool Equipment and Pool Configurations metrics in Pool mode.
+- Collapsible Approvals panel with pending requester name, email, company, user type, and approval toggle.
+- System Workspaces links for focused admin pages.
 - Application health and telemetry summary when Application Insights data is surfaced in a future dashboard slice.
-- Recent platform audit events.
-- Stripe/payment health summary.
+- Recent platform audit events when audit events are surfaced in a future dashboard slice.
+- Stripe/payment health summary when payment processing is surfaced in a future dashboard slice.
 
 Actions:
 
-- Create company.
-- Manage company types.
-- View companies.
-- Promote registered users to System Admin.
-- Remove System Admin privileges when safe.
-- Enable or disable users.
-- Edit built-in role display names, descriptions, owner-approval requirements, and permissions.
-- Review sent email delivery status.
+- Open focused admin workspaces.
+- Approve a pending access request using the approval toggle.
+- Approve all pending access requests shown in the mode-filtered dashboard.
 
 ### 4.2 Company Types List
 
@@ -257,21 +246,27 @@ Actions:
 
 Purpose:
 
-- Give the business owner a focused setup and approval workspace.
+- Give the business owner a focused setup, approval, and visit-triage workspace.
 
 Content:
 
-- Tile row for Customers, Employees, Pool Equipment in Pool mode, Materials, and Services.
-- Work tile row for Pending Employee Approvals and Pending Customer Approvals.
-- A scoped approval panel opens when a pending approval tile is selected.
-- The approval panel lists pending requester name, email, role, requested date, and action controls.
+- System Health metrics for Business Clients, Users, Materials, Services, and Service Packages.
+- Pool Configurations metric in Pool mode.
+- Collapsible Approvals panel with pending requester name, email, user type, and approval toggle.
+- Assigned Visits Today panel scoped to visits assigned to the signed-in business owner.
+- Upcoming Visits panel scoped to future visits assigned to the signed-in business owner.
+- Unscheduled and Scheduled Visits panel for New, Unscheduled, and Scheduled visits.
+- System Workspaces links for focused business pages.
 
 Actions:
 
-- Open focused editor pages from setup tiles.
+- Open focused editor pages from health metrics and workspace links.
 - Approve a pending access request using the approval toggle.
-- Reject a pending access request from the action column.
-- Open schedule from the header action.
+- Approve all pending access requests.
+- Complete assigned visits for today.
+- Edit allowed visit details.
+- View full visit information.
+- Assign unscheduled and scheduled visits to active business owners or employees.
 
 ### 5.2 Company Profile and Settings
 
@@ -611,35 +606,46 @@ Current implementation:
 
 Purpose:
 
-- View and manage company service schedule.
+- View and manage service visits in grouped status panels.
 
-Views:
+Routes:
 
-- Day.
-- Week.
-- Month.
-- List.
+- `/visits` for Business Owners.
+- `/admin/visits` for System Administrators.
+- `/schedule` as a legacy route.
 
-Filters:
+Panels:
 
-- Assigned user.
-- Client.
-- Visit status.
+- Unscheduled and Scheduled Visits.
+- Assigned Visits.
+- Recently Completed Visits.
+- Closed Visits.
 
 Content:
 
-- Scheduled visits.
-- Assigned users.
-- Status indicators.
+- Visit Type.
+- Visit Date.
+- Visit Name.
+- Service Client for System Administrators.
+- Business Client.
+- Assigned To.
+- Status.
+- Invoice ID for Closed Visits.
+- Icon action column.
 
 Actions:
 
 - Create one-time visit.
-- Create recurring schedule.
-- Open visit.
-- Reassign visit.
-- Reschedule visit.
-- Cancel visit.
+- Edit visit.
+- Complete assigned or in-progress visit.
+- Close completed visit.
+- Show visit information.
+- Delete incomplete, non-closed visit.
+
+Current limitations:
+
+- Calendar day/week/month views are not yet implemented.
+- Recurring schedule creation is not yet implemented.
 
 ### 5.17 Create/Edit Visit
 
@@ -649,25 +655,31 @@ Purpose:
 
 Fields:
 
-- Client.
+- Service client for System Administrators.
+- Visit type.
+- Visit name.
+- Business client.
 - Scheduled date.
-- Service window start.
-- Service window end.
 - Assigned user.
-- Planned services.
-- Notes.
 - Status.
+- Notes To Business Client.
+- Notes To Service Client.
+- Internal Notes.
+- Chosen planned services.
+- Service filter and service chooser.
 
 Actions:
 
 - Save.
 - Cancel.
+- Choose service.
+- Remove chosen service.
 
 ### 5.18 Create/Edit Recurring Schedule
 
 Purpose:
 
-- Configure recurring visits.
+- Configure recurring visits in a future scheduling slice.
 
 Fields:
 
@@ -689,11 +701,15 @@ Actions:
 - Generate upcoming visits.
 - Cancel.
 
+Current limitations:
+
+- Recurring schedule creation and automatic visit generation are not yet implemented.
+
 ### 5.19 Assignment Board
 
 Purpose:
 
-- Assign scheduled client visits to company users.
+- Assign scheduled client visits to company users in a future scheduling slice.
 
 Layout:
 
@@ -708,6 +724,10 @@ Actions:
 - Reassign.
 - Clear assignment.
 - Open visit detail.
+
+Current implementation:
+
+- Assignment is available from Visit Scheduling edit forms and Business Owner dashboard inline assignment controls.
 
 ### 5.20 Visit Detail
 
@@ -733,8 +753,13 @@ Actions:
 
 - Edit visit.
 - Reassign.
-- Cancel.
-- Resend completion email.
+- Complete visit.
+- Close visit.
+- Delete incomplete, non-closed visit.
+
+Current limitations:
+
+- Resend completion email is not yet implemented.
 
 ### 5.21 Reports
 
@@ -771,22 +796,35 @@ Actions:
 
 Purpose:
 
-- View Stripe and client billing status.
+- View and manage invoices for completed service visits.
 
 Content:
 
-- Stripe connection status.
-- Recent invoices.
-- Recent payments.
-- Failed payments.
-- Clients missing billing setup.
+- Create Invoice selector for closed visits without invoice ids.
+- Collapsible New Invoices panel.
+- Collapsible Invoiced Invoices panel.
+- Collapsible Paid Invoices panel.
+- Invoice columns for Invoice ID, Business Client, Invoice Date, Paid Date, and Cost.
 
 Actions:
 
-- Connect Stripe.
-- Open Stripe dashboard link.
-- View invoice.
-- Send payment link.
+- Create invoice.
+- Mark New invoice as Invoiced.
+- Mark Invoiced invoice as Paid.
+- View generated invoice HTML.
+- Show invoice detail.
+- Delete invoice.
+
+System Administrator differences:
+
+- Uses `/admin/invoices`.
+- Shows invoices only for service clients matching the current application mode.
+- Adds Invoice GUID and Service Client columns.
+
+Business Owner differences:
+
+- Uses `/invoices`.
+- Shows and manages invoices for the active service client.
 
 ### 5.23 Messages Inbox
 
@@ -821,21 +859,21 @@ Actions:
 
 Purpose:
 
-- Show field user work for the selected day.
+- Show the signed-in business employee's assigned work.
 
-Mobile-first content:
+Content:
 
-- Date selector.
-- Assigned visit count.
-- Completed count.
-- Next visit card.
-- Route action.
+- Assigned Visits Today panel.
+- Upcoming Visits panel.
+- Recently Completed Visits panel.
+- Visit rows with client, date, status, service window, and action controls.
 
 Actions:
 
-- View route.
-- Open next visit.
-- Change date.
+- Mark today's assigned visit complete.
+- Move recently completed visit back to In Progress.
+- Edit allowed visit details.
+- View full visit information.
 
 ### 6.2 My Assigned Visits
 
@@ -964,20 +1002,24 @@ Actions:
 
 Purpose:
 
-- Show homeowner service overview.
+- Show the signed-in business client's service overview.
 
 Content:
 
-- Upcoming service date.
-- Recent completed services.
-- Outstanding invoice or payment status.
-- Open messages.
+- Upcoming Visits panel.
+- Service Package panel.
+- Pool Configuration panel in Pool mode.
+- Completed Visits panel.
 
 Actions:
 
-- View service history.
-- View bills and payments.
-- Message company.
+- Edit Notes To Service Provider on upcoming visits.
+- View visit information.
+- View Pool equipment information in Pool mode.
+
+Current limitations:
+
+- Open message summaries and outstanding payment summaries are not yet shown on the dashboard.
 
 ### 7.2 My Services
 
@@ -1023,20 +1065,23 @@ Actions:
 
 Purpose:
 
-- Show billing history.
+- Show business-client invoice history.
 
 Content:
 
 - Invoice list.
-- Payment list.
 - Status.
 - Amounts.
-- Due dates.
+- Invoice date.
+- Paid date.
 
 Actions:
 
 - Open invoice.
-- Pay invoice through Stripe-hosted link.
+
+Current limitations:
+
+- Stripe-hosted payment links are not yet implemented.
 
 ### 7.5 Message Threads
 
@@ -1127,8 +1172,8 @@ Items:
 - Settings / Catalog / Pool Equipment
 - Settings / Catalog / Materials
 - Settings / Catalog / Services
-- Log / Email
 - Reports
+- Logs / Email Log
 - Help
 
 ### 8.2 Company Admin Navigation
@@ -1144,6 +1189,7 @@ Items:
 - Settings / Catalog / Materials
 - Settings / Catalog / Services
 - Reports
+- Logs / Email Log
 - Help
 
 ### 8.3 Standard Company User Navigation
@@ -1162,6 +1208,7 @@ Items:
 - Dashboard
 - Settings
 - Reports
+- Logs / Email Log
 - Help
 
 ### 8.5 Independent Home Owner Navigation
@@ -1172,6 +1219,7 @@ Items:
 - Settings
 - Settings / Catalog / Pool Equipment
 - Reports
+- Logs / Email Log
 - Help
 
 ## 9. Responsive Design Requirements
@@ -1218,7 +1266,7 @@ Examples:
 Current implementation:
 
 - The navigation menu filters authenticated role links from the current user's active memberships and system-admin flag.
-- Authenticated navigation groups supported leaf links under collapsible Settings and Log sections.
+- Authenticated navigation groups supported leaf links under collapsible Settings and Logs sections.
 - Unauthenticated users see only Home and Help.
 - Authenticated users do not see the Home link; Dashboard remains the signed-in workspace entry point.
 - The top-right profile indicator shows the logged-in user's display name with their current role label underneath, and opens the profile page.
@@ -1227,7 +1275,8 @@ Current implementation:
 - The System Admin General Settings page includes a SystemMode selector with `Pool` and `Landscape` values; saving the selector updates branding, hero imagery, and Pool Equipment visibility after the page refreshes.
 - Settings, Reports, and Help have stable routes; reporting workflows remain future slices.
 - System-admin leaves route to focused pages: `/admin/companies`, `/admin/users`, `/admin/roles`, `/admin/catalog/poolequipment`, `/admin/catalog/materials`, `/admin/catalog/services`, and `/admin/email-log`.
-- Company-admin leaves route to focused pages: `/clients`, `/company/users`, `/catalog/poolequipment`, `/catalog/materials`, and `/catalog/services`.
+- Company-admin leaves route to focused pages: `/clients`, `/company/users`, `/catalog/poolequipment`, `/catalog/materials`, `/catalog/services`, and `/logs/email`.
+- Business Client and Independent Home Owner Logs navigation routes to `/logs/email`.
 - In Pool mode, company-client users with homeowner equipment access route to `/poolequipment`.
 - In Pool mode, Independent Home Owner users have no company memberships and route to `/poolequipment` for owner-scoped pool equipment management.
 - Landscape mode hides Pool Equipment navigation and redirects direct Pool Equipment routes back to Dashboard.

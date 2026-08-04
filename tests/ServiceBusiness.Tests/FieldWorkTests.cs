@@ -95,6 +95,27 @@ public sealed class FieldWorkTests
     }
 
     [Fact]
+    public async Task Company_admin_can_close_completed_visit_without_invoice_placeholder()
+    {
+        var store = new InMemoryServiceBusinessStore();
+        var currentUser = new TestCurrentUser("demo-owner-1");
+        var authorization = new TenantAuthorizationService(store, currentUser);
+        var service = new CompanyAdminService(store, authorization, currentUser, new TestNotificationQueue());
+        var visit = (await store.GetVisitAsync("clearwater", "visit-4"))! with
+        {
+            Status = VisitStatus.Completed,
+            InvoiceId = null
+        };
+        await store.UpsertVisitAsync(visit);
+
+        await service.SetVisitStatusAsync("clearwater", "visit-4", VisitStatus.Closed);
+
+        var closedVisit = await store.GetVisitAsync("clearwater", "visit-4");
+        Assert.Equal(VisitStatus.Closed, closedVisit!.Status);
+        Assert.Null(closedVisit.InvoiceId);
+    }
+
+    [Fact]
     public async Task Employee_dashboard_queries_split_today_upcoming_and_completed_visits()
     {
         var store = new InMemoryServiceBusinessStore();
