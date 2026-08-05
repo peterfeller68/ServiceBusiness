@@ -163,7 +163,9 @@ Current implementation details:
 - `/auth/google` starts the Google challenge.
 - `/auth/google-complete` creates or updates `AppUser` from Google claims and signs in with an app cookie containing the application user ID claim.
 - `/auth/test-signin` is a development-only bypass for seeded users marked `IsTestUser`.
+- `/auth/registration-signin` completes registration by signing in the matching Google-authenticated user or a DevTest-created test user.
 - `/auth/signout` clears the application cookie.
+- `/register` drives Business Owner, Business Employee, Business Client, and Independent Homeowner registration through `OnboardingService`.
 - The Blazor shell reads the current app user to show a profile indicator that opens `/profile`.
 - `/profile` updates mutable profile fields and the email notification preference through `UserProfileService`.
 - The Blazor shell uses authentication state for navigation visibility so unauthenticated users see only public links.
@@ -185,6 +187,7 @@ Authorization examples:
 - System Admin can manage company types and companies.
 - System Admin can view all users, promote existing users to System Admin, and enable or disable users while preserving at least one active System Admin.
 - System Admin can edit built-in role definitions, including display metadata, owner-approval requirements, and permission lists.
+- Permission strings are persisted as role metadata; runtime authorization currently evaluates fixed role identities and active memberships.
 - Company Admin can manage users, clients, services, materials, schedules, billing, and reports for their company.
 - Standard Company User can view assigned visits and complete those visits.
 - Company Client User can view their own service history, billing history, and messages.
@@ -194,11 +197,12 @@ Current UI enforcement:
 
 - Navigation items are filtered by the current user's active company memberships, system-admin flag, and independent-homeowner state.
 - Navigation sections can be expanded or collapsed, and each visible leaf points to an application route.
-- Editor leaves use focused routes instead of routing back to a combined dashboard: `/admin/companies`, `/admin/users`, `/admin/roles`, `/admin/email-log`, `/admin/catalog/poolequipment`, `/admin/catalog/materials`, `/admin/catalog/services`, `/company/users`, `/poolequipment`, `/catalog/poolequipment`, `/catalog/materials`, and `/catalog/services`.
+- Editor leaves use focused routes instead of routing back to a combined dashboard: `/admin/companies`, `/admin/users`, `/admin/roles`, `/admin/email-log`, `/admin/catalog/poolequipment`, `/admin/catalog/materials`, `/admin/catalog/services`, `/company/users`, `/poolequipment`, `/catalog/materials`, and `/catalog/services`.
 - Focused data-management pages render collapsible table panels with inline add/edit editor panels rather than always-visible edit forms.
 - Public navigation is limited to Home and Help when no application cookie is present.
 - Authenticated navigation hides Home and uses Dashboard as the post-sign-in workspace entry point.
-- `ApplicationModeService` reads the persisted `SystemSettings` row and provides PoolShark/TreeShark branding, hero imagery, and Pool Equipment visibility.
+- Help pages render static markdown from `docs/user-guide`, and guide markdown is copied into Web build and publish output.
+- `ApplicationModeService` resolves the current application mode and provides PoolShark/TreeShark branding, hero imagery, global catalog scope, DevTest flag, and Pool Equipment visibility.
 - Landscape mode suppresses Pool Equipment navigation and redirects direct Pool Equipment routes back to the dashboard.
 - Backend service methods still enforce authorization independently of hidden navigation.
 

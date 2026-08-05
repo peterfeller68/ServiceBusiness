@@ -1,39 +1,4 @@
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-follow-on implementation-prompt
-++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-# Codex Implementation Prompt
-
-Use this prompt to continue enhancing the application after the initial vertical slice is complete. Follow the implementation priorities and technical constraints outlined in the prompt, and refer to the source documents for detailed requirements, architecture, storage entities, and UI specifications.
-
-## Prompt
-
-Source of Truth Documents
-Use these documents as the source of truth, however you have already implemented them:
-- `docs/requirements.md`
-- `docs/architecture.md`
-- `docs/storage-entities.md`
-- `docs/ui-specifications.md`
-
-Use this document as the source of truth for the follow-on implementation:
-- `docs/follow-on requirements.md`
-
-Go ahead and implement any changes since the last update.
-Also, update the above source of truth documents with the neccessary changes in order to reflect the current state of the application and the new features that have been implemented.
-This will ensure that the documentation remains accurate and up-to-date for future reference and development.
-
-
-++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-follow-on implementation-prompt with focus
-++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-Use previous # Codex Implementation Prompt
-Focus On:
-## 1.10 Dashboard
-### 11.1.1 Test Companies
-### 11.1.2 Additional Test Users, not associated with any Company
-
-
-++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 Miscellaneous
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 Review section #12 and update the Current Implementation paragraph
@@ -94,20 +59,18 @@ Follow our spec-driven workflow:
    - Test coverage added or still missing
    - Change Log entry
 5. Update user documentation under docs/user-guide/ if this changes user-visible behavior.
+   - if a new user guide was aded, add a new link on the index-md page to the relevant user-guide
+   - keep the getting-started.md page current if there is any impact
 6. Update source-of-truth docs under docs/source-of-truth/ only if this changes global product requirements, architecture, roles/permissions, data model, storage, navigation, or UI rules.
 7. Add or update tests for the implemented behavior.
 8. Do not start the WebApp. I will run it via Visual Studio.
 9. Run applicable tests.
-WATCH OUT
-10. Create a check-in comment, commit, and push the changes.
 
 Before implementing, briefly summarize:
 - What the feature requires
 - Which docs you expect to update
 - Which code areas you expect to touch
 - Any ambiguity or risk you found
-WATCH OUT
-- Create a check-in comment, commit, and push the changes.
 
 
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -131,12 +94,12 @@ Follow our spec-driven workflow:
    - Test coverage added or still missing
    - Change Log entry
 5. Update user documentation under docs/user-guide/ if this changes user-visible behavior.
+   - if a new user guide was aded, add a new link on the index-md page to the relevant user-guide
+   - keep the getting-started.md page current if there is any impact
 6. Update source-of-truth docs under docs/source-of-truth/ only if this changes global product requirements, architecture, roles/permissions, data model, storage, navigation, or UI rules.
 7. Add or update tests for the implemented behavior.
 8. Do not start the WebApp. I will run it via Visual Studio.
 9. Run applicable tests.
-WATCH OUT
-10. Create a check-in comment, commit, and push the changes.
 
 Before implementing, briefly summarize:
 - What the feature requires
@@ -173,12 +136,12 @@ Then implement the feature.
 
 Also:
 - Update docs/user-guide/ for user-visible behavior.
+   - if a new user guide was aded, add a new link on the index-md page to the relevant user-guide
+   - keep the getting-started.md page current if there is any impact
 - Update docs/source-of-truth/ only for global product, architecture, role, data, storage, navigation, or UI changes.
 - Add or update tests.
 - Do not start the WebApp. I will run it via Visual Studio.
 - Run applicable tests.
-WATCH OUT
-- Create a check-in comment, commit, and push the changes.
 
 
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -194,9 +157,8 @@ Do not start the WebApp.
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 Spec-driven Update Documentation for already implemented feature
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-Bring the documentation current for the already-implemented feature:
-
-<feature name or route/page/service area>
+Bring the documentation current for the already implemented feature: 
+<feature-name>
 
 Please inspect the current code and tests first, then update documentation to match the actual implementation.
 
@@ -216,10 +178,64 @@ Follow the spec-driven documentation workflow:
    - Tests
    - Outstanding Tasks
    - Change Log
-4. Update docs/user-guide/ if the feature has user-visible behavior.
+4. Update user documentation under docs/user-guide/ if this contains any user-visible behavior.
+   - if a new user guide needs to be added, add the user-guide and a new link on the index-md page to the relevant user-guide
+   - keep the getting-started.md page current if there is any impact
 5. Update docs/source-of-truth/ only if the implementation changes or clarifies global product requirements, architecture, roles/permissions, data model, storage, navigation, or UI rules.
 6. Move any stale notes from planning docs into the right feature spec, user guide, or source-of-truth doc.
 7. Do not change application behavior unless you find a documentation-only typo in code comments or labels that is necessary for accuracy.
+8. Run lightweight validation if useful, such as markdown/link checks if available.
+9. Summarize what documentation was updated and what outstanding implementation/documentation gaps remain.
+10. Any new document added needs to also be added under the appropriate solution folder in the solution 
+	
+
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Spec-driven development system prompt
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+Follow these guidelines for adding or updating any application features
+
+Follow our spec-driven workflow:
+
+1. Review the feature spec, source-of-truth docs, and any related user-guide or operations docs.
+2. Inspect the current implementation before making changes.
+3. Implement the feature according to the spec.
+4. Update the feature spec with:
+   - Current Implementation
+   - Outstanding Tasks
+   - Acceptance Criteria status
+   - Test coverage added or still missing
+   - Change Log entry
+5. Update user documentation under docs/user-guide/ if this changes user-visible behavior.
+   - if a new user guide was aded, add a new link on the index-md page to the relevant user-guide
+   - keep the getting-started.md page current if there is any impact
+6. Update source-of-truth docs under docs/source-of-truth/ only if this changes global product requirements, architecture, roles/permissions, data model, storage, navigation, or UI rules.
+7. Add or update tests for the implemented behavior.
 8. Do not start the WebApp. I will run it via Visual Studio.
-9. Run lightweight validation if useful, such as markdown/link checks if available.
-10. Summarize what documentation was updated and what outstanding implementation/documentation gaps remain.
+9. Run applicable tests.
+
+Before implementing, briefly summarize:
+- What the feature requires
+- Which docs you expect to update
+- Which code areas you expect to touch
+- Any ambiguity or risk you found
+
+docs/features/
+x  registration-and-authentication.md
+x  account-approval-and-user-management.md
+x  roles-and-permissions.md
+x  service-client-management.md
+x  business-client-management.md
+x  catalog-materials.md
+x  catalog-services.md
+x  pool-equipment-catalog.md
+x  pool-configuration.md
+x  service-packages.md
+  notifications.md
+  system-settings.md
+  test-mode-and-test-users.md
+  data-hydration.md
+  observability.md
+  reports.md

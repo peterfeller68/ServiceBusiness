@@ -1,34 +1,48 @@
 @page "/help"
+@page "/help/getting-started"
+@page "/help/user-guide"
+@page "/help/user-guide/{GuideSlug}"
+@inject NavigationManager Navigation
+@inject ServiceBusiness.Web.UserGuideContentService UserGuideContent
 
 <PageTitle>Help</PageTitle>
 
 <section class="page-header">
     <div>
         <p class="eyebrow">Help</p>
-        <h1>Service Business support</h1>
-        <p class="lede">Find your next step based on the account and role you use to access the application.</p>
+        <h1>@article.Title</h1>
+        <p class="lede">Browse current user documentation generated as part of the development cycle.</p>
+    </div>
+    <div class="page-actions">
+        <a class="button" href="help/getting-started">Getting Started</a>
+        <a class="button" href="help/user-guide">User Guide</a>
     </div>
 </section>
 
 <section class="section">
-    <div class="data-list">
-        <article class="row-card">
-            <div>
-                <strong>Getting started</strong>
-                <p>Register as a business owner, business user, business client, or independent homeowner, then complete the Google sign-in or test-user sign-in flow.</p>
-            </div>
-        </article>
-        <article class="row-card">
-            <div>
-                <strong>Access approvals</strong>
-                <p>Business users and business clients remain pending until a business owner approves their access request.</p>
-            </div>
-        </article>
-        <article class="row-card">
-            <div>
-                <strong>Profile and logout</strong>
-                <p>Use the profile link in the top-right corner to update contact details or log out.</p>
-            </div>
-        </article>
-    </div>
+    <article class="user-guide-document">
+        @article.Html
+    </article>
 </section>
+
+@code {
+    [Parameter]
+    public string? GuideSlug { get; set; }
+
+    private ServiceBusiness.Web.UserGuideArticle article = new(
+        "Help",
+        "index",
+        new MarkupString("<p>Loading help...</p>"));
+
+    protected override void OnParametersSet()
+    {
+        var relativePath = Navigation.ToBaseRelativePath(Navigation.Uri).TrimEnd('/');
+        var slug = relativePath.Equals("help/getting-started", StringComparison.OrdinalIgnoreCase)
+            ? "getting-started"
+            : relativePath.StartsWith("help/user-guide", StringComparison.OrdinalIgnoreCase)
+                ? GuideSlug ?? "index"
+                : "index";
+
+        article = UserGuideContent.GetArticle(slug);
+    }
+}

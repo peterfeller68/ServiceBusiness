@@ -114,6 +114,7 @@ Rules:
 - First sign-in creates an application user profile if one does not already exist.
 - Test users may be marked with `IsTestUser` and can bypass Google authentication only through a dedicated test sign-in path.
 - Real, non-test users must authenticate through Google.
+- Registration and real sign-in currently require Gmail email addresses.
 
 ### 4.2 Authorization
 
@@ -175,6 +176,15 @@ System Admins can:
 - Activate, deactivate, or suspend a company.
 - View company billing status.
 
+Current implementation:
+
+- System Administrators manage service client companies from `/admin/service-clients`; legacy `/admin/companies` routes to the same page.
+- The Service Clients page filters service clients and company type choices by current Pool or Landscape app mode.
+- The current `Company` model stores id, company type id, name, business email, business phone, time zone, status, and optional service package id.
+- Service package assignment validates an active global package for the service client's company type.
+- The current UI supports Active/Inactive status changes; `Suspended` exists in the model but is not exposed as a separate grid action.
+- Website, address, logo, billing status, Stripe status, and notification-template fields remain future model/UI slices.
+
 Company Admins can maintain:
 
 - Company name.
@@ -218,6 +228,7 @@ Current implementation:
 - Public navigation shows only Home and Help when no user is signed in.
 - Signed-in navigation is filtered by active company role and system-admin status.
 - Signed-in navigation uses collapsible sections with distinct focused routes for visible leaf items.
+- Help navigation exposes Getting Started and User Guide pages backed by `docs/user-guide` markdown.
 
 ### 6.1.1 System Admin User Management
 
@@ -243,7 +254,9 @@ Current implementation:
 - `/admin/companies`, `/admin/users`, `/admin/roles`, and `/admin/email-log` provide focused pages for company, user, role, and email-log management.
 - `/admin/companies` supports company create, edit, suspend, archive, and reactivate.
 - `/admin/users` supports user create, edit, system-admin promotion/removal, disable, and enable.
+- `/admin/users` disables self-changing controls and service methods prevent self-disable plus last-active-System-Admin removal.
 - `/admin/roles` supports editing built-in role display metadata, permissions, and owner-approval requirements; role identities remain fixed to the built-in company role keys.
+- Permission lists are currently role metadata; runtime authorization still uses fixed role identities and active tenant-scoped memberships.
 - Focused admin data editors use collapsible table panels with right-aligned row actions; Create and Edit actions expand inline editor panels.
 
 ### 6.2 Company User Management
@@ -265,11 +278,16 @@ Standard Company Users can:
 
 Current implementation:
 
+- `/register` is a three-step flow for account type, authentication, and role-specific details.
+- Business Owner registration creates a current-system-mode service client company, a Home Owner client type, and active `CompanyAdmin` membership.
+- Business Employee registration creates pending `CompanyUser` membership.
+- Business Client registration requires an active business-client address and creates pending `CompanyClientUser` membership linked to that business client.
 - `/company/users` shows company users and pending employee/client-user access requests for the seeded company scope.
 - `/company/users` uses collapsible table panels for pending access and company access management.
 - Company admins can approve or reject pending company access requests.
 - Company admins can deactivate and reactivate approved company memberships.
 - Company admins can update company-scoped roles by removing the previous membership role and activating the replacement role.
+- Company-scoped role reassignment preserves the previous active/inactive status and records decision metadata.
 - Company admins cannot deactivate or reassign their own Company Admin access, and at least one active Company Admin must remain.
 - Global account disablement remains a System Admin action on `/admin/users`.
 
@@ -326,6 +344,15 @@ Rules:
 - A company client can have multiple client users.
 - A company client can have multiple service locations in a future phase, but phase one may model one service address per client.
 - Inactive clients should not be scheduled unless explicitly reactivated.
+
+Current implementation:
+
+- System Administrators manage business clients across current-mode service clients from `/admin/clients`.
+- Business Owners manage business clients for their active service client from `/clients`.
+- The current `CompanyClient` model stores id, company id, display name, primary contact, email, phone, one service address, access notes, client type id, optional rate override, active flag, and optional service package id.
+- Business client service package assignment validates an active package from the service client's company scope or the matching global catalog scope.
+- Business Client registration requires selecting an active business-client address and stores the business client id on the company membership.
+- Billing address, property notes, preferred service days, taxable status, notification preferences, geocoding, and multiple service locations remain future slices.
 
 ## 8. Client Type and Pricing Requirements
 
@@ -410,13 +437,21 @@ Current implementation:
 - Seed data includes three independent homeowner test users with `homeowner-1@independent.com`, `homeowner-2@independent.com`, and `homeowner-3@independent.com`; each has no company memberships and has owner-scoped pool equipment.
 - The `/catalog` page displays company services and materials grouped by category.
 - The `/catalog/materials` and `/catalog/services` pages split the company catalog into focused material and service editors.
-- The `/admin/catalog/materials` and `/admin/catalog/services` pages provide focused system-admin catalog editors for this slice.
-- Focused material and service editors support category and item create, edit, archive, and reactivate.
-- The `/admin/catalog/poolequipment`, `/catalog/poolequipment`, and `/poolequipment` pages provide focused pool-equipment editors for global, company, and homeowner scopes.
-- Focused pool-equipment editors support category and item create, edit, archive, reactivate, and image URL reference display.
+- The `/settings/services` page provides owner-scoped service management for Independent Home Owners.
+- The `/admin/catalog/materials` and `/admin/catalog/services` pages provide focused system-admin catalog editors for the current app-mode global starter catalog.
+- Focused material and service editors support item create, edit, filtering, and active-state workflows; system-admin views also expose category editors and CSV seeding.
+- Business Owner and Independent Home Owner service/material pages can add global starter rows into the current scope and copy any missing global category into that scope.
+- The `/admin/catalog/servicepackages` page provides the focused current-mode global service package editor.
+- The `/catalog/servicepackages` page provides the focused company service package editor.
+- Service package editors support package create, edit, filtering, sorting, active toggles, delete, package recurrence, package cost, and chosen services with Every Visit or Every X Visits service recurrence.
+- Business Owner packages can include active company services and active global starter services; System Administrator packages can include active global services.
+- The `/admin/catalog/poolequipment` page provides the focused global pool-equipment starter catalog editor.
+- The `/poolequipment` page provides Pool Configuration management for System Administrators, Business Owners, and Independent Home Owners using homeowner-scoped configured equipment records.
+- The `/catalog/poolequipment` route currently redirects to the dashboard; company-scoped equipment catalog management exists in the service layer but is not exposed as a focused UI.
+- Focused pool-equipment views support category/item management for the global catalog, configured equipment management for pool configurations, and equipment picture uploads for pool configurations.
 - Focused service, material, and pool-equipment editors use collapsible table panels for category and item lists; Create and Edit actions expand inline editor panels.
-- Focused service, material, and pool-equipment editors support copy-as-custom actions for seeded starter categories and starter items.
-- Copied starter records become editable non-system-managed custom records in the current scope with unique `-custom` IDs.
+- Service-layer copy-as-custom methods create editable non-system-managed custom records with unique `-custom` IDs.
+- Current material, service, and pool-configuration pages expose starter adoption through Add panels that insert selected global rows into the current scope.
 - Existing uncategorized rows are displayed under an uncategorized fallback group.
 
 ### 9.4 System Mode
@@ -435,7 +470,7 @@ Current implementation:
 - The independent homeowner dashboard shows Pool Equipment and Service History panels.
 - Authenticated navigation hides Home; public navigation still shows Home and Help.
 - Landscape mode hides Pool Equipment navigation and redirects direct Pool Equipment routes back to the dashboard.
-- System Administrators can change `SystemMode` from the General Settings page.
+- The `/settings` page currently displays `SystemMode`, `DevTest`, and active product name as read-only guidance for System Administrators; no settings editor is implemented in the UI.
 
 ## 10. Scheduling Requirements
 
@@ -645,18 +680,12 @@ Company Admins can generate reports by:
 
 Reports:
 
-- Completed visits.
-- Scheduled visits.
-- Revenue summary.
-- Materials usage.
-- User productivity.
-- Client service history.
-- Billing and payment summary.
+- `/reports` is currently a stable placeholder route.
+- Completed visits, scheduled visits, revenue summary, materials usage, user productivity, client service history, and billing/payment summary remain future report slices.
 
 Report exports:
 
-- CSV export should be supported.
-- PDF export may be added in a future phase.
+- CSV and PDF export remain future work.
 
 ## 17. Audit and Compliance Requirements
 
@@ -691,6 +720,8 @@ Audit fields:
 - Use the Azure Table-backed store when `AzureStorage:UseAzureStorage` is enabled; use the in-memory store only for local/demo mode.
 - Use Azure services for application logs, configuration, and secrets.
 - Use Application Insights through Azure Monitor OpenTelemetry for request, dependency, log, metric, and business workflow telemetry.
+- `InMemoryServiceBusinessStore` seeds representative local/test data at startup.
+- `AzureStorageTableInitializer` creates required Azure Tables and hydrates missing seed records into Azure Table Storage.
 
 ### 18.2 Reliability
 

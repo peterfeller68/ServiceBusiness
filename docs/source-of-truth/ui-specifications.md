@@ -50,8 +50,11 @@ Behavior:
 Current implementation:
 
 - `/register` includes Business Owner, Business User, Business Client, and Independent Homeowner choices.
+- `/register` uses account type, authentication, and details steps.
+- Business User registration requires a selected business.
+- Business Client registration requires a selected business and business-client address.
 - Independent Homeowner registration captures account contact fields, home address, and access notes, and does not show the business association selector.
-- Successful Independent Homeowner registration routes to `/poolequipment`.
+- Successful registration routes through `/auth/registration-signin` to `/dashboard`.
 
 ## 3. First-Time Profile Setup Screen
 
@@ -71,6 +74,14 @@ Fields:
 - Email notifications enabled toggle.
 
 Actions:
+
+- None implemented yet.
+
+Current implementation:
+
+- `/reports` is a placeholder destination with the heading Operational reports.
+- The page explains that report filters and exports will build on completed visits, catalog items, users, clients, and billing records.
+- No report filters, data tables, charts, or exports are currently implemented.
 
 - Save profile.
 - Continue.
@@ -144,6 +155,14 @@ Actions:
 
 - Save.
 - Cancel.
+
+### 4.3.1 Current Service Clients Implementation
+
+- `/admin/service-clients` is the focused System Administrator Service Clients page; `/admin/companies` remains as a legacy route.
+- The page uses a collapsible Service Clients panel with an inline edit editor, active toggles, and icon edit/archive actions.
+- Rows are filtered by current Pool or Landscape app mode.
+- The current editor captures service client type, name, business email, business phone, service package, time zone, and active status.
+- Service package choices come from active global packages for the current service type.
 
 Validation:
 
@@ -392,6 +411,16 @@ Actions:
 - Edit client.
 - Deactivate.
 
+Current implementation:
+
+- `/admin/clients` is the focused System Administrator Business Clients page.
+- `/clients` is the focused Business Owner Business Clients page.
+- The page uses a collapsible Business Clients panel with a Create action, inline create/edit editor, active toggles, and icon edit/archive actions.
+- System Administrator rows include Company and are filtered by current Pool or Landscape app mode.
+- Business Owner rows are scoped to the current active `CompanyAdmin` membership.
+- The current editor captures business client type, service package, display name, primary contact, email, phone, service address, rate override, access notes, and active status.
+- Billing address, property notes, preferred service days, taxable flag, notification preference, geocoding, and client detail workflow remain future UI slices.
+
 ### 5.7 Client Detail
 
 Purpose:
@@ -594,12 +623,15 @@ Current implementation:
 
 - `/catalog` displays services and materials grouped by category cards.
 - `/catalog/materials` and `/catalog/services` provide focused company catalog editors.
-- `/admin/catalog/materials` and `/admin/catalog/services` provide focused system-admin catalog editors for the seeded company catalog in this slice.
+- `/settings/services` provides focused owner-scoped service management for Independent Home Owners.
+- `/admin/catalog/materials` and `/admin/catalog/services` provide focused system-admin catalog editors for the current app-mode global starter catalog.
+- `/admin/catalog/servicepackages` and `/catalog/servicepackages` provide focused service package editors.
 - Focused catalog editors use collapsible table panels for category and item lists.
 - Create buttons expand empty inline editor panels; Edit actions expand the same editor panels populated from the selected row.
-- Focused catalog editors include archive/reactivate actions.
-- System/starter categories are visually marked.
-- System/starter categories and items expose copy-as-custom actions that create editable records in the current scope.
+- Focused catalog editors include active-state actions; service and pool-equipment item delete actions remove rows where implemented.
+- System Administrator material and service pages expose category editors and CSV seed panels.
+- Business Owner and Independent Home Owner material/service pages expose Add panels for choosing global starter rows into the current scope.
+- Service package editors expose package recurrence, cost, active status, chosen services, service chooser filtering, and per-service recurrence controls.
 - Empty categories and legacy uncategorized rows have explicit states.
 
 ### 5.16 Schedule Calendar
@@ -1175,7 +1207,8 @@ Items:
 - Settings / Catalog / Services
 - Reports
 - Logs / Email Log
-- Help
+- Help / Getting Started
+- Help / User Guide
 
 ### 8.2 Company Admin Navigation
 
@@ -1186,12 +1219,13 @@ Items:
 - Settings / Customers
 - Settings / Users
 - Settings / Catalog
-- Settings / Catalog / Pool Equipment
+- Settings / Pool Configuration
 - Settings / Catalog / Materials
 - Settings / Catalog / Services
 - Reports
 - Logs / Email Log
-- Help
+- Help / Getting Started
+- Help / User Guide
 
 ### 8.3 Standard Company User Navigation
 
@@ -1199,7 +1233,8 @@ Items:
 
 - Dashboard
 - Reports
-- Help
+- Help / Getting Started
+- Help / User Guide
 
 ### 8.4 Company Client User Navigation
 
@@ -1210,7 +1245,8 @@ Items:
 - Settings
 - Reports
 - Logs / Email Log
-- Help
+- Help / Getting Started
+- Help / User Guide
 
 ### 8.5 Independent Home Owner Navigation
 
@@ -1218,10 +1254,11 @@ Items:
 
 - Dashboard
 - Settings
-- Settings / Catalog / Pool Equipment
+- Settings / Pool Configuration
 - Reports
 - Logs / Email Log
-- Help
+- Help / Getting Started
+- Help / User Guide
 
 ## 9. Responsive Design Requirements
 
@@ -1267,26 +1304,28 @@ Examples:
 Current implementation:
 
 - The navigation menu filters authenticated role links from the current user's active memberships and system-admin flag.
-- Authenticated navigation groups supported leaf links under collapsible Settings and Logs sections.
-- Unauthenticated users see only Home and Help.
+- Authenticated navigation groups supported leaf links under collapsible Settings, Logs, and Help sections.
+- Unauthenticated users see only Home and Help, with Help exposing Getting Started and User Guide.
 - Authenticated users do not see the Home link; Dashboard remains the signed-in workspace entry point.
 - The top-right profile indicator shows the logged-in user's display name with their current role label underneath, and opens the profile page.
 - Dashboard pages show the current system-mode hero image.
 - Persisted `SystemSettings.SystemMode` controls product branding and imagery: Pool mode shows `PoolShark` with the pool waterfall image, while Landscape mode shows `TreeShark` with the mature fruit-tree landscape image.
-- The System Admin General Settings page includes a SystemMode selector with `Pool` and `Landscape` values; saving the selector updates branding, hero imagery, and Pool Equipment visibility after the page refreshes.
-- Settings, Reports, and Help have stable routes; reporting workflows remain future slices.
+- The `/settings` page shows `SystemMode`, `DevTest`, and active product as read-only guidance for System Administrators; no SystemMode selector is currently implemented in the UI.
+- Settings, Reports, and Help have stable routes; Help routes render static user-guide markdown and Reports is currently a placeholder route.
 - System-admin leaves route to focused pages: `/admin/companies`, `/admin/users`, `/admin/roles`, `/admin/catalog/poolequipment`, `/admin/catalog/materials`, `/admin/catalog/services`, and `/admin/email-log`.
-- Company-admin leaves route to focused pages: `/clients`, `/company/users`, `/catalog/poolequipment`, `/catalog/materials`, `/catalog/services`, and `/logs/email`.
+- Company-admin leaves route to focused pages: `/clients`, `/company/users`, `/poolequipment` in Pool mode, `/catalog/materials`, `/catalog/services`, and `/logs/email`.
 - Business Client and Independent Home Owner Logs navigation routes to `/logs/email`.
 - In Pool mode, company-client users with homeowner equipment access route to `/poolequipment`.
 - In Pool mode, Independent Home Owner users have no company memberships and route to `/poolequipment` for owner-scoped pool equipment management.
 - Landscape mode hides Pool Equipment navigation and redirects direct Pool Equipment routes back to Dashboard.
-- `/admin/companies`, `/admin/users`, `/catalog/poolequipment`, `/catalog/materials`, `/catalog/services`, `/admin/catalog/poolequipment`, `/admin/catalog/materials`, and `/admin/catalog/services` expose create/edit/archive-reactivate workflows appropriate to their models.
+- `/admin/companies`, `/admin/users`, `/poolequipment`, `/catalog/materials`, `/catalog/services`, `/admin/catalog/poolequipment`, `/admin/catalog/materials`, and `/admin/catalog/services` expose create/edit/archive-reactivate or delete workflows appropriate to their models.
+- `/catalog/poolequipment` is currently a direct route that redirects to the dashboard rather than exposing a company-scoped equipment catalog UI.
 - Data-management pages use collapsible management panels with table rows and right-aligned actions by default.
 - Add/Create and Edit actions expand inline editor panels within the relevant management panel.
 - `/admin/roles` edits the built-in role definitions; adding arbitrary role identities remains out of scope while roles are represented by the fixed `CompanyRole` enum.
 - Pool-equipment editor pages expose category/item forms, active/archive controls, scope labels, and image URL thumbnails without showing material or service editor controls.
 - Catalog editor pages expose copy-as-custom controls for starter records without mixing unrelated editor controls onto the focused page.
+- DevTest mode exposes a Test navigation section with Test Page and Test Users; the section is hidden when DevTest is false.
 
 ## 12. Implementation Prompt Guidance
 

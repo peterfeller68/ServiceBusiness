@@ -1,45 +1,82 @@
 <Solution>
   <Folder Name="/docs/">
-    <File Path="docs/follow-on requirements.md" />
     <File Path="Notes.txt" />
     <File Path="Vital Workflows.md" />
   </Folder>
-  <Folder Name="/docs/delete me/">
-    <File Path="Dashboard.md" />
-    <File Path="Invoices.md" />
-    <File Path="Jobs-oldFormat.md" />
-    <File Path="Logs-oldFormat.md" />
-    <File Path="Visit Scheduling.md" />
+  <Folder Name="/docs/delete-me/">
+    <File Path="docs/delete-me/Dashboard.md" />
+    <File Path="docs/delete-me/Invoices.md" />
+    <File Path="docs/delete-me/Jobs-oldFormat.md" />
+    <File Path="docs/delete-me/Logs-oldFormat.md" />
+    <File Path="docs/delete-me/Visit Scheduling.md" />
+    <File Path="docs/delete-me/Vital Workflows.md" />
   </Folder>
   <Folder Name="/docs/features/">
     <File Path="docs/features/000-template.md" />
+    <File Path="docs/features/account-approval-and-user-management.md" />
+    <File Path="docs/features/business-client-management.md" />
+    <File Path="docs/features/catalog-materials.md" />
+    <File Path="docs/features/catalog-services.md" />
     <File Path="docs/features/dashboard.md" />
+    <File Path="docs/features/data-hydration.md" />
     <File Path="docs/features/invoicing.md" />
     <File Path="docs/features/jobs.md" />
     <File Path="docs/features/logs.md" />
+    <File Path="docs/features/notifications.md" />
+    <File Path="docs/features/observability.md" />
+    <File Path="docs/features/pool-equipment-catalog.md" />
+    <File Path="docs/features/pool-configuration.md" />
+    <File Path="docs/features/registration-and-authentication.md" />
+    <File Path="docs/features/reports.md" />
+    <File Path="docs/features/roles-and-permissions.md" />
+    <File Path="docs/features/service-client-management.md" />
+    <File Path="docs/features/service-packages.md" />
+    <File Path="docs/features/system-settings.md" />
+    <File Path="docs/features/test-mode-and-test-users.md" />
+    <File Path="docs/features/user-guide.md" />
     <File Path="docs/features/visit-scheduling.md" />
   </Folder>
   <Folder Name="/docs/operations/">
-    <File Path="docs/email-and-storage-setup.md" />
-    <File Path="docs/google-auth-setup.md" />
+    <File Path="docs/operations/email-and-storage-setup.md" />
+    <File Path="docs/operations/google-auth-setup.md" />
+    <File Path="docs/operations/observability-setup.md" />
   </Folder>
-  <Folder Name="/docs/planning/" />
+  <Folder Name="/docs/planning/">
+    <File Path="docs/planning/follow-on requirements.md" />
+    <File Path="docs/planning/Notes.txt" />
+  </Folder>
   <Folder Name="/docs/prompts/">
-    <File Path="docs/implementation-prompt.md" />
-    <File Path="docs/Initial Specs to Model.txt" />
-    <File Path="docs/prompts.md" />
+    <File Path="docs/prompts/follow-on implementation-prompt.md" />
+    <File Path="docs/prompts/implementation-prompt.md" />
+    <File Path="docs/prompts/Initial Specs to Model.md" />
+    <File Path="docs/prompts/prompts.md" />
   </Folder>
   <Folder Name="/docs/source-of-truth/">
-    <File Path="docs/source of truth/architecture.md" />
-    <File Path="docs/source of truth/requirements.md" />
-    <File Path="docs/source of truth/storage-entities.md" />
-    <File Path="docs/source of truth/ui-specifications.md" />
+    <File Path="docs/source-of-truth/architecture.md" />
+    <File Path="docs/source-of-truth/requirements.md" />
+    <File Path="docs/source-of-truth/storage-entities.md" />
+    <File Path="docs/source-of-truth/ui-specifications.md" />
   </Folder>
   <Folder Name="/docs/user-guide/">
+    <File Path="docs/user-guide/account-approval-and-user-management.md" />
+    <File Path="docs/user-guide/business-client-management.md" />
+    <File Path="docs/user-guide/catalog-materials.md" />
+    <File Path="docs/user-guide/catalog-services.md" />
     <File Path="docs/user-guide/dashboard.md" />
+    <File Path="docs/user-guide/index.md" />
     <File Path="docs/user-guide/invoices.md" />
     <File Path="docs/user-guide/jobs.md" />
     <File Path="docs/user-guide/logs.md" />
+    <File Path="docs/user-guide/notifications.md" />
+    <File Path="docs/user-guide/pool-configuration.md" />
+    <File Path="docs/user-guide/pool-equipment-catalog.md" />
+    <File Path="docs/user-guide/registration-and-authentication.md" />
+    <File Path="docs/user-guide/reports.md" />
+    <File Path="docs/user-guide/roles-and-permissions.md" />
+    <File Path="docs/user-guide/service-client-management.md" />
+    <File Path="docs/user-guide/service-packages.md" />
+    <File Path="docs/user-guide/system-settings.md" />
+    <File Path="docs/user-guide/test-mode-and-test-users.md" />
     <File Path="docs/user-guide/visit-scheduling.md" />
   </Folder>
   <Folder Name="/github actions/">

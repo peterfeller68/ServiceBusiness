@@ -201,6 +201,45 @@ a, .btn-link {
     margin: .35rem 0 0;
 }
 
+.user-guide-document {
+    background: #ffffff;
+    border: 1px solid #dce5e3;
+    border-radius: 8px;
+    max-width: 920px;
+    padding: 1.25rem;
+}
+
+.user-guide-document h1 {
+    font-size: 1.65rem;
+    font-weight: 800;
+    margin: 0 0 1rem;
+}
+
+.user-guide-document h2 {
+    border-top: 1px solid #e4ebe9;
+    font-size: 1.25rem;
+    font-weight: 750;
+    margin: 1.35rem 0 .55rem;
+    padding-top: 1rem;
+}
+
+.user-guide-document h3 {
+    font-size: 1.05rem;
+    font-weight: 750;
+    margin: 1rem 0 .35rem;
+}
+
+.user-guide-document p,
+.user-guide-document li {
+    color: #324241;
+    line-height: 1.6;
+}
+
+.user-guide-document ul {
+    margin-bottom: 1rem;
+    padding-left: 1.25rem;
+}
+
 .metric-grid {
     display: grid;
     gap: .85rem;

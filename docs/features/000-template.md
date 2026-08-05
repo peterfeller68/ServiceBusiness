@@ -24,8 +24,6 @@ Last reviewed: YYYY-MM-DD
 
 ## User Documentation Impact
 
-## Current Implementation
-
-## Outstanding Tasks
+## Implementation Notes
 
 ## Change Log

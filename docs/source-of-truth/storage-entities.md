@@ -94,6 +94,12 @@ Fields:
 - `CreatedUtc`
 - `UpdatedUtc`
 
+Current implementation:
+
+- Table name: `Companies`.
+- Current persisted model fields are `Id`, `CompanyTypeId`, `Name`, `BusinessEmail`, `BusinessPhone`, `TimeZone`, `Status`, and optional `ServicePackageId`.
+- Service client ids are normalized slugs.
+
 ### 2.3 Users
 
 Purpose:
@@ -183,6 +189,12 @@ Fields:
 - `RequiresOwnerApproval`
 - `Permissions`
 
+Current implementation:
+
+- Table name: `RoleDefinitions`.
+- Role identities are fixed to `CompanyAdmin`, `CompanyUser`, and `CompanyClientUser`.
+- Permission lists are normalized and stored with role metadata.
+
 ### 3.1 CompanyMemberships
 
 Purpose:
@@ -205,6 +217,7 @@ Fields:
 - `RequestedUtc`
 - `DecidedUtc`
 - `DecidedByUserId`
+- `CompanyClientId`
 - `ApprovedUtc`
 - `RejectedUtc`
 - `RemovedUtc`
@@ -412,7 +425,10 @@ Fields:
 
 Current implementation:
 
+- Table name: `MaterialCategories`.
+- Global starter material categories use service-type catalog company ids such as `Pool_Global` and `LandScape_Global`; company records keep the real company id.
 - Copy-as-custom creates a new material category row with a unique `-custom` ID and `IsSystemManaged = false`.
+- Records are JSON payloads in Azure Table entities.
 
 ### 4.5 Services
 
@@ -442,7 +458,10 @@ Fields:
 
 Current implementation:
 
+- Table name: `Services`.
+- Global starter services use partition keys such as `SERVICES_Pool_Global` and `SERVICES_LandScape_Global`; company services use `SERVICES_Company_{CompanyId}`.
 - Copy-as-custom creates a new service row with a unique `-custom` ID in the same company scope.
+- Records are JSON payloads in Azure Table entities.
 
 ### 4.6 Materials
 
@@ -473,9 +492,46 @@ Fields:
 
 Current implementation:
 
+- Table name: `Materials`.
+- Global starter materials use partition keys such as `MATERIALS_Pool_Global` and `MATERIALS_LandScape_Global`; company materials use `COMPANY_{CompanyId}`.
 - Copy-as-custom creates a new material row with a unique `-custom` ID in the same company scope.
+- Records are JSON payloads in Azure Table entities.
 
-### 4.7 PoolEquipmentCategories
+### 4.7 ServicePackages
+
+Purpose:
+
+- Stores global starter and company-scoped service packages.
+
+Suggested keys:
+
+- `PartitionKey`: `SERVICEPACKAGES#{Scope}#{ScopeOwnerId}`
+- `RowKey`: `SERVICE_PACKAGE#{ServicePackageId}`
+
+Fields:
+
+- `CompanyId`
+- `ServicePackageId`
+- `Name`
+- `Recurrence`
+- `Description`
+- `Cost`
+- `IsActive`
+- `Services`
+- `CreatedUtc`
+- `UpdatedUtc`
+
+Current implementation:
+
+- Table name: `ServicePackages`.
+- Global starter service packages use partition keys such as `SERVICEPACKAGES_Pool_Global` and `SERVICEPACKAGES_LandScape_Global`.
+- Company-scoped service packages use partition keys such as `SERVICEPACKAGES_Company_{CompanyId}`.
+- Row key is the service package id.
+- `Services` is persisted as part of the JSON payload and contains `ServicePackageService` entries with service id and recurrence.
+- Delete removes the package row; active-state changes update `IsActive`.
+- Records are JSON payloads in Azure Table entities.
+
+### 4.8 PoolEquipmentCategories
 
 Purpose:
 
@@ -507,7 +563,7 @@ Current implementation:
 - Copy-as-custom creates a new category row with a unique `-custom` ID and `IsSystemManaged = false`.
 - Records are JSON payloads in Azure Table entities.
 
-### 4.8 PoolEquipmentItems
+### 4.9 PoolEquipmentItems
 
 Purpose:
 
@@ -538,6 +594,7 @@ Current implementation:
 - Row key: item ID.
 - Copy-as-custom creates a new item row with a unique `-custom` ID in the same scope.
 - `ImageUrl` stores a URL or blob reference string; direct blob upload remains a future UI slice.
+- Pool configuration image uploads are stored separately as homeowner equipment photo records with data URL payloads.
 - Records are JSON payloads in Azure Table entities.
 
 ## 5. Client Tables
@@ -587,6 +644,12 @@ Fields:
 - `CreatedUtc`
 - `UpdatedUtc`
 
+Current implementation:
+
+- Table name: `CompanyClients`.
+- Current persisted model fields are `Id`, `CompanyId`, `DisplayName`, `PrimaryContactName`, `Email`, `Phone`, `ServiceAddress`, `AccessNotes`, `ClientTypeId`, optional `RateOverride`, `IsActive`, and optional `ServicePackageId`.
+- The current model stores one service address string and does not yet split billing/service address components.
+
 ### 5.2 CompanyClientsByEmail
 
 Purpose:
@@ -630,6 +693,32 @@ Current implementation:
 - Table name: `IndependentHomeOwnerProfiles`.
 - The row key is the homeowner `UserId`.
 - Independent Homeowner registration creates or updates this profile before seeding owner-scoped equipment records.
+
+### 5.4 HomeOwnerPoolEquipmentPhotos
+
+Purpose:
+
+- Stores uploaded pool configuration pictures for homeowner-scoped equipment configurations.
+
+Suggested keys:
+
+- `PartitionKey`: `HOMEOWNER_EQUIPMENT_PHOTOS#{ScopeOwnerId}`
+- `RowKey`: `{PhotoId}`
+
+Fields:
+
+- `Id`
+- `FileName`
+- `ContentType`
+- `DataUrl`
+- `UploadedUtc`
+
+Current implementation:
+
+- Table name: `HomeOwnerPoolEquipmentPhotos`.
+- The scope owner id is an Independent Home Owner user id or a `CompanyClient.Id` for a business-client pool configuration.
+- Uploaded image payloads are stored as data URLs in table-backed records.
+- Pool Configuration photo upload and delete use `CompanyAdminService.AddPoolConfigurationPhotosAsync` and `DeletePoolConfigurationPhotoAsync`.
 
 ## 6. Scheduling Tables
 

@@ -91,6 +91,7 @@ builder.Services.AddScoped<InvoicingJobService>();
 builder.Services.AddScoped<EmailJobService>();
 builder.Services.AddScoped<ScheduledJobRunner>();
 builder.Services.AddScoped<EmailLogService>();
+builder.Services.AddSingleton<UserGuideContentService>();
 builder.Services.Configure<JobSchedulerOptions>(builder.Configuration.GetSection("Jobs:Scheduler"));
 builder.Services.AddHostedService<ServiceBusinessJobScheduler>();
 

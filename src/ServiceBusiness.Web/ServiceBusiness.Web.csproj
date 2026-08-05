@@ -12,6 +12,14 @@
     <PackageReference Include="Microsoft.AspNetCore.Authentication.Google" Version="9.*" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="..\..\docs\user-guide\*.md" Link="docs\user-guide\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Remove="..\..\docs\user-guide\user-guide.md" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
