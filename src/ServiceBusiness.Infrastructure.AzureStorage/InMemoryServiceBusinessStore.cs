@@ -26,6 +26,10 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
     private readonly List<ServiceVisit> visits = [];
     private readonly List<Invoice> invoices = [];
     private readonly List<EmailLogEntry> emailLogs = [];
+    private readonly List<SubscriptionPlan> subscriptionPlans = [];
+    private readonly List<HomeOwnerSubscription> homeOwnerSubscriptions = [];
+    private readonly List<PaymentProviderEvent> paymentProviderEvents = [];
+    private readonly List<PaymentOperationLog> paymentOperationLogs = [];
     private SystemSettings systemSettings;
 
     public InMemoryServiceBusinessStore(SystemSettings? defaultSystemSettings = null)
@@ -48,6 +52,30 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
 
     public Task<SystemSettings> GetSystemSettingsAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult(systemSettings);
+
+    public Task<IReadOnlyList<SubscriptionPlan>> GetSubscriptionPlansAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<SubscriptionPlan>>(subscriptionPlans.OrderBy(plan => plan.SortOrder).ThenBy(plan => plan.Name).ToList());
+
+    public Task<SubscriptionPlan?> GetSubscriptionPlanAsync(string planId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(subscriptionPlans.FirstOrDefault(plan => string.Equals(plan.Id, planId, StringComparison.OrdinalIgnoreCase)));
+
+    public Task<HomeOwnerSubscription?> GetHomeOwnerSubscriptionAsync(string ownerUserId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(homeOwnerSubscriptions.FirstOrDefault(subscription => string.Equals(subscription.OwnerUserId, ownerUserId, StringComparison.OrdinalIgnoreCase)));
+
+    public Task<IReadOnlyList<HomeOwnerSubscription>> GetHomeOwnerSubscriptionsAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<HomeOwnerSubscription>>(homeOwnerSubscriptions.OrderBy(subscription => subscription.OwnerUserId).ToList());
+
+    public Task<PaymentProviderEvent?> GetPaymentProviderEventAsync(string provider, string providerEventId, CancellationToken cancellationToken = default)
+    {
+        var eventId = PaymentProviderEventId(provider, providerEventId);
+        return Task.FromResult(paymentProviderEvents.FirstOrDefault(paymentEvent => string.Equals(paymentEvent.Id, eventId, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    public Task<IReadOnlyList<PaymentProviderEvent>> GetPaymentProviderEventsAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<PaymentProviderEvent>>(paymentProviderEvents.OrderByDescending(paymentEvent => paymentEvent.ProcessedUtc).ToList());
+
+    public Task<IReadOnlyList<PaymentOperationLog>> GetPaymentOperationLogsAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<PaymentOperationLog>>(paymentOperationLogs.OrderByDescending(log => log.CreatedUtc).ToList());
 
     public Task<IReadOnlyList<RoleDefinition>> GetRoleDefinitionsAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<RoleDefinition>>(roles.ToList());
@@ -146,6 +174,30 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
         return Task.CompletedTask;
     }
 
+    public Task UpsertSubscriptionPlanAsync(SubscriptionPlan plan, CancellationToken cancellationToken = default)
+    {
+        Upsert(subscriptionPlans, plan, existing => string.Equals(existing.Id, plan.Id, StringComparison.OrdinalIgnoreCase));
+        return Task.CompletedTask;
+    }
+
+    public Task UpsertHomeOwnerSubscriptionAsync(HomeOwnerSubscription subscription, CancellationToken cancellationToken = default)
+    {
+        Upsert(homeOwnerSubscriptions, subscription, existing => string.Equals(existing.OwnerUserId, subscription.OwnerUserId, StringComparison.OrdinalIgnoreCase));
+        return Task.CompletedTask;
+    }
+
+    public Task UpsertPaymentProviderEventAsync(PaymentProviderEvent paymentEvent, CancellationToken cancellationToken = default)
+    {
+        Upsert(paymentProviderEvents, paymentEvent, existing => string.Equals(existing.Id, paymentEvent.Id, StringComparison.OrdinalIgnoreCase));
+        return Task.CompletedTask;
+    }
+
+    public Task UpsertPaymentOperationLogAsync(PaymentOperationLog paymentOperationLog, CancellationToken cancellationToken = default)
+    {
+        Upsert(paymentOperationLogs, paymentOperationLog, existing => string.Equals(existing.Id, paymentOperationLog.Id, StringComparison.OrdinalIgnoreCase));
+        return Task.CompletedTask;
+    }
+
     public Task UpsertRoleDefinitionAsync(RoleDefinition roleDefinition, CancellationToken cancellationToken = default)
     {
         Upsert(roles, roleDefinition, existing => existing.Role == roleDefinition.Role);
@@ -216,6 +268,7 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
             rowsDeleted += users.RemoveAll(existing => existing.Id == userId);
             rowsDeleted += memberships.RemoveAll(existing => existing.UserId == userId);
             rowsDeleted += independentHomeOwnerProfiles.RemoveAll(existing => existing.UserId == userId);
+            rowsDeleted += homeOwnerSubscriptions.RemoveAll(existing => existing.OwnerUserId == userId);
             rowsDeleted += homeOwnerPoolEquipmentPhotos.RemoveAll(existing => existing.UserId == userId);
             rowsDeleted += independentHomeOwnerServiceHistory.RemoveAll(existing => existing.UserId == userId);
             rowsDeleted += serviceCategories.RemoveAll(existing => existing.CompanyId == userId);
@@ -350,7 +403,7 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
 
     public Task UpsertSystemSettingsAsync(SystemSettings settings, CancellationToken cancellationToken = default)
     {
-        systemSettings = settings;
+        systemSettings = settings with { HomeOwnerTrialDays = Math.Max(0, settings.HomeOwnerTrialDays) };
         return Task.CompletedTask;
     }
 
@@ -372,9 +425,13 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
 
     private sealed record HomeOwnerPhotoRecord(string UserId, HomeOwnerPoolEquipmentPhoto Photo);
 
+    private static string PaymentProviderEventId(string provider, string providerEventId) =>
+        $"{provider.Trim().ToLowerInvariant()}:{providerEventId.Trim()}";
+
     private void Seed()
     {
         var today = DateOnly.FromDateTime(DateTime.Today);
+        subscriptionPlans.AddRange(SubscriptionReferenceData.DefaultHomeOwnerPlans);
 
         users.AddRange([
             new("sys-admin", null, "system@example.com", "system.test@example.com", "Sam System", "555-0101", null, true, true, true, UserStatus.Active),
@@ -772,12 +829,25 @@ public sealed class InMemoryServiceBusinessStore : IServiceBusinessStore
         string equipmentItemName,
         string equipmentItemDescription)
     {
+        var now = DateTimeOffset.UtcNow;
         independentHomeOwnerProfiles.Add(new(
             userId,
             homeAddress,
             accessNotes,
-            DateTimeOffset.UtcNow.AddDays(-12),
-            DateTimeOffset.UtcNow.AddDays(-12)));
+            now.AddDays(-12),
+            now.AddDays(-12)));
+
+        homeOwnerSubscriptions.Add(new(
+            $"homeowner-subscription-{userId}",
+            userId,
+            SubscriptionReferenceData.HomeOwnerMonthlyId,
+            SubscriptionStatus.Trialing,
+            now.AddDays(systemSettings.HomeOwnerTrialDays),
+            now,
+            now.AddDays(systemSettings.HomeOwnerTrialDays),
+            false,
+            now.AddDays(-12),
+            now));
 
         AddEquipmentSeed(
             EquipmentScope.HomeOwner,

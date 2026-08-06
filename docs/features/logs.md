@@ -2,7 +2,7 @@
 
 Status: Implemented
 Owner: Product
-Last reviewed: 2026-08-04
+Last reviewed: 2026-08-06
 
 ## Problem
 
@@ -21,6 +21,7 @@ Business Employees do not currently have Logs access.
 
 - The Logs navigation group appears at the same navigation level as Settings and Reports, after Reports.
 - Email Log is available from the Logs navigation group.
+- Payment Events and Payment API are available from the Logs navigation group for System Administrators only.
 - Email Log shows `EmailLogEntry` records the signed-in user is allowed to see.
 - The first row shows count panels by email delivery status.
 - The second row shows a collapsible Email Details panel.
@@ -30,6 +31,7 @@ Business Employees do not currently have Logs access.
 - The View action opens the email body.
 - The legacy System Administrator route `/admin/email-log` remains available.
 - Non-admin roles use `/logs/email`.
+- System Administrators can open `/admin/payment-events` and `/admin/payment-api`.
 
 ## User Flows
 
@@ -56,6 +58,12 @@ Business Employees do not currently have Logs access.
 3. The system opens a modal with the message subject, From, To, CC, Status, and Body.
 4. The user closes the modal to return to the table.
 
+### Review Payment Logs
+
+1. A System Administrator opens Logs / Payment Events or Logs / Payment API.
+2. The system loads payment logs through System Administrator-only services.
+3. The System Administrator reviews provider events, API operation status, sanitized failure reasons, and provider references.
+
 ## UI Expectations
 
 - The page title is Email Log.
@@ -68,6 +76,8 @@ Business Employees do not currently have Logs access.
 - Business Owners, Business Clients, and Independent Home Owners see From, To, CC, Subject, Status, SendDate, FailedMessage, and Action columns.
 - The View action is an icon-only button with accessible label text.
 - The body modal displays email metadata and the stored body.
+- Payment Events shows trusted provider webhook/idempotency rows.
+- Payment API shows sanitized checkout, portal, return, and webhook operation rows.
 
 ## Data Model Impact
 
@@ -90,6 +100,8 @@ Business Employees do not currently have Logs access.
 - `EmailDeliveryStatus` includes `New`, `Queued`, `Sent`, `Failed`, `TestRerouted`, and `Suppressed`.
 - `IServiceBusinessStore` exposes email log read and upsert operations.
 - Azure Table storage stores email logs in the `EmailLogs` table, partitioned by service client when present and by `PLATFORM` for platform records.
+- `PaymentProviderEvent` stores trusted provider event/idempotency rows.
+- `PaymentOperationLog` stores sanitized payment API operation rows.
 
 ## Authorization Rules
 
@@ -98,6 +110,7 @@ Business Employees do not currently have Logs access.
 - Business Employees cannot view email logs.
 - Business Clients can view only messages addressed to them or their linked client email.
 - Independent Home Owners can view only messages addressed to them.
+- Payment Events and Payment API are visible only to System Administrators.
 
 ## Acceptance Criteria
 
@@ -113,6 +126,9 @@ Business Employees do not currently have Logs access.
 - Implemented: The table shows the required columns, with Service Client shown only to System Administrators.
 - Implemented: The View action shows the stored message body.
 - Implemented: Email notification queuing and processing record log entries for sent, failed, queued, rerouted, and suppressed messages.
+- Implemented: System Administrators can open Logs / Payment Events.
+- Implemented: System Administrators can open Logs / Payment API.
+- Implemented: Payment-log services enforce System Administrator authorization.
 
 ## Tests
 
@@ -126,10 +142,11 @@ Business Employees do not currently have Logs access.
 - `EmailNotificationTests.Email_job_marks_test_user_messages_sent_without_provider_send`
 - `EmailNotificationTests.Email_job_sends_non_test_user_messages_through_provider`
 - `EmailNotificationTests.Email_job_records_provider_failure_message`
+- `OnboardingTests.Payment_logs_require_system_admin`
 
 ## User Documentation Impact
 
-- Created `docs/user-guide/logs.md` for role-specific Email Log behavior.
+- Updated `docs/user-guide/logs.md` for role-specific Email Log behavior and System Administrator payment logs.
 - User documentation should be updated if resend actions, export/download, provider diagnostics, or audit-event logs are added.
 
 ## Current Implementation
@@ -142,6 +159,9 @@ Business Employees do not currently have Logs access.
 - Email notification queueing writes `EmailLogEntry` records for account approval, service completion, invoice, and related notification events.
 - `EmailJobService.ProcessNewEmailLogsAsync` processes `New` log entries, sends through the configured sender for real recipients, records provider ids, marks invalid recipients as failed, and marks test recipients as sent without provider delivery.
 - Email logs are persisted by both `InMemoryServiceBusinessStore` and `AzureTableServiceBusinessStore`.
+- `PaymentEventsPage` implements Payment Events at `/admin/payment-events`.
+- `PaymentApiLogPage` implements Payment API at `/admin/payment-api`.
+- `PaymentLogService` centralizes System Administrator-only payment log access.
 
 ## Outstanding Tasks
 
@@ -150,7 +170,9 @@ Business Employees do not currently have Logs access.
 - Add provider-specific diagnostics or correlation ids if Azure Communication Services exposes them consistently.
 - Decide whether System Administrators need cross-mode search in addition to current app-mode filtering.
 - Consider masking or redacting message bodies for sensitive email types.
+- Add filtering/export support for Payment Events and Payment API if operational volume requires it.
 
 ## Change Log
 
 - 2026-08-04: Created the canonical Logs feature spec from `Logs-oldFormat.md`, captured implemented behavior, acceptance criteria status, tests, user documentation impact, and outstanding tasks.
+- 2026-08-06: Added System Administrator Payment Events and Payment API log pages under Logs.

@@ -94,7 +94,49 @@ public enum SystemMode
     Landscape
 }
 
-public sealed record SystemSettings(SystemMode SystemMode, bool DevTest = false);
+public enum SubscriptionBillingInterval
+{
+    Monthly,
+    Annual
+}
+
+public enum SubscriptionStatus
+{
+    PendingCheckout,
+    Trialing,
+    Active,
+    PastDue,
+    Canceled,
+    Expired,
+    PaymentFailed
+}
+
+public enum PaymentEventProcessingStatus
+{
+    Processed,
+    Duplicate,
+    Failed
+}
+
+public enum PaymentOperationStatus
+{
+    Requested,
+    Succeeded,
+    Failed,
+    Rejected,
+    Canceled,
+    Duplicate
+}
+
+public enum PaymentOperationType
+{
+    CheckoutSession,
+    CustomerPortalSession,
+    CheckoutReturn,
+    Webhook
+}
+
+public sealed record SystemSettings(SystemMode SystemMode, bool DevTest = false, int HomeOwnerTrialDays = 14);
 
 public static class GlobalCatalogScope
 {
@@ -228,6 +270,60 @@ public sealed record IndependentHomeOwnerProfile(
     DateTimeOffset UpdatedUtc,
     IReadOnlyList<HomeOwnerPoolEquipmentPhoto>? PoolEquipmentPhotos = null,
     string GeneralNotes = "");
+
+public sealed record SubscriptionPlan(
+    string Id,
+    string Name,
+    string Description,
+    SubscriptionBillingInterval BillingInterval,
+    decimal Price,
+    bool IsActive,
+    int SortOrder,
+    string? ProviderPriceId = null);
+
+public sealed record HomeOwnerSubscription(
+    string Id,
+    string OwnerUserId,
+    string PlanId,
+    SubscriptionStatus Status,
+    DateTimeOffset? TrialEndsAt,
+    DateTimeOffset? CurrentPeriodStartsAt,
+    DateTimeOffset? CurrentPeriodEndsAt,
+    bool CancelAtPeriodEnd,
+    DateTimeOffset CreatedUtc,
+    DateTimeOffset UpdatedUtc,
+    string? ProviderCustomerId = null,
+    string? ProviderSubscriptionId = null,
+    string? ProviderCheckoutSessionId = null,
+    string? ProviderPriceId = null);
+
+public sealed record PaymentProviderEvent(
+    string Id,
+    string Provider,
+    string ProviderMode,
+    string EventType,
+    string? RelatedEntityId,
+    PaymentEventProcessingStatus Status,
+    string Summary,
+    DateTimeOffset ReceivedUtc,
+    DateTimeOffset ProcessedUtc);
+
+public sealed record PaymentOperationLog(
+    string Id,
+    PaymentOperationType Operation,
+    PaymentOperationStatus Status,
+    string Provider,
+    string ProviderMode,
+    string? UserId,
+    string? SubscriptionId,
+    string? ProviderEventId,
+    string? ProviderCustomerId,
+    string? ProviderSubscriptionId,
+    string? ProviderCheckoutSessionId,
+    int? HttpStatusCode,
+    string Summary,
+    string? FailureReason,
+    DateTimeOffset CreatedUtc);
 
 public sealed record HomeOwnerPoolEquipmentPhoto(
     string Id,
@@ -441,7 +537,8 @@ public sealed record RegistrationSubmission(
     string? HomeAddress = null,
     string? HomeAccessNotes = null,
     bool AuthenticationSkipped = false,
-    string? BusinessClientId = null);
+    string? BusinessClientId = null,
+    string? SubscriptionPlanId = null);
 
 public sealed record GoogleUserProfile(
     string GoogleSubjectId,
@@ -454,7 +551,8 @@ public sealed record RegistrationResult(
     Company? Company,
     CompanyMembership? Membership,
     bool RequiresApproval,
-    string Message);
+    string Message,
+    HomeOwnerSubscription? Subscription = null);
 
 public sealed record UserAccessOverview(
     AppUser User,
@@ -493,7 +591,9 @@ public sealed record UserManagementRow(
     AppUser User,
     IReadOnlyList<CompanyAccess> CompanyAccess,
     int PendingMembershipCount,
-    int ActiveMembershipCount);
+    int ActiveMembershipCount,
+    HomeOwnerSubscription? HomeOwnerSubscription = null,
+    SubscriptionPlan? HomeOwnerSubscriptionPlan = null);
 
 public sealed record PlatformUserManagementOverview(
     int TotalUsers,

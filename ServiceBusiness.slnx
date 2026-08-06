@@ -1,7 +1,6 @@
 <Solution>
   <Folder Name="/docs/">
-    <File Path="Notes.txt" />
-    <File Path="Vital Workflows.md" />
+    <File Path="docs/delete-me/Vital Workflows.md" />
   </Folder>
   <Folder Name="/docs/delete-me/">
     <File Path="docs/delete-me/Dashboard.md" />
@@ -24,13 +23,16 @@
     <File Path="docs/features/logs.md" />
     <File Path="docs/features/notifications.md" />
     <File Path="docs/features/observability.md" />
+    <File Path="docs/features/payment-observability.md" />
     <File Path="docs/features/pool-equipment-catalog.md" />
+    <File Path="docs/features/payment-integration.md" />
     <File Path="docs/features/pool-configuration.md" />
     <File Path="docs/features/registration-and-authentication.md" />
     <File Path="docs/features/reports.md" />
     <File Path="docs/features/roles-and-permissions.md" />
     <File Path="docs/features/service-client-management.md" />
     <File Path="docs/features/service-packages.md" />
+    <File Path="docs/features/subscriptions.md" />
     <File Path="docs/features/system-settings.md" />
     <File Path="docs/features/test-mode-and-test-users.md" />
     <File Path="docs/features/user-guide.md" />
@@ -40,6 +42,7 @@
     <File Path="docs/operations/email-and-storage-setup.md" />
     <File Path="docs/operations/google-auth-setup.md" />
     <File Path="docs/operations/observability-setup.md" />
+    <File Path="docs/operations/stripe-payment-setup.md" />
   </Folder>
   <Folder Name="/docs/planning/">
     <File Path="docs/planning/follow-on requirements.md" />
@@ -75,6 +78,7 @@
     <File Path="docs/user-guide/roles-and-permissions.md" />
     <File Path="docs/user-guide/service-client-management.md" />
     <File Path="docs/user-guide/service-packages.md" />
+    <File Path="docs/user-guide/subscriptions.md" />
     <File Path="docs/user-guide/system-settings.md" />
     <File Path="docs/user-guide/test-mode-and-test-users.md" />
     <File Path="docs/user-guide/visit-scheduling.md" />

@@ -15,7 +15,7 @@ Current implementation note:
 - The Table-backed store persists current MVP records as JSON payloads in Azure Table entities and keeps `UserByEmail` and `UserByGoogleSubject` lookup rows in sync.
 - Pool equipment is persisted in `PoolEquipmentCategories` and `PoolEquipmentItems` using `EQUIPMENT_{Scope}_{ScopeOwnerId}` partitions.
 - Independent Homeowner users are stored as `Users` rows without company membership rows; their owner profile is stored in `IndependentHomeOwnerProfiles`, and their equipment uses `EquipmentScope.HomeOwner` and `ScopeOwnerId = UserId`.
-- `SystemSettings` stores singleton platform settings in Azure Table Storage using partition `SYSTEM_SETTINGS` and row `CURRENT`; `SystemMode` supports `Pool` and `Landscape`, and configuration only supplies the default when this row is missing.
+- `SystemSettings` stores singleton platform settings in Azure Table Storage using partition `SYSTEM_SETTINGS` and row `current`; `SystemMode` supports `Pool` and `Landscape`, `DevTest` controls test sign-in, `HomeOwnerTrialDays` controls new homeowner subscription trials, and configuration only supplies defaults when this row is missing.
 - `InMemoryServiceBusinessStore` remains available for local development when Azure Storage is disabled.
 
 Common fields:
@@ -1018,7 +1018,57 @@ Future payment-provider fields:
 - `AmountPaid`
 - `Currency`
 
-### 9.3 Payments
+### 9.3 SubscriptionPlans
+
+Purpose:
+
+- Stores provider-neutral subscription plans for Independent Home Owner onboarding.
+
+Implemented keys:
+
+- `PartitionKey`: `SUBSCRIPTION_PLAN`
+- `RowKey`: `{PlanId}`
+
+Fields:
+
+- `Id`
+- `Name`
+- `Description`
+- `BillingInterval`
+- `Price`
+- `IsActive`
+- `SortOrder`
+- `ProviderPriceId`
+
+### 9.4 HomeOwnerSubscriptions
+
+Purpose:
+
+- Stores provider-neutral Independent Home Owner subscription state.
+
+Implemented keys:
+
+- `PartitionKey`: `HOMEOWNER_SUBSCRIPTION`
+- `RowKey`: `{OwnerUserId}`
+
+Fields:
+
+- `Id`
+- `OwnerUserId`
+- `PlanId`
+- `Status`
+- `TrialEndsAt`
+- `CurrentPeriodStartsAt`
+- `CurrentPeriodEndsAt`
+- `CancelAtPeriodEnd`
+- `ProviderCustomerId`
+- `ProviderSubscriptionId`
+- `ProviderCheckoutSessionId`
+- `ProviderPriceId`
+- `CreatedUtc`
+- `UpdatedUtc`
+
+### 9.5 Payments
 
 Purpose:
 
@@ -1043,27 +1093,57 @@ Fields:
 - `PaidUtc`
 - `CreatedUtc`
 
-### 9.4 StripeWebhookEvents
+### 9.6 PaymentProviderEvents
 
 Purpose:
 
-- Stores webhook idempotency and processing status.
+- Stores payment-provider event idempotency and processing status.
 
-Suggested keys:
+Implemented keys:
 
-- `PartitionKey`: `STRIPE_WEBHOOK`
-- `RowKey`: `{StripeEventId}`
+- `PartitionKey`: `PAYMENT_PROVIDER_{Provider}`
+- `RowKey`: `{Provider}:{ProviderEventId}`
 
 Fields:
 
-- `StripeEventId`
+- `Id`
+- `Provider`
+- `ProviderMode`
 - `EventType`
-- `CompanyId`
-- `ProcessingStatus`
+- `RelatedEntityId`
+- `Status`
+- `Summary`
 - `ReceivedUtc`
 - `ProcessedUtc`
+
+### 9.7 PaymentOperationLogs
+
+Purpose:
+
+- Stores sanitized payment API operation diagnostics separate from provider webhook idempotency rows.
+
+Implemented keys:
+
+- `PartitionKey`: `PAYMENT_OPERATION_{Operation}`
+- `RowKey`: `{PaymentOperationLogId}`
+
+Fields:
+
+- `Id`
+- `Operation`
+- `Status`
+- `Provider`
+- `ProviderMode`
+- `UserId`
+- `SubscriptionId`
+- `ProviderEventId`
+- `ProviderCustomerId`
+- `ProviderSubscriptionId`
+- `ProviderCheckoutSessionId`
+- `HttpStatusCode`
+- `Summary`
 - `FailureReason`
-- `RetryCount`
+- `CreatedUtc`
 
 ## 10. Messaging Tables
 

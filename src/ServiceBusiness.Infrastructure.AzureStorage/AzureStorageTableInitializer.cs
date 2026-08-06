@@ -15,6 +15,7 @@ public sealed class AzureStorageTableInitializer(IConfiguration configuration, I
         "UserByGoogleSubject",
         "UserByEmail",
         "RoleDefinitions",
+        "SystemSettings",
         "CompanyMemberships",
         "UserCompanyMemberships",
         "CompanyClients",
@@ -31,7 +32,11 @@ public sealed class AzureStorageTableInitializer(IConfiguration configuration, I
         "PoolEquipmentItems",
         "ServiceVisits",
         "Invoices",
-        "EmailLogs"
+        "EmailLogs",
+        "SubscriptionPlans",
+        "HomeOwnerSubscriptions",
+        "PaymentProviderEvents",
+        "PaymentOperationLogs"
     ];
 
     public async Task StartAsync(CancellationToken cancellationToken)

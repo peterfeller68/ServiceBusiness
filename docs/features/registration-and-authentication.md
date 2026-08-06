@@ -2,7 +2,7 @@
 
 Status: Implemented
 Owner: Product
-Last reviewed: 2026-08-04
+Last reviewed: 2026-08-06
 
 ## Problem
 
@@ -32,6 +32,7 @@ Users need a secure way to register for the correct persona, authenticate with G
 - Business Employee registration requires selecting an active service client and creates a pending `CompanyUser` membership.
 - Business Client registration requires selecting an active service client and active business-client address, then creates a pending `CompanyClientUser` membership linked to that business client.
 - Independent Home Owner registration requires a home address, creates an active user without company memberships, creates an owner profile, and seeds owner-scoped pool equipment starter records.
+- Independent Home Owner registration includes subscription plan selection and creates a homeowner subscription through the Subscriptions feature.
 - Registered users are signed into the application cookie and redirected to `/dashboard` through the registration sign-in endpoint.
 - Disabled users cannot sign in or pass authorization checks.
 - Authenticated navigation hides Home and shows routes based on active memberships, system-admin status, pending-only status, and independent-homeowner state.
@@ -86,6 +87,7 @@ Users need a secure way to register for the correct persona, authenticate with G
 3. The user authenticates with Google, or skips Google only in DevTest mode.
 4. The user enters account details, home address, and optional access notes.
 5. The app creates or updates the user, stores the homeowner profile, seeds owner-scoped pool equipment starter records when needed, signs the user in, and redirects to `/dashboard`.
+6. The app creates a homeowner subscription using the selected plan and configured trial length.
 
 ## UI Expectations
 
@@ -98,6 +100,7 @@ Users need a secure way to register for the correct persona, authenticate with G
 - Business Employee details collect the selected business and display a pending-approval note.
 - Business Client details collect the selected business and selected business-client address, and display a pending-approval note.
 - Independent Home Owner details collect home address and access notes, and indicate that no business approval is required.
+- Independent Home Owner details include subscription plan selection.
 - Pending-only users see Home and Help in navigation and a pending approval dashboard after sign-in.
 
 ## Data Model Impact
@@ -138,6 +141,7 @@ Users need a secure way to register for the correct persona, authenticate with G
 - Implemented: DevTest mode controls whether the UI exposes Skip Google Auth.
 - Implemented: Disabled users cannot sign in or pass authorization.
 - Implemented: Authenticated navigation hides Home and shows persona-appropriate routes.
+- Implemented: Independent Home Owner registration creates a homeowner subscription with the selected plan and configured trial length.
 
 ## Tests
 
@@ -145,6 +149,7 @@ Users need a secure way to register for the correct persona, authenticate with G
 - `OnboardingTests.Business_user_registration_creates_pending_company_membership`
 - `OnboardingTests.Business_client_registration_requires_and_stores_selected_client_address`
 - `OnboardingTests.Independent_homeowner_registration_creates_active_owner_workspace_without_company_membership`
+- `OnboardingTests.Independent_homeowner_registration_uses_selected_subscription_plan_and_trial_days`
 - `OnboardingTests.Seeded_test_users_can_skip_gmail_authentication`
 - `OnboardingTests.Seeded_test_users_can_skip_gmail_authentication_by_user_id`
 - `AuthorizationTests.Business_owner_registration_uses_current_system_mode_company_type`
@@ -161,8 +166,9 @@ Users need a secure way to register for the correct persona, authenticate with G
 - `LandingPage.razor` exposes Sign In and Register actions with product branding from `ApplicationModeService`.
 - `SignInPage.razor` exposes Google sign-in and, when DevTest is enabled, a seeded test-user id/email form.
 - `RegisterPage.razor` implements account type, authentication, and details steps for all registration personas.
+- `RegisterPage.razor` shows subscription plan choices for Independent Home Owner registration.
 - `Program.cs` configures ASP.NET Core cookie authentication, optional Google authentication, `/auth/google`, `/auth/google-complete`, `/auth/test-signin`, `/auth/registration-signin`, and `/auth/signout`.
-- `OnboardingService` owns available business lookup, available business-client address lookup, registration, test sign-in, Google sign-in completion, and access overview loading.
+- `OnboardingService` owns available business lookup, available business-client address lookup, available homeowner subscription plan lookup, registration, test sign-in, Google sign-in completion, and access overview loading.
 - `TenantAuthorizationService` rejects missing users, disabled users, and users without active memberships for protected company workflows.
 - `AuthenticatedCurrentUserContext` reads the signed-in app user id claim and falls back to `DemoCurrentUserContext` when no HTTP user claim is available.
 - Azure Table storage keeps `Users`, `UserByEmail`, `UserByGoogleSubject`, `CompanyMemberships`, `UserCompanyMemberships`, and `IndependentHomeOwnerProfiles` in sync for registration and sign-in.
@@ -174,7 +180,11 @@ Users need a secure way to register for the correct persona, authenticate with G
 - Replace placeholder/test copy on the Sign In page with the current seeded test-user examples if seed data changes.
 - Add invitation-code or invitation-link registration when that workflow is defined.
 - Add user-facing setup documentation for Google OAuth configuration under operations docs if the previous setup note is no longer available after the docs reorganization.
+- Add browser-level coverage for Independent Home Owner subscription plan selection.
+- Add live payment-provider checkout handoff when Payment Integration is completed.
 
 ## Change Log
 
 - 2026-08-04: Documented implemented registration and authentication behavior from code, tests, UI pages, storage, and configuration.
+- 2026-08-06: Clarified that Independent Home Owner subscription/payment onboarding is a planned downstream handoff owned by Subscriptions and Payment Integration, not current registration behavior.
+- 2026-08-06: Implemented Independent Home Owner subscription plan selection and homeowner subscription creation during registration.

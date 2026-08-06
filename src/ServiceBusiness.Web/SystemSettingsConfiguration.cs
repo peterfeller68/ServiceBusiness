@@ -12,7 +12,11 @@ public static class SystemSettingsConfiguration
             ? parsedMode
             : SystemMode.Pool;
 
-        return new SystemSettings(mode, IsDevTest(configuration));
+        var trialDays = int.TryParse(configuration["SystemSettings:HomeOwnerTrialDays"], out var parsedTrialDays)
+            ? Math.Max(0, parsedTrialDays)
+            : 14;
+
+        return new SystemSettings(mode, IsDevTest(configuration), trialDays);
     }
 
     public static bool IsDevTest(IConfiguration configuration) =>

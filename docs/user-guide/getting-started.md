@@ -1,6 +1,6 @@
 # Getting Started
 
-Last reviewed: 2026-08-04
+Last reviewed: 2026-08-06
 
 Use Help to find current application guidance while you work.
 
@@ -11,7 +11,7 @@ Use Help to find current application guidance while you work.
 - Test users can use the test sign-in flow when DevTest mode is enabled.
 - New users can register as Business Owner, Business Employee, Business Client, or Home Owner.
 - Business Employees and Business Clients wait for business owner approval before full access is available.
-- Independent Home Owners do not require business approval.
+- Independent Home Owners do not require business approval and choose a subscription plan during registration.
 
 ## After Sign In
 

@@ -53,7 +53,7 @@ Current implementation:
 - `/register` uses account type, authentication, and details steps.
 - Business User registration requires a selected business.
 - Business Client registration requires a selected business and business-client address.
-- Independent Homeowner registration captures account contact fields, home address, and access notes, and does not show the business association selector.
+- Independent Homeowner registration captures account contact fields, home address, access notes, and subscription plan selection, and does not show the business association selector.
 - Successful registration routes through `/auth/registration-signin` to `/dashboard`.
 
 ## 3. First-Time Profile Setup Screen
@@ -1114,7 +1114,7 @@ Actions:
 
 Current limitations:
 
-- Stripe-hosted payment links are not yet implemented.
+- Stripe-hosted homeowner subscription checkout and customer portal redirects are implemented from the Profile page when Stripe price ids and customer references are configured.
 
 ### 7.5 Message Threads
 
@@ -1310,11 +1310,16 @@ Current implementation:
 - The top-right profile indicator shows the logged-in user's display name with their current role label underneath, and opens the profile page.
 - Dashboard pages show the current system-mode hero image.
 - Persisted `SystemSettings.SystemMode` controls product branding and imagery: Pool mode shows `PoolShark` with the pool waterfall image, while Landscape mode shows `TreeShark` with the mature fruit-tree landscape image.
-- The `/settings` page shows `SystemMode`, `DevTest`, and active product as read-only guidance for System Administrators; no SystemMode selector is currently implemented in the UI.
-- Settings, Reports, and Help have stable routes; Help routes render static user-guide markdown and Reports is currently a placeholder route.
-- System-admin leaves route to focused pages: `/admin/companies`, `/admin/users`, `/admin/roles`, `/admin/catalog/poolequipment`, `/admin/catalog/materials`, `/admin/catalog/services`, and `/admin/email-log`.
+- The `/settings` page lets System Administrators edit `SystemMode`, `DevTest`, and `HomeOwnerTrialDays`.
+- The Settings menu includes System Settings for System Administrators.
+- The `/admin/subscriptions` page lets System Administrators manage subscription plan name, description, billing interval, price, active status, sort order, and Stripe price id.
+- The `/profile` page shows Independent Home Owner subscription plan, status, trial end date, and current access state.
+- The `/admin/users` page shows Independent Home Owner subscription status and trial end date and allows System Administrators to edit trial end dates.
+- Settings, Reports, Logs, and Help have stable routes; Help routes render static user-guide markdown and Reports is currently a placeholder route.
+- System-admin leaves route to focused pages: `/admin/companies`, `/admin/users`, `/admin/roles`, `/admin/subscriptions`, `/admin/catalog/poolequipment`, `/admin/catalog/materials`, `/admin/catalog/services`, `/admin/email-log`, `/admin/payment-events`, and `/admin/payment-api`.
 - Company-admin leaves route to focused pages: `/clients`, `/company/users`, `/poolequipment` in Pool mode, `/catalog/materials`, `/catalog/services`, and `/logs/email`.
 - Business Client and Independent Home Owner Logs navigation routes to `/logs/email`.
+- Payment Events and Payment API Logs navigation leaves are visible only to System Administrators.
 - In Pool mode, company-client users with homeowner equipment access route to `/poolequipment`.
 - In Pool mode, Independent Home Owner users have no company memberships and route to `/poolequipment` for owner-scoped pool equipment management.
 - Landscape mode hides Pool Equipment navigation and redirects direct Pool Equipment routes back to Dashboard.

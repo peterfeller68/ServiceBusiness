@@ -1,6 +1,6 @@
 # User Guide
 
-Last reviewed: 2026-08-05
+Last reviewed: 2026-08-06
 
 Browse current feature guides.
 
@@ -20,6 +20,7 @@ Browse current feature guides.
 - [Roles and Permissions](roles-and-permissions.md)
 - [Service Client Management](service-client-management.md)
 - [Service Packages](service-packages.md)
+- [Subscriptions](subscriptions.md)
 - [System Settings](system-settings.md)
 - [Test Mode And Test Users](test-mode-and-test-users.md)
 - [Visit Scheduling](visit-scheduling.md)

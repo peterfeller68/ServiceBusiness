@@ -255,7 +255,7 @@ Current implementation:
 - `CompanyAdminService` owns service/material category and item create/edit/archive/reactivate actions with system-admin or company-admin authorization.
 - `CompanyAdminService` also owns pool-equipment category and item create/edit/archive/reactivate actions across global, company, and homeowner scopes.
 - `CompanyAdminService` supports copy-as-custom actions for starter service, material, and pool-equipment records by creating new non-system-managed records in the current scope.
-- System mode is table-backed in the singleton `SystemSettings` row; `SystemMode` accepts `Pool` or `Landscape`, and app configuration only supplies the startup default when the row is missing.
+- System settings are table-backed in the singleton `SystemSettings` row; `SystemMode` accepts `Pool` or `Landscape`, `DevTest` controls test sign-in, `HomeOwnerTrialDays` controls new homeowner subscription trials, and app configuration only supplies startup defaults when the row is missing.
 - `InMemoryServiceBusinessStore` remains the default local-development repository when Azure Storage is disabled.
 
 ### 8.2 Azure Blob Storage
@@ -312,7 +312,11 @@ Stripe responsibilities:
 Application responsibilities:
 
 - Store Stripe IDs and status snapshots.
-- Enqueue webhook processing jobs.
+- Store provider-neutral subscription plans and homeowner subscription state.
+- Store payment-provider events for idempotency before live provider-specific webhook mapping is added.
+- Create Stripe Checkout Sessions for homeowner subscriptions.
+- Create Stripe Customer Portal Sessions for linked homeowner customers.
+- Validate Stripe webhook signatures from the raw request body.
 - Process webhooks idempotently.
 - Never store card data.
 - Display invoice and payment history to authorized users.
@@ -352,6 +356,7 @@ Current implementation details:
 - `EmailJobService` processes invoice email rows and other `New` email log rows through `IEmailSender`; test recipients and DevTest rows are marked `Sent` without provider delivery.
 - `ServiceBusinessJobScheduler` automatically invokes `ScheduledJobRunner`, which lets invoice email rows created by `InvoicingJobService` be processed by `EmailJobService`.
 - Logs / Email Log displays role-scoped email log entries for System Administrators, Business Owners, Business Clients, and Independent Home Owners.
+- Logs / Payment Events and Logs / Payment API display System Administrator-only payment diagnostics backed by separate provider-event and operation-log records.
 
 ## 11. Scheduling and Recurrence
 

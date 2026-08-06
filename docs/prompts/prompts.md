@@ -192,9 +192,8 @@ Follow the spec-driven documentation workflow:
 
 
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-Spec-driven development system prompt
+Spec-driven development system prompt - run it at the beginning of a session
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
 Follow these guidelines for adding or updating any application features
 
 Follow our spec-driven workflow:
@@ -215,6 +214,7 @@ Follow our spec-driven workflow:
 7. Add or update tests for the implemented behavior.
 8. Do not start the WebApp. I will run it via Visual Studio.
 9. Run applicable tests.
+10. Any new document added needs to also be added under the appropriate solution folder in the solution 
 
 Before implementing, briefly summarize:
 - What the feature requires
@@ -222,20 +222,7 @@ Before implementing, briefly summarize:
 - Which code areas you expect to touch
 - Any ambiguity or risk you found
 
-docs/features/
-x  registration-and-authentication.md
-x  account-approval-and-user-management.md
-x  roles-and-permissions.md
-x  service-client-management.md
-x  business-client-management.md
-x  catalog-materials.md
-x  catalog-services.md
-x  pool-equipment-catalog.md
-x  pool-configuration.md
-x  service-packages.md
-  notifications.md
-  system-settings.md
-  test-mode-and-test-users.md
-  data-hydration.md
-  observability.md
-  reports.md
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Spec-driven development system prompt
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Go ahead and implement the new and changed features.

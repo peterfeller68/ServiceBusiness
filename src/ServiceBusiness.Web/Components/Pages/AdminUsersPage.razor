@@ -95,6 +95,13 @@ else
                                     <InputCheckbox @bind-Value="userForm.EmailNotificationsEnabled" />
                                     <span>Email notifications</span>
                                 </label>
+                                @if (userForm.HasHomeOwnerSubscription)
+                                {
+                                    <label>
+                                        Trial end date
+                                        <InputDate class="form-control" @bind-Value="userForm.TrialEndsAt" />
+                                    </label>
+                                }
                             </div>
                             <div class="form-actions">
                                 <button class="button primary" type="submit">Save User</button>
@@ -112,6 +119,8 @@ else
                                 <th>Email</th>
                                 <th>Flags</th>
                                 <th>Company</th>
+                                <th>Subscription</th>
+                                <th>Trial Ends</th>
                                 <th>User Type</th>
                                 <th>Approved</th>
                                 <th>Sys Admin</th>
@@ -135,6 +144,8 @@ else
                                     <td>@row.User.Email</td>
                                     <td>@GetUserFlags(row.User)</td>
                                     <td>@GetCompanyAccessLabel(row)</td>
+                                    <td>@GetSubscriptionLabel(row)</td>
+                                    <td>@GetTrialEndLabel(row)</td>
                                     <td>
                                         @if (primaryAccess is null)
                                         {
@@ -238,6 +249,15 @@ else
                 userForm.IsTestUser,
                 userForm.EmailNotificationsEnabled);
 
+            if (userForm.HasHomeOwnerSubscription)
+            {
+                await PlatformAdminService.UpdateHomeOwnerSubscriptionTrialEndAsync(
+                    userForm.UserId,
+                    userForm.TrialEndsAt is null
+                        ? null
+                        : new DateTimeOffset(userForm.TrialEndsAt.Value.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero));
+            }
+
             message = $"{userForm.DisplayName} was saved.";
             ResetUserForm();
             userEditorExpanded = false;
@@ -290,7 +310,8 @@ else
 
     private void EditUser(AppUser user)
     {
-        userForm = UserForm.FromUser(user);
+        var row = userOverview?.Users.FirstOrDefault(row => string.Equals(row.User.Id, user.Id, StringComparison.OrdinalIgnoreCase));
+        userForm = UserForm.FromUser(user, row?.HomeOwnerSubscription);
         userEditorExpanded = true;
         usersExpanded = true;
     }
@@ -373,6 +394,20 @@ else
         return string.Join(", ", activeAccess.DefaultIfEmpty("-"));
     }
 
+    private static string GetSubscriptionLabel(UserManagementRow row)
+    {
+        if (row.HomeOwnerSubscription is null)
+        {
+            return "-";
+        }
+
+        var plan = row.HomeOwnerSubscriptionPlan?.Name ?? row.HomeOwnerSubscription.PlanId;
+        return $"{plan}: {row.HomeOwnerSubscription.Status}";
+    }
+
+    private static string GetTrialEndLabel(UserManagementRow row) =>
+        row.HomeOwnerSubscription?.TrialEndsAt?.LocalDateTime.ToString("d") ?? "-";
+
     private bool UserMatchesMode(UserManagementRow row)
     {
         if (row.User.IsSystemAdmin || row.CompanyAccess.Count == 0)
@@ -418,8 +453,10 @@ else
         public bool IsTestUser { get; set; }
         public bool EmailNotificationsEnabled { get; set; } = true;
         public bool IsEditing { get; set; }
+        public bool HasHomeOwnerSubscription { get; set; }
+        public DateOnly? TrialEndsAt { get; set; }
 
-        public static UserForm FromUser(AppUser user) => new()
+        public static UserForm FromUser(AppUser user, HomeOwnerSubscription? subscription = null) => new()
         {
             UserId = user.Id,
             DisplayName = user.DisplayName,
@@ -428,7 +465,11 @@ else
             Phone = user.Phone,
             IsTestUser = user.IsTestUser,
             EmailNotificationsEnabled = user.EmailNotificationsEnabled ?? true,
-            IsEditing = true
+            IsEditing = true,
+            HasHomeOwnerSubscription = subscription is not null,
+            TrialEndsAt = subscription?.TrialEndsAt is null
+                ? null
+                : DateOnly.FromDateTime(subscription.TrialEndsAt.Value.UtcDateTime)
         };
     }
 }

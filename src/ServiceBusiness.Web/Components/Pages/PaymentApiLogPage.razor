@@ -1,0 +1,123 @@
+@page "/admin/payment-api"
+@rendermode InteractiveServer
+@using ServiceBusiness.Application
+@using ServiceBusiness.Domain
+@inject PaymentLogService PaymentLogService
+
+<PageTitle>Payment API</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">System Administrator</p>
+        <h1>Payment API</h1>
+        <p class="lede">Review sanitized checkout, portal, browser return, and webhook operation logs.</p>
+    </div>
+</section>
+
+@if (isLoading)
+{
+    <p>Loading payment API logs...</p>
+}
+else if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="callout">
+        <strong>No access</strong>
+        <p>@errorMessage</p>
+    </div>
+}
+else if (paymentLogs.Count == 0)
+{
+    <div class="callout">
+        <strong>No payment API logs found</strong>
+        <p>No checkout, portal, return, or webhook operations have been logged yet.</p>
+    </div>
+}
+else
+{
+    <section class="section">
+        <h2>Status Counts</h2>
+        <div class="metric-grid">
+            @foreach (var status in Enum.GetValues<PaymentOperationStatus>())
+            {
+                <article>
+                    <span>@status</span>
+                    <strong>@paymentLogs.Count(log => log.Status == status)</strong>
+                </article>
+            }
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>Operation Details</h2>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Created</th>
+                    <th>Operation</th>
+                    <th>Status</th>
+                    <th>Provider</th>
+                    <th>User</th>
+                    <th>Subscription</th>
+                    <th>Provider IDs</th>
+                    <th>Summary</th>
+                    <th>Failure</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var log in paymentLogs)
+                {
+                    <tr>
+                        <td>@log.CreatedUtc.LocalDateTime.ToString("g")</td>
+                        <td>@log.Operation</td>
+                        <td><span class="status-pill">@log.Status</span></td>
+                        <td>@log.Provider (@log.ProviderMode)</td>
+                        <td>@DisplayText(log.UserId)</td>
+                        <td>@DisplayText(log.SubscriptionId)</td>
+                        <td>@DisplayProviderIds(log)</td>
+                        <td>@log.Summary</td>
+                        <td>@DisplayText(log.FailureReason)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+}
+
+@code {
+    private bool isLoading = true;
+    private string? errorMessage;
+    private IReadOnlyList<PaymentOperationLog> paymentLogs = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            paymentLogs = await PaymentLogService.GetPaymentOperationLogsAsync();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+
+        isLoading = false;
+    }
+
+    private static string DisplayProviderIds(PaymentOperationLog log)
+    {
+        var values = new[]
+        {
+            Label("event", log.ProviderEventId),
+            Label("customer", log.ProviderCustomerId),
+            Label("subscription", log.ProviderSubscriptionId),
+            Label("checkout", log.ProviderCheckoutSessionId)
+        }.Where(value => !string.IsNullOrWhiteSpace(value));
+
+        var joined = string.Join("; ", values);
+        return string.IsNullOrWhiteSpace(joined) ? "-" : joined;
+    }
+
+    private static string? Label(string label, string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : $"{label}: {value}";
+
+    private static string DisplayText(string? value) => string.IsNullOrWhiteSpace(value) ? "-" : value;
+}

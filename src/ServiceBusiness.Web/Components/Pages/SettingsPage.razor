@@ -5,72 +5,142 @@
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject ServiceBusiness.Application.ICurrentUserContext CurrentUser
 @inject ServiceBusiness.Application.OnboardingService OnboardingService
+@inject ServiceBusiness.Application.PlatformAdminService PlatformAdminService
 @inject ServiceBusiness.Web.ApplicationModeService ApplicationMode
-@inject IConfiguration Configuration
 
-<PageTitle>Settings</PageTitle>
+<PageTitle>System Settings</PageTitle>
 
 <section class="page-header">
     <div>
         <p class="eyebrow">Settings</p>
-        <h1>General settings</h1>
-        <p class="lede">Role-specific configuration tools will appear here as the settings editors are expanded.</p>
+        <h1>System Settings</h1>
+        <p class="lede">Manage persisted application settings used by onboarding and system behavior.</p>
     </div>
 </section>
 
-<section class="section">
-    <div class="form-panel">
-        <h2>Available Settings</h2>
-        <p class="form-note">Use the Settings menu to open the areas currently available for your role.</p>
-    </div>
-</section>
-
-@if (isSystemAdmin)
+@if (!string.IsNullOrWhiteSpace(message))
 {
-    <section class="section">
-        <div class="form-panel">
+    <div class="notice success">@message</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="notice error">@errorMessage</div>
+}
+
+@if (!isSystemAdmin)
+{
+    <div class="notice error">System administrator access is required.</div>
+}
+else if (settingsForm is null)
+{
+    <p>Loading settings...</p>
+}
+else
+{
+    <EditForm Model="settingsForm" OnValidSubmit="SaveAsync" FormName="system-settings-form">
+        <section class="form-panel">
             <h2>System Settings</h2>
-            <p class="form-note">System settings are configured through appsettings.json or Azure App Service environment variables so each deployed Web App can run in its own mode while sharing the same storage account.</p>
-            <div class="metric-grid">
-                <div class="metric">
-                    <span>SystemMode</span>
-                    <strong>@configuredSettings.SystemMode</strong>
-                </div>
-                <div class="metric">
+            <div class="form-grid">
+                <label>
+                    System mode
+                    <InputSelect class="form-control" @bind-Value="settingsForm.SystemMode">
+                        <option value="@SystemMode.Pool">Pool</option>
+                        <option value="@SystemMode.Landscape">Landscape</option>
+                    </InputSelect>
+                </label>
+                <label>
+                    Homeowner trial days
+                    <InputNumber class="form-control" @bind-Value="settingsForm.HomeOwnerTrialDays" />
+                </label>
+                <label class="check-row">
+                    <InputCheckbox @bind-Value="settingsForm.DevTest" />
                     <span>DevTest</span>
-                    <strong>@configuredSettings.DevTest</strong>
-                </div>
+                </label>
+            </div>
+            <div class="metric-grid">
                 <div class="metric">
                     <span>Product</span>
                     <strong>@appMode.ProductName</strong>
                 </div>
+                <div class="metric">
+                    <span>Trial Days</span>
+                    <strong>@settingsForm.HomeOwnerTrialDays</strong>
+                </div>
             </div>
-            <div class="data-list">
-                <article class="row-card">
-                    <div>
-                        <strong>Azure App Service settings</strong>
-                        <p>Set SystemSettings__SystemMode to Pool or Landscape. Set SystemSettings__DevTest to true only when seeded test-user sign-in should be enabled.</p>
-                    </div>
-                </article>
+            <div class="form-actions">
+                <button class="button primary" type="submit">Save Settings</button>
             </div>
-        </div>
-    </section>
+        </section>
+    </EditForm>
 }
 
 @code {
     private bool isSystemAdmin;
-    private SystemSettings configuredSettings = new(SystemMode.Pool);
+    private SettingsForm? settingsForm;
     private ServiceBusiness.Web.ApplicationModeSnapshot appMode = ServiceBusiness.Web.ApplicationModeSnapshot.Pool;
+    private string? message;
+    private string? errorMessage;
 
     protected override async Task OnInitializedAsync()
     {
-        configuredSettings = SystemSettingsConfiguration.GetConfiguredDefaults(Configuration);
         appMode = await ApplicationMode.GetCurrentAsync();
         var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
-        if (authenticationState.User.Identity?.IsAuthenticated == true)
+        if (authenticationState.User.Identity?.IsAuthenticated != true)
         {
-            var overview = await OnboardingService.GetAccessOverviewAsync(CurrentUser.UserId);
-            isSystemAdmin = overview.User.IsSystemAdmin;
+            return;
         }
+
+        var overview = await OnboardingService.GetAccessOverviewAsync(CurrentUser.UserId);
+        isSystemAdmin = overview.User.IsSystemAdmin;
+        if (isSystemAdmin)
+        {
+            var settings = await PlatformAdminService.GetSystemSettingsAsync();
+            settingsForm = SettingsForm.FromSettings(settings);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (settingsForm is null)
+        {
+            return;
+        }
+
+        message = null;
+        errorMessage = null;
+
+        try
+        {
+            var saved = await PlatformAdminService.UpdateSystemSettingsAsync(new SystemSettings(
+                settingsForm.SystemMode,
+                settingsForm.DevTest,
+                settingsForm.HomeOwnerTrialDays));
+            settingsForm = SettingsForm.FromSettings(saved);
+            appMode = ServiceBusiness.Web.ApplicationModeSnapshot.From(saved);
+            message = "System settings saved.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private sealed class SettingsForm
+    {
+        public SystemMode SystemMode { get; set; } = SystemMode.Pool;
+        public bool DevTest { get; set; }
+        public int HomeOwnerTrialDays { get; set; } = 14;
+
+        public static SettingsForm FromSettings(SystemSettings settings) => new()
+        {
+            SystemMode = settings.SystemMode,
+            DevTest = settings.DevTest,
+            HomeOwnerTrialDays = settings.HomeOwnerTrialDays
+        };
     }
 }

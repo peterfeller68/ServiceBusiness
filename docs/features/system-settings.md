@@ -2,11 +2,11 @@
 
 Status: Implemented
 Owner: Product
-Last reviewed: 2026-08-05
+Last reviewed: 2026-08-06
 
 ## Problem
 
-Deployments need a stable way to run the application as PoolShark or TreeShark and to enable or disable development test-user sign-in without code changes.
+Deployments need a stable, persisted way for System Administrators to control product mode, development test-user sign-in, and Independent Home Owner trial length without redeploying the application.
 
 ## Personas
 
@@ -19,39 +19,43 @@ Deployments need a stable way to run the application as PoolShark or TreeShark a
 - Pool mode uses PoolShark branding, the pool hero image, the Pool global catalog scope, and Pool Equipment/Pool Configuration visibility.
 - Landscape mode uses TreeShark branding, the landscape hero image, the Landscape global catalog scope, and hides/redirects pool-equipment workflows.
 - `SystemSettings.DevTest` controls test sign-in and Test navigation visibility.
-- Configuration values provide startup defaults when persisted settings are absent.
-- The `/settings` page shows SystemMode, DevTest, and active product name to System Administrators as read-only deployment guidance.
+- `SystemSettings.HomeOwnerTrialDays` controls the trial length assigned to new Independent Home Owner subscriptions.
+- Configuration values provide first-run defaults when persisted settings are absent.
+- The `/settings` page lets System Administrators view and edit SystemMode, DevTest, and HomeOwnerTrialDays.
 
 ## User Flows
 
-### Operator Configures Defaults
+### Operator Configures First-Run Defaults
 
-1. An operator sets `SystemSettings__SystemMode` and `SystemSettings__DevTest` in app settings or configuration.
+1. An operator sets `SystemSettings__SystemMode`, `SystemSettings__DevTest`, and `SystemSettings__HomeOwnerTrialDays` in app settings or configuration.
 2. The app starts with those defaults if the singleton system-settings row is missing.
 
-### System Admin Views Settings
+### System Admin Updates Settings
 
 1. A System Administrator opens `/settings`.
-2. The page shows configured defaults and the currently resolved product mode.
-3. The page explains the Azure App Service setting names.
+2. The page shows current persisted settings.
+3. The System Administrator edits SystemMode, DevTest, or HomeOwnerTrialDays.
+4. The app validates and persists the settings in storage.
+5. New Independent Home Owner subscriptions use the saved HomeOwnerTrialDays value.
 
 ## UI Expectations
 
-- `/settings` heading is General settings.
-- System Administrators see a System Settings panel with SystemMode, DevTest, and Product metrics.
-- Non-system-admin users see only generic available-settings guidance.
-- Settings are not edited from the current UI.
+- `/settings` heading is System Settings.
+- System Administrators see editable controls for SystemMode, HomeOwnerTrialDays, and DevTest.
+- The Settings navigation menu links to System Settings for System Administrators.
+- Non-system-admin users are told System Administrator access is required.
 
 ## Data Model Impact
 
-- `SystemSettings` stores `SystemMode` and `DevTest`.
-- Azure Table storage stores the singleton row with partition `SYSTEM_SETTINGS` and row `CURRENT`.
+- `SystemSettings` stores `SystemMode`, `DevTest`, and `HomeOwnerTrialDays`.
+- Azure Table storage stores the singleton row in the `SystemSettings` table with partition `SYSTEM_SETTINGS` and row `current`.
+- HomeOwnerTrialDays is normalized to zero or greater before it is saved.
 - `ApplicationModeSnapshot` derives product name, hero image, pool-mode flag, global catalog company id, and DevTest flag.
 
 ## Authorization Rules
 
-- The read-only `/settings` route is not linked as a role menu leaf.
-- The System Settings panel is visible only to System Administrators.
+- The `/settings` route is linked from the Settings menu only for System Administrators.
+- The System Settings editor is visible only to System Administrators.
 - Service-layer update methods require System Administrator access.
 - DevTest endpoints require `SystemSettings:DevTest`/configured DevTest to be true and the user to be a test user.
 
@@ -60,10 +64,11 @@ Deployments need a stable way to run the application as PoolShark or TreeShark a
 - [x] Pool mode resolves PoolShark, pool hero image, Pool global catalog scope, and pool equipment visibility.
 - [x] Landscape mode resolves TreeShark, landscape hero image, Landscape global catalog scope, and hides pool equipment.
 - [x] DevTest defaults to disabled unless configured true.
-- [x] `/settings` displays read-only SystemMode, DevTest, and Product for System Administrators.
+- [x] `/settings` displays editable SystemMode, DevTest, and HomeOwnerTrialDays controls for System Administrators.
+- [x] Saving `/settings` persists the singleton SystemSettings row in storage.
+- [x] HomeOwnerTrialDays saved through System Settings controls the trial length for new Independent Home Owner subscriptions.
 - [x] Test sign-in is blocked when DevTest is disabled.
-- [ ] The current UI does not provide a SystemMode editor despite service-layer update methods.
-- [ ] Application mode service currently reads configured defaults for the web UI; source docs should not imply a visible save flow.
+- [x] Configuration values are treated as first-run defaults when no persisted SystemSettings row exists.
 
 ## Tests
 
@@ -73,6 +78,8 @@ Deployments need a stable way to run the application as PoolShark or TreeShark a
 - `ApplicationModeTests.Dev_test_setting_is_enabled_only_when_configured_true`
 - `ApplicationModeTests.Dev_test_setting_defaults_to_disabled_when_missing`
 - `ApplicationModeTests.Configured_defaults_use_pool_mode_when_missing`
+- `OnboardingTests.System_admin_can_update_persisted_homeowner_trial_days`
+- `OnboardingTests.Updated_system_settings_drive_new_homeowner_subscription_trial`
 
 ## User Documentation Impact
 
@@ -82,16 +89,18 @@ Deployments need a stable way to run the application as PoolShark or TreeShark a
 
 - `SystemSettingsConfiguration` reads configured defaults from configuration.
 - `ApplicationModeService` returns the current `ApplicationModeSnapshot`.
-- `SettingsPage.razor` renders the read-only settings panel.
-- `PlatformAdminService.GetSystemSettingsAsync`, `UpdateSystemModeAsync`, and `UpdateSystemSettingsAsync` exist for system-admin service-layer access.
+- `SettingsPage.razor` renders the System Administrator editor for SystemMode, DevTest, and HomeOwnerTrialDays.
+- `PlatformAdminService.GetSystemSettingsAsync`, `UpdateSystemModeAsync`, and `UpdateSystemSettingsAsync` provide system-admin service-layer access and normalize HomeOwnerTrialDays before saving.
+- `AzureTableServiceBusinessStore` persists the singleton settings row in the `SystemSettings` table.
+- `InMemoryServiceBusinessStore` persists the same settings shape for local development and tests.
 - `NavMenu.razor`, dashboards, catalog pages, pool equipment pages, and auth/test endpoints consume the resolved mode.
 
 ## Outstanding Tasks
 
-- Decide whether to build a persisted System Settings editor or keep deployment settings as operator-owned configuration.
-- Align architecture/source-of-truth wording around configured defaults versus persisted settings.
 - Add UI/component tests for `/settings` visibility.
+- Consider adding audit history for System Settings changes before production operations depend on frequent edits.
 
 ## Change Log
 
 - 2026-08-05: Created implemented system-settings spec and corrected read-only settings behavior.
+- 2026-08-06: Implemented editable persisted System Settings for SystemMode, DevTest, and HomeOwnerTrialDays, linked it from Settings navigation, and connected saved trial length to new homeowner subscriptions.

@@ -58,7 +58,59 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
     public async Task<SystemSettings> GetSystemSettingsAsync(CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
-        return configuredDefaultSystemSettings;
+        return await GetAsync<SystemSettings>("SystemSettings", "SYSTEM_SETTINGS", "current", cancellationToken)
+            ?? configuredDefaultSystemSettings;
+    }
+
+    public async Task<IReadOnlyList<SubscriptionPlan>> GetSubscriptionPlansAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        return (await GetPartitionAsync<SubscriptionPlan>("SubscriptionPlans", "SUBSCRIPTION_PLAN", cancellationToken))
+            .OrderBy(plan => plan.SortOrder)
+            .ThenBy(plan => plan.Name)
+            .ToList();
+    }
+
+    public async Task<SubscriptionPlan?> GetSubscriptionPlanAsync(string planId, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        return await GetAsync<SubscriptionPlan>("SubscriptionPlans", "SUBSCRIPTION_PLAN", planId, cancellationToken);
+    }
+
+    public async Task<HomeOwnerSubscription?> GetHomeOwnerSubscriptionAsync(string ownerUserId, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        return await GetAsync<HomeOwnerSubscription>("HomeOwnerSubscriptions", "HOMEOWNER_SUBSCRIPTION", ownerUserId, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<HomeOwnerSubscription>> GetHomeOwnerSubscriptionsAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        return (await GetPartitionAsync<HomeOwnerSubscription>("HomeOwnerSubscriptions", "HOMEOWNER_SUBSCRIPTION", cancellationToken))
+            .OrderBy(subscription => subscription.OwnerUserId)
+            .ToList();
+    }
+
+    public async Task<PaymentProviderEvent?> GetPaymentProviderEventAsync(string provider, string providerEventId, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        return await GetAsync<PaymentProviderEvent>("PaymentProviderEvents", PaymentProviderPartition(provider), PaymentProviderEventId(provider, providerEventId), cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<PaymentProviderEvent>> GetPaymentProviderEventsAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        return (await GetAllAsync<PaymentProviderEvent>("PaymentProviderEvents", cancellationToken))
+            .OrderByDescending(paymentEvent => paymentEvent.ProcessedUtc)
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<PaymentOperationLog>> GetPaymentOperationLogsAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        return (await GetAllAsync<PaymentOperationLog>("PaymentOperationLogs", cancellationToken))
+            .OrderByDescending(log => log.CreatedUtc)
+            .ToList();
     }
 
     public async Task<IReadOnlyList<RoleDefinition>> GetRoleDefinitionsAsync(CancellationToken cancellationToken = default)
@@ -290,6 +342,30 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
         }
     }
 
+    public async Task UpsertSubscriptionPlanAsync(SubscriptionPlan plan, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        await UpsertAsync("SubscriptionPlans", "SUBSCRIPTION_PLAN", plan.Id, plan, cancellationToken);
+    }
+
+    public async Task UpsertHomeOwnerSubscriptionAsync(HomeOwnerSubscription subscription, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        await UpsertAsync("HomeOwnerSubscriptions", "HOMEOWNER_SUBSCRIPTION", subscription.OwnerUserId, subscription, cancellationToken);
+    }
+
+    public async Task UpsertPaymentProviderEventAsync(PaymentProviderEvent paymentEvent, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        await UpsertAsync("PaymentProviderEvents", PaymentProviderPartition(paymentEvent.Provider), paymentEvent.Id, paymentEvent, cancellationToken);
+    }
+
+    public async Task UpsertPaymentOperationLogAsync(PaymentOperationLog paymentOperationLog, CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+        await UpsertAsync("PaymentOperationLogs", PaymentOperationPartition(paymentOperationLog), paymentOperationLog.Id, paymentOperationLog, cancellationToken);
+    }
+
     public async Task UpsertRoleDefinitionAsync(RoleDefinition roleDefinition, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
@@ -396,6 +472,7 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
         }
 
         rowsDeleted += await DeleteEntityIfExistsAsync("IndependentHomeOwnerProfiles", "HOMEOWNER_PROFILE", userId, cancellationToken);
+        rowsDeleted += await DeleteEntityIfExistsAsync("HomeOwnerSubscriptions", "HOMEOWNER_SUBSCRIPTION", userId, cancellationToken);
         rowsDeleted += await DeletePartitionRowsAsync("HomeOwnerPoolEquipmentPhotos", HomeOwnerPhotoPartition(userId), cancellationToken);
         rowsDeleted += await DeletePartitionRowsAsync("IndependentHomeOwnerServiceHistory", UserPartition(userId), cancellationToken);
         rowsDeleted += await DeletePartitionRowsAsync("ServiceCategories", ServicePartition(userId), cancellationToken);
@@ -529,6 +606,7 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
     public async Task UpsertSystemSettingsAsync(SystemSettings settings, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
+        await UpsertAsync("SystemSettings", "SYSTEM_SETTINGS", "current", NormalizeSystemSettings(settings), cancellationToken);
     }
 
     private async Task EnsureInitializedAsync(CancellationToken cancellationToken)
@@ -573,6 +651,13 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
     {
         var seed = new InMemoryServiceBusinessStore();
 
+        await UpsertWithoutInitializationAsync("SystemSettings", "SYSTEM_SETTINGS", "current", configuredDefaultSystemSettings, cancellationToken);
+
+        foreach (var plan in await seed.GetSubscriptionPlansAsync(cancellationToken))
+        {
+            await UpsertWithoutInitializationAsync("SubscriptionPlans", "SUBSCRIPTION_PLAN", plan.Id, plan, cancellationToken);
+        }
+
         foreach (var user in await seed.GetUsersAsync(cancellationToken))
         {
             await UpsertWithoutInitializationAsync("Users", "USER", user.Id, user, cancellationToken);
@@ -590,6 +675,12 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
             if (profile is not null)
             {
                 await UpsertWithoutInitializationAsync("IndependentHomeOwnerProfiles", "HOMEOWNER_PROFILE", profile.UserId, profile, cancellationToken);
+
+                var subscription = await seed.GetHomeOwnerSubscriptionAsync(profile.UserId, cancellationToken);
+                if (subscription is not null)
+                {
+                    await UpsertWithoutInitializationAsync("HomeOwnerSubscriptions", "HOMEOWNER_SUBSCRIPTION", subscription.OwnerUserId, subscription, cancellationToken);
+                }
 
                 foreach (var category in await seed.GetPoolEquipmentCategoriesAsync(EquipmentScope.HomeOwner, profile.UserId, cancellationToken))
                 {
@@ -943,6 +1034,14 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
 
     private static string UserMembershipRow(string companyId, CompanyRole role) => $"COMPANY#{companyId}#ROLE#{role}";
 
+    private static string PaymentProviderPartition(string provider) => $"PAYMENT_PROVIDER_{provider.Trim().ToLowerInvariant()}";
+
+    private static string PaymentProviderEventId(string provider, string providerEventId) =>
+        $"{provider.Trim().ToLowerInvariant()}:{providerEventId.Trim()}";
+
+    private static string PaymentOperationPartition(PaymentOperationLog paymentOperationLog) =>
+        $"PAYMENT_OPERATION_{paymentOperationLog.Operation}";
+
     private static SystemSettings GetConfiguredDefaultSystemSettings(IConfiguration configuration)
     {
         var configuredMode = configuration["SystemSettings:SystemMode"] ?? configuration["SystemMode"];
@@ -950,8 +1049,14 @@ public sealed class AzureTableServiceBusinessStore : IServiceBusinessStore
             ? parsedMode
             : SystemMode.Pool;
         var devTest = bool.TryParse(configuration["SystemSettings:DevTest"], out var parsedDevTest) && parsedDevTest;
-        return new SystemSettings(mode, devTest);
+        var trialDays = int.TryParse(configuration["SystemSettings:HomeOwnerTrialDays"], out var parsedTrialDays)
+            ? Math.Max(0, parsedTrialDays)
+            : 14;
+        return new SystemSettings(mode, devTest, trialDays);
     }
+
+    private static SystemSettings NormalizeSystemSettings(SystemSettings settings) =>
+        settings with { HomeOwnerTrialDays = Math.Max(0, settings.HomeOwnerTrialDays) };
 
     private sealed record UserLookup(string UserId, string Email);
 }

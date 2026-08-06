@@ -9,6 +9,13 @@ public interface IServiceBusinessStore
     Task<AppUser?> GetUserByGoogleSubjectAsync(string googleSubjectId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<AppUser>> GetUsersAsync(CancellationToken cancellationToken = default);
     Task<SystemSettings> GetSystemSettingsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<SubscriptionPlan>> GetSubscriptionPlansAsync(CancellationToken cancellationToken = default);
+    Task<SubscriptionPlan?> GetSubscriptionPlanAsync(string planId, CancellationToken cancellationToken = default);
+    Task<HomeOwnerSubscription?> GetHomeOwnerSubscriptionAsync(string ownerUserId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<HomeOwnerSubscription>> GetHomeOwnerSubscriptionsAsync(CancellationToken cancellationToken = default);
+    Task<PaymentProviderEvent?> GetPaymentProviderEventAsync(string provider, string providerEventId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<PaymentProviderEvent>> GetPaymentProviderEventsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<PaymentOperationLog>> GetPaymentOperationLogsAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RoleDefinition>> GetRoleDefinitionsAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<CompanyType>> GetCompanyTypesAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Company>> GetCompaniesAsync(CancellationToken cancellationToken = default);
@@ -38,6 +45,10 @@ public interface IServiceBusinessStore
     Task<Invoice?> GetInvoiceAsync(string companyId, string invoiceId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<EmailLogEntry>> GetEmailLogsAsync(CancellationToken cancellationToken = default);
     Task UpsertUserAsync(AppUser user, CancellationToken cancellationToken = default);
+    Task UpsertSubscriptionPlanAsync(SubscriptionPlan plan, CancellationToken cancellationToken = default);
+    Task UpsertHomeOwnerSubscriptionAsync(HomeOwnerSubscription subscription, CancellationToken cancellationToken = default);
+    Task UpsertPaymentProviderEventAsync(PaymentProviderEvent paymentEvent, CancellationToken cancellationToken = default);
+    Task UpsertPaymentOperationLogAsync(PaymentOperationLog paymentOperationLog, CancellationToken cancellationToken = default);
     Task UpsertRoleDefinitionAsync(RoleDefinition roleDefinition, CancellationToken cancellationToken = default);
     Task UpsertCompanyAsync(Company company, CancellationToken cancellationToken = default);
     Task UpsertMembershipAsync(CompanyMembership membership, CancellationToken cancellationToken = default);
@@ -82,6 +93,24 @@ public interface IEmailSender
     Task<EmailSendResult> SendAsync(EmailLogEntry email, CancellationToken cancellationToken = default);
 }
 
+public interface IPaymentProviderGateway
+{
+    Task<PaymentCheckoutSession> CreateSubscriptionCheckoutSessionAsync(
+        AppUser user,
+        HomeOwnerSubscription subscription,
+        SubscriptionPlan plan,
+        string successUrl,
+        string cancelUrl,
+        CancellationToken cancellationToken = default);
+
+    Task<PaymentPortalSession> CreateCustomerPortalSessionAsync(
+        string providerCustomerId,
+        string returnUrl,
+        CancellationToken cancellationToken = default);
+
+    PaymentProviderWebhookEvent ParseWebhookEvent(string payload, string signatureHeader);
+}
+
 public sealed record EmailSendResult(
     bool Succeeded,
     string? ProviderMessageId = null,
@@ -91,3 +120,32 @@ public sealed record EmailSendResult(
 
     public static EmailSendResult Failed(string failureMessage) => new(false, null, failureMessage);
 }
+
+public sealed record PaymentCheckoutSession(
+    string Provider,
+    string ProviderMode,
+    string CheckoutSessionId,
+    string Url,
+    string? CustomerId,
+    string? SubscriptionId);
+
+public sealed record PaymentPortalSession(
+    string Provider,
+    string ProviderMode,
+    string PortalSessionId,
+    string Url);
+
+public sealed record PaymentProviderWebhookEvent(
+    string Provider,
+    string ProviderMode,
+    string ProviderEventId,
+    string EventType,
+    string? OwnerUserId,
+    string? ProviderCustomerId,
+    string? ProviderSubscriptionId,
+    string? ProviderCheckoutSessionId,
+    SubscriptionStatus? SubscriptionStatus,
+    DateTimeOffset? CurrentPeriodStartsAt,
+    DateTimeOffset? CurrentPeriodEndsAt,
+    bool? CancelAtPeriodEnd,
+    string Summary);

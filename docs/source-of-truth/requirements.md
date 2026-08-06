@@ -298,8 +298,11 @@ Current implementation:
 - `/register` includes an Independent Homeowner account type.
 - Independent Homeowner registration creates or updates an active `AppUser` without creating a company membership.
 - Independent Homeowner registration captures and persists home address and access notes in an owner profile.
+- Independent Homeowner registration requires choosing a monthly or annual subscription plan.
+- Independent Homeowner registration creates a homeowner subscription record using the selected plan and persisted `SystemSettings.HomeOwnerTrialDays`; configuration supplies the first-run default only when no settings row exists.
 - Independent Homeowner registration seeds owner-scoped pool equipment records under `EquipmentScope.HomeOwner` for the new user ID.
 - Independent Homeowner users can open `/poolequipment` immediately without owner approval.
+- System Administrators manage Independent Home Owner subscription plans from `/admin/subscriptions`.
 
 ### 6.3 Company Client User Management
 
@@ -470,7 +473,7 @@ Current implementation:
 - The independent homeowner dashboard shows Pool Equipment and Service History panels.
 - Authenticated navigation hides Home; public navigation still shows Home and Help.
 - Landscape mode hides Pool Equipment navigation and redirects direct Pool Equipment routes back to the dashboard.
-- The `/settings` page currently displays `SystemMode`, `DevTest`, and active product name as read-only guidance for System Administrators; no settings editor is implemented in the UI.
+- The `/settings` page lets System Administrators edit persisted `SystemMode`, `DevTest`, and `HomeOwnerTrialDays`.
 
 ## 10. Scheduling Requirements
 
@@ -629,7 +632,7 @@ Optional future enhancement:
 
 ## 15. Billing and Stripe Requirements
 
-The current billing implementation supports application-managed invoices for completed service visits. Stripe payment processing remains a future integration.
+The current billing implementation supports application-managed invoices for completed service visits, provider-neutral Independent Home Owner subscriptions, Stripe Checkout for homeowner subscriptions, Stripe Customer Portal redirects, signed Stripe webhook processing, and idempotent payment event logging.
 
 Company Admins can:
 
@@ -659,10 +662,18 @@ Invoice requirements:
 System requirements:
 
 - Store invoice snapshots, status, line items, totals, generated invoice HTML, and event timestamps.
-- Store payment provider references when Stripe is added.
-- Store billing status and event history when payment processing is added.
-- Process Stripe webhooks idempotently when Stripe is added.
+- Store Independent Home Owner subscription plans and homeowner subscription state.
+- Allow System Administrators to configure subscription plan name, description, price, billing interval, active status, sort order, and Stripe price id.
+- Store configurable homeowner trial duration through persisted `SystemSettings.HomeOwnerTrialDays`; `SystemSettings:HomeOwnerTrialDays` is only the startup/default configuration source.
+- Store payment provider references as external IDs only.
+- Store billing status and event history for trusted payment-provider events.
+- Store sanitized payment API operation logs for checkout, customer portal, browser return, webhook processed, webhook duplicate, and webhook rejected outcomes.
+- Process payment-provider events idempotently.
+- Create Stripe Checkout Sessions for configured homeowner subscription plans.
+- Create Stripe Customer Portal Sessions for linked homeowner Stripe customers.
+- Validate Stripe webhook signatures before processing subscription status changes.
 - Do not store raw card data.
+- System Administrators can review Payment Events and Payment API logs from the Logs navigation group.
 
 ## 16. Reporting Requirements
 

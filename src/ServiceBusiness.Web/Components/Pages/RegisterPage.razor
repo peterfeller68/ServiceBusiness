@@ -193,7 +193,24 @@ else
                             <InputTextArea class="form-control" @bind-Value="form.HomeAccessNotes" />
                         </label>
                     </div>
-                    <p class="form-note">Your account will open owner-scoped pool equipment tools immediately. No business approval is required.</p>
+                    <div class="subscription-options">
+                        <h3>Subscription plan</h3>
+                        <InputRadioGroup @bind-Value="form.SubscriptionPlanId">
+                            <div class="choice-grid">
+                                @foreach (var plan in homeOwnerPlans)
+                                {
+                                    <label class="choice-card">
+                                        <InputRadio Value="@plan.Id" />
+                                        <span>
+                                            <strong>@plan.Name</strong>
+                                            <small>@FormatPlanPrice(plan) after trial</small>
+                                        </span>
+                                    </label>
+                                }
+                            </div>
+                        </InputRadioGroup>
+                    </div>
+                    <p class="form-note">Your account will start with the configured trial. Payment details are handled through the provider checkout flow when enabled.</p>
                 </section>
             }
         </div>
@@ -217,6 +234,7 @@ else
     private readonly RegisterForm form = new();
     private IReadOnlyList<Company> companies = [];
     private IReadOnlyList<CompanyClient> businessClients = [];
+    private IReadOnlyList<SubscriptionPlan> homeOwnerPlans = [];
     private RegistrationStep step = RegistrationStep.AccountType;
     private bool devTest;
     private bool authenticatedWithGoogle;
@@ -227,6 +245,10 @@ else
     {
         devTest = SystemSettingsConfiguration.IsDevTestEnabled(Configuration);
         companies = await OnboardingService.GetAvailableCompaniesAsync();
+        homeOwnerPlans = await OnboardingService.GetAvailableHomeOwnerSubscriptionPlansAsync();
+        form.SubscriptionPlanId = homeOwnerPlans.FirstOrDefault(plan => plan.BillingInterval == SubscriptionBillingInterval.Monthly)?.Id
+            ?? homeOwnerPlans.FirstOrDefault()?.Id
+            ?? "";
         var googleReturn = ApplyAccountTypeQuery();
 
         var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
@@ -320,7 +342,8 @@ else
                 form.HomeAddress,
                 form.HomeAccessNotes,
                 !authenticatedWithGoogle,
-                form.BusinessClientId));
+                form.BusinessClientId,
+                form.SubscriptionPlanId));
 
             DemoUser.UserId = result.User.Id;
             var registeredUserId = Uri.EscapeDataString(result.User.Id);
@@ -339,6 +362,12 @@ else
         Details
     }
 
+    private static string FormatPlanPrice(SubscriptionPlan plan)
+    {
+        var interval = plan.BillingInterval == SubscriptionBillingInterval.Annual ? "year" : "month";
+        return $"{plan.Price:C0} / {interval}";
+    }
+
     private sealed class RegisterForm
     {
         public RegistrationAccountType AccountType { get; set; } = RegistrationAccountType.IndependentHomeOwner;
@@ -353,5 +382,6 @@ else
         public string? ServiceArea { get; set; }
         public string? HomeAddress { get; set; }
         public string? HomeAccessNotes { get; set; }
+        public string SubscriptionPlanId { get; set; } = "";
     }
 }

@@ -87,6 +87,10 @@ builder.Services.AddScoped<ClientPortalService>();
 builder.Services.AddScoped<OnboardingService>();
 builder.Services.AddScoped<UserProfileService>();
 builder.Services.AddScoped<IndependentHomeOwnerService>();
+builder.Services.AddScoped<SubscriptionService>();
+builder.Services.AddScoped<PaymentIntegrationService>();
+builder.Services.AddScoped<PaymentLogService>();
+builder.Services.AddHttpClient<IPaymentProviderGateway, StripePaymentProviderGateway>();
 builder.Services.AddScoped<InvoicingJobService>();
 builder.Services.AddScoped<EmailJobService>();
 builder.Services.AddScoped<ScheduledJobRunner>();
@@ -221,6 +225,82 @@ app.MapGet("/auth/registration-signin", async (
     return Results.Redirect(GetAppRedirectUrl(httpContext, returnUrl));
 });
 
+app.MapGet("/billing/homeowner/checkout", async (
+    HttpContext httpContext,
+    ICurrentUserContext currentUser,
+    PaymentIntegrationService paymentIntegrationService,
+    CancellationToken cancellationToken) =>
+{
+    var baseUrl = GetBaseUrl(httpContext);
+    try
+    {
+        var session = await paymentIntegrationService.CreateHomeOwnerCheckoutSessionAsync(
+            currentUser.UserId,
+            $"{baseUrl}/billing/stripe/checkout-return?status=success&session_id={{CHECKOUT_SESSION_ID}}",
+            $"{baseUrl}/billing/stripe/checkout-return?status=cancel",
+            cancellationToken);
+        return Results.Redirect(session.Url);
+    }
+    catch (InvalidOperationException)
+    {
+        return Results.Redirect(GetAppRedirectUrl(httpContext, "/profile?billing=checkout-unavailable"));
+    }
+}).RequireAuthorization();
+
+app.MapGet("/billing/homeowner/portal", async (
+    HttpContext httpContext,
+    ICurrentUserContext currentUser,
+    PaymentIntegrationService paymentIntegrationService,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var session = await paymentIntegrationService.CreateHomeOwnerPortalSessionAsync(
+            currentUser.UserId,
+            $"{GetBaseUrl(httpContext)}/profile",
+            cancellationToken);
+        return Results.Redirect(session.Url);
+    }
+    catch (InvalidOperationException)
+    {
+        return Results.Redirect(GetAppRedirectUrl(httpContext, "/profile?billing=portal-unavailable"));
+    }
+}).RequireAuthorization();
+
+app.MapGet("/billing/stripe/checkout-return", async (
+    HttpContext httpContext,
+    PaymentIntegrationService paymentIntegrationService,
+    string? status,
+    string? session_id,
+    CancellationToken cancellationToken) =>
+{
+    await paymentIntegrationService.RecordCheckoutReturnAsync(status, session_id, cancellationToken);
+    var billingStatus = string.Equals(status, "success", StringComparison.OrdinalIgnoreCase)
+        ? "checkout-returned"
+        : "checkout-canceled";
+    return Results.Redirect(GetAppRedirectUrl(httpContext, $"/profile?billing={billingStatus}"));
+});
+
+app.MapPost("/billing/stripe/webhook", async (
+    HttpContext httpContext,
+    PaymentIntegrationService paymentIntegrationService,
+    CancellationToken cancellationToken) =>
+{
+    using var reader = new StreamReader(httpContext.Request.Body);
+    var payload = await reader.ReadToEndAsync(cancellationToken);
+    var signature = httpContext.Request.Headers["Stripe-Signature"].ToString();
+    try
+    {
+        await paymentIntegrationService.ProcessWebhookAsync(payload, signature, cancellationToken);
+        return Results.Ok();
+    }
+    catch (InvalidOperationException ex)
+    {
+        await paymentIntegrationService.RecordRejectedWebhookAsync(ex.Message, cancellationToken);
+        return Results.BadRequest(ex.Message);
+    }
+}).DisableAntiforgery();
+
 app.MapGet("/auth/signout", async (HttpContext httpContext) =>
 {
     await httpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
@@ -281,6 +361,9 @@ static string GetAppRedirectUrl(HttpContext httpContext, string? returnUrl)
 
     return $"{pathBase}{safeReturnUrl}";
 }
+
+static string GetBaseUrl(HttpContext httpContext) =>
+    $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.PathBase}";
 
 static string NormalizePathBase(string? pathBase)
 {

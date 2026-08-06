@@ -5,6 +5,8 @@
 @inject UserProfileService ProfileService
 @inject OnboardingService OnboardingService
 @inject IndependentHomeOwnerService HomeOwnerService
+@inject SubscriptionService SubscriptionService
+@inject IConfiguration Configuration
 
 <PageTitle>Profile</PageTitle>
 
@@ -86,18 +88,61 @@ else
             <strong>@form.DisplayName</strong>
             <p>@form.Email</p>
             <small>@form.Status</small>
+            @if (isIndependentHomeOwner && homeOwnerSubscription is not null)
+            {
+                <hr />
+                <strong>@(homeOwnerPlan?.Name ?? homeOwnerSubscription.PlanId)</strong>
+                <p>@homeOwnerSubscription.Status</p>
+                <small>@GetSubscriptionSummary()</small>
+                @if (CanStartCheckout)
+                {
+                    <a class="button primary" href="billing/homeowner/checkout" data-enhance-nav="false">Start Checkout</a>
+                }
+                else if (CanManageBilling)
+                {
+                    <a class="button" href="billing/homeowner/portal" data-enhance-nav="false">Manage Billing</a>
+                }
+                else
+                {
+                    <small>Stripe checkout is not configured for this plan.</small>
+                }
+            }
         </aside>
     </section>
 }
 
 @code {
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "billing")]
+    public string? BillingStatus { get; set; }
+
     private ProfileForm? form;
     private bool isIndependentHomeOwner;
+    private HomeOwnerSubscription? homeOwnerSubscription;
+    private SubscriptionPlan? homeOwnerPlan;
+    private IReadOnlyList<SubscriptionPlan> homeOwnerPlans = [];
     private string? message;
     private string? errorMessage;
 
     protected override async Task OnInitializedAsync()
     {
+        if (string.Equals(BillingStatus, "checkout-returned", StringComparison.OrdinalIgnoreCase))
+        {
+            message = "Checkout returned. Subscription access updates after Stripe confirms the payment event.";
+        }
+        else if (string.Equals(BillingStatus, "checkout-canceled", StringComparison.OrdinalIgnoreCase))
+        {
+            errorMessage = "Checkout was canceled. You can start checkout again when you are ready.";
+        }
+        else if (string.Equals(BillingStatus, "checkout-unavailable", StringComparison.OrdinalIgnoreCase))
+        {
+            errorMessage = "Stripe checkout is not available for this subscription yet.";
+        }
+        else if (string.Equals(BillingStatus, "portal-unavailable", StringComparison.OrdinalIgnoreCase))
+        {
+            errorMessage = "Stripe billing management is not available for this subscription yet.";
+        }
+
         var user = await ProfileService.GetCurrentProfileAsync();
         form = ProfileForm.FromUser(user);
         var overview = await OnboardingService.GetAccessOverviewAsync(user.Id);
@@ -108,6 +153,11 @@ else
             form.HomeAddress = profile.HomeAddress;
             form.AccessNotes = profile.AccessNotes;
             form.GeneralNotes = profile.GeneralNotes;
+            homeOwnerPlans = await SubscriptionService.GetAvailableHomeOwnerPlansAsync();
+            homeOwnerSubscription = await SubscriptionService.GetCurrentHomeOwnerSubscriptionAsync();
+            homeOwnerPlan = homeOwnerSubscription is null
+                ? null
+                : homeOwnerPlans.FirstOrDefault(plan => string.Equals(plan.Id, homeOwnerSubscription.PlanId, StringComparison.OrdinalIgnoreCase));
         }
     }
 
@@ -151,6 +201,10 @@ else
                 form.HomeAddress = profile.HomeAddress;
                 form.AccessNotes = profile.AccessNotes;
                 form.GeneralNotes = profile.GeneralNotes;
+                homeOwnerSubscription = await SubscriptionService.GetCurrentHomeOwnerSubscriptionAsync();
+                homeOwnerPlan = homeOwnerSubscription is null
+                    ? null
+                    : homeOwnerPlans.FirstOrDefault(plan => string.Equals(plan.Id, homeOwnerSubscription.PlanId, StringComparison.OrdinalIgnoreCase));
             }
 
             message = "Profile saved.";
@@ -163,6 +217,48 @@ else
         {
             errorMessage = ex.Message;
         }
+    }
+
+    private string GetSubscriptionSummary()
+    {
+        if (homeOwnerSubscription is null)
+        {
+            return "No subscription";
+        }
+
+        var entitlement = SubscriptionService.HasActiveEntitlement(homeOwnerSubscription) ? "Access active" : "Access pending";
+        if (homeOwnerSubscription.TrialEndsAt is not null)
+        {
+            return $"{entitlement}; trial ends {homeOwnerSubscription.TrialEndsAt.Value.LocalDateTime:d}";
+        }
+
+        return entitlement;
+    }
+
+    private bool CanStartCheckout =>
+        homeOwnerSubscription is not null &&
+        string.IsNullOrWhiteSpace(homeOwnerSubscription.ProviderCustomerId) &&
+        HasConfiguredPrice(homeOwnerPlan);
+
+    private bool CanManageBilling =>
+        homeOwnerSubscription is not null &&
+        !string.IsNullOrWhiteSpace(homeOwnerSubscription.ProviderCustomerId);
+
+    private bool HasConfiguredPrice(SubscriptionPlan? plan)
+    {
+        if (plan is null)
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(plan.ProviderPriceId))
+        {
+            return true;
+        }
+
+        return plan.BillingInterval == SubscriptionBillingInterval.Annual
+            ? !string.IsNullOrWhiteSpace(Configuration["Payment:Stripe:HomeOwnerAnnualPriceId"] ?? Configuration["Stripe:HomeOwnerAnnualPriceId"])
+            : !string.IsNullOrWhiteSpace(Configuration["Payment:Stripe:HomeOwnerMonthlyPriceId"] ?? Configuration["Stripe:HomeOwnerMonthlyPriceId"]);
     }
 
     private sealed class ProfileForm

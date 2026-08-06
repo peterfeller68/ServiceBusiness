@@ -1,6 +1,6 @@
 # Registration and Authentication
 
-Last reviewed: 2026-08-04
+Last reviewed: 2026-08-06
 
 Use registration to create the right kind of account, then sign in with Google or, in DevTest mode, a seeded test account.
 
@@ -58,9 +58,10 @@ Independent home owners manage their own home records without joining a business
 1. Choose Home owner.
 2. Continue with Google, or skip Google only in DevTest mode.
 3. Enter your account details, home address, and optional access notes.
-4. Complete registration.
+4. Choose a subscription plan.
+5. Complete registration.
 
-No business approval is required. The account opens Dashboard and owner-scoped pool equipment records are created automatically in Pool mode.
+No business approval is required. The account opens Dashboard, starts the configured subscription trial, and owner-scoped pool equipment records are created automatically in Pool mode.
 
 ## Pending Approval
 

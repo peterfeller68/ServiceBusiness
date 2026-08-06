@@ -31,6 +31,54 @@ public static class BusinessClientTypeReferenceData
     }
 }
 
+public static class SubscriptionReferenceData
+{
+    public const string HomeOwnerMonthlyId = "homeowner-monthly";
+    public const string HomeOwnerAnnualId = "homeowner-annual";
+
+    public static IReadOnlyList<SubscriptionPlan> DefaultHomeOwnerPlans { get; } =
+    [
+        new(
+            HomeOwnerMonthlyId,
+            "Home Owner Monthly",
+            "Monthly homeowner access with configurable trial.",
+            SubscriptionBillingInterval.Monthly,
+            19m,
+            true,
+            10,
+            null),
+        new(
+            HomeOwnerAnnualId,
+            "Home Owner Annual",
+            "Annual homeowner access with configurable trial.",
+            SubscriptionBillingInterval.Annual,
+            190m,
+            true,
+            20,
+            null)
+    ];
+
+    public static async Task<IReadOnlyList<SubscriptionPlan>> EnsureDefaultHomeOwnerPlansAsync(
+        IServiceBusinessStore store,
+        CancellationToken cancellationToken = default)
+    {
+        var plans = await store.GetSubscriptionPlansAsync(cancellationToken);
+        foreach (var defaultPlan in DefaultHomeOwnerPlans)
+        {
+            if (!plans.Any(plan => string.Equals(plan.Id, defaultPlan.Id, StringComparison.OrdinalIgnoreCase)))
+            {
+                await store.UpsertSubscriptionPlanAsync(defaultPlan, cancellationToken);
+            }
+        }
+
+        return (await store.GetSubscriptionPlansAsync(cancellationToken))
+            .Where(plan => plan.IsActive)
+            .OrderBy(plan => plan.SortOrder)
+            .ThenBy(plan => plan.Name)
+            .ToList();
+    }
+}
+
 public sealed class TenantAuthorizationService(IServiceBusinessStore store, ICurrentUserContext currentUser)
 {
     public async Task<AppUser> RequireCurrentUserAsync(CancellationToken cancellationToken = default)
@@ -143,8 +191,61 @@ public sealed class PlatformAdminService(IServiceBusinessStore store, TenantAuth
     {
         await authorization.RequireSystemAdminAsync(cancellationToken);
 
-        await store.UpsertSystemSettingsAsync(settings, cancellationToken);
-        return settings;
+        var normalized = NormalizeSystemSettings(settings);
+        await store.UpsertSystemSettingsAsync(normalized, cancellationToken);
+        return normalized;
+    }
+
+    public async Task<HomeOwnerSubscription> UpdateHomeOwnerSubscriptionTrialEndAsync(
+        string ownerUserId,
+        DateTimeOffset? trialEndsAt,
+        CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireSystemAdminAsync(cancellationToken);
+
+        var user = await store.GetUserAsync(ownerUserId, cancellationToken)
+            ?? throw new InvalidOperationException("User was not found.");
+        _ = await store.GetIndependentHomeOwnerProfileAsync(user.Id, cancellationToken)
+            ?? throw new InvalidOperationException("User is not an Independent Home Owner.");
+        var subscription = await store.GetHomeOwnerSubscriptionAsync(user.Id, cancellationToken)
+            ?? throw new InvalidOperationException("Homeowner subscription was not found.");
+
+        var updated = subscription with
+        {
+            TrialEndsAt = trialEndsAt,
+            UpdatedUtc = DateTimeOffset.UtcNow
+        };
+        await store.UpsertHomeOwnerSubscriptionAsync(updated, cancellationToken);
+        return updated;
+    }
+
+    public async Task<IReadOnlyList<SubscriptionPlan>> GetSubscriptionPlansAsync(CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireSystemAdminAsync(cancellationToken);
+        return await SubscriptionReferenceData.EnsureDefaultHomeOwnerPlansAsync(store, cancellationToken);
+    }
+
+    public async Task<SubscriptionPlan> UpsertSubscriptionPlanAsync(
+        SubscriptionPlan plan,
+        CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireSystemAdminAsync(cancellationToken);
+
+        var normalized = NormalizeSubscriptionPlan(plan);
+        await store.UpsertSubscriptionPlanAsync(normalized, cancellationToken);
+        return normalized;
+    }
+
+    public async Task SetSubscriptionPlanActiveAsync(
+        string planId,
+        bool isActive,
+        CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireSystemAdminAsync(cancellationToken);
+
+        var plan = await store.GetSubscriptionPlanAsync(planId, cancellationToken)
+            ?? throw new InvalidOperationException("Subscription plan was not found.");
+        await store.UpsertSubscriptionPlanAsync(plan with { IsActive = isActive }, cancellationToken);
     }
 
     public async Task<IReadOnlyList<CompanyType>> GetCompanyTypesAsync(CancellationToken cancellationToken = default)
@@ -423,6 +524,8 @@ public sealed class PlatformAdminService(IServiceBusinessStore store, TenantAuth
         var roles = (await store.GetRoleDefinitionsAsync(cancellationToken))
             .Select(NormalizeRoleDefinition)
             .ToList();
+        var homeOwnerSubscriptions = await store.GetHomeOwnerSubscriptionsAsync(cancellationToken);
+        var subscriptionPlans = await SubscriptionReferenceData.EnsureDefaultHomeOwnerPlansAsync(store, cancellationToken);
         var rows = new List<UserManagementRow>();
 
         foreach (var user in users.OrderBy(u => u.DisplayName))
@@ -436,12 +539,19 @@ public sealed class PlatformAdminService(IServiceBusinessStore store, TenantAuth
                 .OrderBy(a => a.Company.Name)
                 .ThenBy(a => a.Role)
                 .ToList();
+            var subscription = homeOwnerSubscriptions.FirstOrDefault(s =>
+                string.Equals(s.OwnerUserId, user.Id, StringComparison.OrdinalIgnoreCase));
+            var subscriptionPlan = subscription is null
+                ? null
+                : subscriptionPlans.FirstOrDefault(plan => string.Equals(plan.Id, subscription.PlanId, StringComparison.OrdinalIgnoreCase));
 
             rows.Add(new UserManagementRow(
                 user,
                 access,
                 memberships.Count(m => m.Status == MembershipStatus.Pending),
-                memberships.Count(m => m.Status == MembershipStatus.Active)));
+                memberships.Count(m => m.Status == MembershipStatus.Active),
+                subscription,
+                subscriptionPlan));
         }
 
         return new PlatformUserManagementOverview(
@@ -897,6 +1007,31 @@ public sealed class PlatformAdminService(IServiceBusinessStore store, TenantAuth
             ? roleDefinition
             : roleDefinition with { Permissions = GetDefaultPermissions(roleDefinition.Role) };
     }
+
+    private static SubscriptionPlan NormalizeSubscriptionPlan(SubscriptionPlan plan)
+    {
+        if (string.IsNullOrWhiteSpace(plan.Name))
+        {
+            throw new InvalidOperationException("Subscription plan name is required.");
+        }
+
+        if (plan.Price < 0)
+        {
+            throw new InvalidOperationException("Subscription plan price cannot be negative.");
+        }
+
+        return plan with
+        {
+            Id = string.IsNullOrWhiteSpace(plan.Id) ? CreateSlug(plan.Name) : CreateSlug(plan.Id),
+            Name = plan.Name.Trim(),
+            Description = string.IsNullOrWhiteSpace(plan.Description) ? "" : plan.Description.Trim(),
+            ProviderPriceId = string.IsNullOrWhiteSpace(plan.ProviderPriceId) ? null : plan.ProviderPriceId.Trim(),
+            SortOrder = Math.Max(0, plan.SortOrder)
+        };
+    }
+
+    private static SystemSettings NormalizeSystemSettings(SystemSettings settings) =>
+        settings with { HomeOwnerTrialDays = Math.Max(0, settings.HomeOwnerTrialDays) };
 
     private static IReadOnlyList<string> GetDefaultPermissions(CompanyRole role)
     {
@@ -3877,6 +4012,520 @@ public sealed class ClientPortalService(
         CompanyClient Client);
 }
 
+public sealed class SubscriptionService(IServiceBusinessStore store, TenantAuthorizationService authorization)
+{
+    public async Task<IReadOnlyList<SubscriptionPlan>> GetAvailableHomeOwnerPlansAsync(CancellationToken cancellationToken = default) =>
+        await SubscriptionReferenceData.EnsureDefaultHomeOwnerPlansAsync(store, cancellationToken);
+
+    public async Task<HomeOwnerSubscription?> GetCurrentHomeOwnerSubscriptionAsync(CancellationToken cancellationToken = default)
+    {
+        var user = await authorization.RequireCurrentUserAsync(cancellationToken);
+        return await store.GetHomeOwnerSubscriptionAsync(user.Id, cancellationToken);
+    }
+
+    public async Task<HomeOwnerSubscription> CreateOrUpdateHomeOwnerSubscriptionAsync(
+        string ownerUserId,
+        string? planId,
+        CancellationToken cancellationToken = default)
+    {
+        var plans = await SubscriptionReferenceData.EnsureDefaultHomeOwnerPlansAsync(store, cancellationToken);
+        var selectedPlan = string.IsNullOrWhiteSpace(planId)
+            ? plans.FirstOrDefault(plan => plan.BillingInterval == SubscriptionBillingInterval.Monthly) ?? plans.First()
+            : plans.FirstOrDefault(plan => string.Equals(plan.Id, planId.Trim(), StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidOperationException("Choose an active subscription plan.");
+
+        var user = await store.GetUserAsync(ownerUserId, cancellationToken)
+            ?? throw new InvalidOperationException("User was not found.");
+        _ = await store.GetIndependentHomeOwnerProfileAsync(user.Id, cancellationToken)
+            ?? throw new InvalidOperationException("User is not an Independent Home Owner.");
+
+        var settings = await store.GetSystemSettingsAsync(cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        var trialEndsAt = settings.HomeOwnerTrialDays > 0
+            ? now.AddDays(settings.HomeOwnerTrialDays)
+            : (DateTimeOffset?)null;
+        var status = trialEndsAt is null ? SubscriptionStatus.PendingCheckout : SubscriptionStatus.Trialing;
+        var existing = await store.GetHomeOwnerSubscriptionAsync(user.Id, cancellationToken);
+        var subscription = existing is null
+            ? new HomeOwnerSubscription(
+                $"homeowner-subscription-{user.Id}",
+                user.Id,
+                selectedPlan.Id,
+                status,
+                trialEndsAt,
+                status == SubscriptionStatus.Trialing ? now : null,
+                trialEndsAt,
+                false,
+                now,
+                now,
+                ProviderPriceId: selectedPlan.ProviderPriceId)
+            : existing with
+            {
+                PlanId = selectedPlan.Id,
+                Status = existing.Status == SubscriptionStatus.Active ? existing.Status : status,
+                TrialEndsAt = existing.TrialEndsAt ?? trialEndsAt,
+                CurrentPeriodStartsAt = existing.CurrentPeriodStartsAt ?? (status == SubscriptionStatus.Trialing ? now : null),
+                CurrentPeriodEndsAt = existing.CurrentPeriodEndsAt ?? trialEndsAt,
+                ProviderPriceId = selectedPlan.ProviderPriceId,
+                UpdatedUtc = now
+            };
+
+        await store.UpsertHomeOwnerSubscriptionAsync(subscription, cancellationToken);
+        return subscription;
+    }
+
+    public static bool HasActiveEntitlement(HomeOwnerSubscription? subscription, DateTimeOffset? asOf = null)
+    {
+        if (subscription is null)
+        {
+            return false;
+        }
+
+        var now = asOf ?? DateTimeOffset.UtcNow;
+        return subscription.Status switch
+        {
+            SubscriptionStatus.Active => true,
+            SubscriptionStatus.Trialing => subscription.TrialEndsAt is null || subscription.TrialEndsAt > now,
+            _ => false
+        };
+    }
+}
+
+public sealed class PaymentIntegrationService(IServiceBusinessStore store, IPaymentProviderGateway? paymentProviderGateway = null)
+{
+    public async Task<PaymentCheckoutSession> CreateHomeOwnerCheckoutSessionAsync(
+        string ownerUserId,
+        string successUrl,
+        string cancelUrl,
+        CancellationToken cancellationToken = default)
+    {
+        var gateway = paymentProviderGateway
+            ?? throw new InvalidOperationException("Payment provider integration is not configured.");
+        var user = await store.GetUserAsync(ownerUserId, cancellationToken)
+            ?? throw new InvalidOperationException("User was not found.");
+        _ = await store.GetIndependentHomeOwnerProfileAsync(user.Id, cancellationToken)
+            ?? throw new InvalidOperationException("User is not an Independent Home Owner.");
+        var subscription = await store.GetHomeOwnerSubscriptionAsync(user.Id, cancellationToken)
+            ?? throw new InvalidOperationException("Homeowner subscription was not found.");
+        var plan = await store.GetSubscriptionPlanAsync(subscription.PlanId, cancellationToken)
+            ?? throw new InvalidOperationException("Subscription plan was not found.");
+
+        await RecordPaymentOperationAsync(new PaymentOperationLog(
+            CreatePaymentOperationId(),
+            PaymentOperationType.CheckoutSession,
+            PaymentOperationStatus.Requested,
+            "Stripe",
+            "test",
+            user.Id,
+            subscription.Id,
+            null,
+            subscription.ProviderCustomerId,
+            subscription.ProviderSubscriptionId,
+            subscription.ProviderCheckoutSessionId,
+            null,
+            $"Checkout session requested for {plan.Name}.",
+            null,
+            DateTimeOffset.UtcNow), cancellationToken);
+
+        try
+        {
+            var session = await gateway.CreateSubscriptionCheckoutSessionAsync(
+                user,
+                subscription,
+                plan,
+                successUrl,
+                cancelUrl,
+                cancellationToken);
+
+            await store.UpsertHomeOwnerSubscriptionAsync(subscription with
+            {
+                ProviderCheckoutSessionId = session.CheckoutSessionId,
+                ProviderCustomerId = string.IsNullOrWhiteSpace(session.CustomerId) ? subscription.ProviderCustomerId : session.CustomerId,
+                ProviderSubscriptionId = string.IsNullOrWhiteSpace(session.SubscriptionId) ? subscription.ProviderSubscriptionId : session.SubscriptionId,
+                UpdatedUtc = DateTimeOffset.UtcNow
+            }, cancellationToken);
+
+            await RecordPaymentOperationAsync(new PaymentOperationLog(
+                CreatePaymentOperationId(),
+                PaymentOperationType.CheckoutSession,
+                PaymentOperationStatus.Succeeded,
+                session.Provider,
+                session.ProviderMode,
+                user.Id,
+                subscription.Id,
+                null,
+                session.CustomerId,
+                session.SubscriptionId,
+                session.CheckoutSessionId,
+                null,
+                "Checkout session created.",
+                null,
+                DateTimeOffset.UtcNow), cancellationToken);
+
+            return session;
+        }
+        catch (InvalidOperationException ex)
+        {
+            await RecordPaymentOperationAsync(new PaymentOperationLog(
+                CreatePaymentOperationId(),
+                PaymentOperationType.CheckoutSession,
+                PaymentOperationStatus.Failed,
+                "Stripe",
+                "test",
+                user.Id,
+                subscription.Id,
+                null,
+                subscription.ProviderCustomerId,
+                subscription.ProviderSubscriptionId,
+                subscription.ProviderCheckoutSessionId,
+                null,
+                "Checkout session creation failed.",
+                SanitizeFailureReason(ex.Message),
+                DateTimeOffset.UtcNow), cancellationToken);
+            throw;
+        }
+    }
+
+    public async Task<PaymentPortalSession> CreateHomeOwnerPortalSessionAsync(
+        string ownerUserId,
+        string returnUrl,
+        CancellationToken cancellationToken = default)
+    {
+        var gateway = paymentProviderGateway
+            ?? throw new InvalidOperationException("Payment provider integration is not configured.");
+        var subscription = await store.GetHomeOwnerSubscriptionAsync(ownerUserId, cancellationToken)
+            ?? throw new InvalidOperationException("Homeowner subscription was not found.");
+        if (string.IsNullOrWhiteSpace(subscription.ProviderCustomerId))
+        {
+            throw new InvalidOperationException("No payment provider customer is linked to this subscription yet.");
+        }
+
+        await RecordPaymentOperationAsync(new PaymentOperationLog(
+            CreatePaymentOperationId(),
+            PaymentOperationType.CustomerPortalSession,
+            PaymentOperationStatus.Requested,
+            "Stripe",
+            "test",
+            ownerUserId,
+            subscription.Id,
+            null,
+            subscription.ProviderCustomerId,
+            subscription.ProviderSubscriptionId,
+            subscription.ProviderCheckoutSessionId,
+            null,
+            "Customer portal session requested.",
+            null,
+            DateTimeOffset.UtcNow), cancellationToken);
+
+        try
+        {
+            var session = await gateway.CreateCustomerPortalSessionAsync(
+                subscription.ProviderCustomerId,
+                returnUrl,
+                cancellationToken);
+
+            await RecordPaymentOperationAsync(new PaymentOperationLog(
+                CreatePaymentOperationId(),
+                PaymentOperationType.CustomerPortalSession,
+                PaymentOperationStatus.Succeeded,
+                session.Provider,
+                session.ProviderMode,
+                ownerUserId,
+                subscription.Id,
+                null,
+                subscription.ProviderCustomerId,
+                subscription.ProviderSubscriptionId,
+                subscription.ProviderCheckoutSessionId,
+                null,
+                "Customer portal session created.",
+                null,
+                DateTimeOffset.UtcNow), cancellationToken);
+
+            return session;
+        }
+        catch (InvalidOperationException ex)
+        {
+            await RecordPaymentOperationAsync(new PaymentOperationLog(
+                CreatePaymentOperationId(),
+                PaymentOperationType.CustomerPortalSession,
+                PaymentOperationStatus.Failed,
+                "Stripe",
+                "test",
+                ownerUserId,
+                subscription.Id,
+                null,
+                subscription.ProviderCustomerId,
+                subscription.ProviderSubscriptionId,
+                subscription.ProviderCheckoutSessionId,
+                null,
+                "Customer portal session creation failed.",
+                SanitizeFailureReason(ex.Message),
+                DateTimeOffset.UtcNow), cancellationToken);
+            throw;
+        }
+    }
+
+    public async Task<PaymentProviderEvent> ProcessWebhookAsync(
+        string payload,
+        string signatureHeader,
+        CancellationToken cancellationToken = default)
+    {
+        var gateway = paymentProviderGateway
+            ?? throw new InvalidOperationException("Payment provider integration is not configured.");
+        var webhookEvent = gateway.ParseWebhookEvent(payload, signatureHeader);
+        var paymentEvent = await ProcessProviderEventAsync(
+            webhookEvent.Provider,
+            webhookEvent.ProviderEventId,
+            webhookEvent.ProviderMode,
+            webhookEvent.EventType,
+            webhookEvent.OwnerUserId ?? webhookEvent.ProviderSubscriptionId,
+            webhookEvent.Summary,
+            cancellationToken);
+
+        if (paymentEvent.Status == PaymentEventProcessingStatus.Duplicate)
+        {
+            await RecordPaymentOperationAsync(CreateWebhookOperationLog(webhookEvent, PaymentOperationStatus.Duplicate, "Duplicate webhook ignored.", null), cancellationToken);
+            return paymentEvent;
+        }
+
+        await ApplyWebhookSubscriptionUpdateAsync(webhookEvent, cancellationToken);
+        await RecordPaymentOperationAsync(CreateWebhookOperationLog(webhookEvent, PaymentOperationStatus.Succeeded, "Webhook processed.", null), cancellationToken);
+        return paymentEvent;
+    }
+
+    public async Task<PaymentProviderEvent> ProcessProviderEventAsync(
+        string provider,
+        string providerEventId,
+        string providerMode,
+        string eventType,
+        string? relatedEntityId,
+        string summary,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(provider))
+        {
+            throw new InvalidOperationException("Payment provider is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(providerEventId))
+        {
+            throw new InvalidOperationException("Provider event id is required.");
+        }
+
+        var existing = await store.GetPaymentProviderEventAsync(provider, providerEventId, cancellationToken);
+        if (existing is not null)
+        {
+            return existing with { Status = PaymentEventProcessingStatus.Duplicate };
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var trimmedEventType = string.IsNullOrWhiteSpace(eventType) ? "unknown" : eventType.Trim();
+        var paymentEvent = new PaymentProviderEvent(
+            $"{provider.Trim().ToLowerInvariant()}:{providerEventId.Trim()}",
+            provider.Trim(),
+            string.IsNullOrWhiteSpace(providerMode) ? "test" : providerMode.Trim(),
+            trimmedEventType,
+            string.IsNullOrWhiteSpace(relatedEntityId) ? null : relatedEntityId.Trim(),
+            PaymentEventProcessingStatus.Processed,
+            string.IsNullOrWhiteSpace(summary) ? trimmedEventType : summary.Trim(),
+            now,
+            now);
+
+        await store.UpsertPaymentProviderEventAsync(paymentEvent, cancellationToken);
+        return paymentEvent;
+    }
+
+    public async Task RecordCheckoutReturnAsync(
+        string? status,
+        string? checkoutSessionId,
+        CancellationToken cancellationToken = default)
+    {
+        var returned = string.Equals(status, "success", StringComparison.OrdinalIgnoreCase);
+        await RecordPaymentOperationAsync(new PaymentOperationLog(
+            CreatePaymentOperationId(),
+            PaymentOperationType.CheckoutReturn,
+            returned ? PaymentOperationStatus.Succeeded : PaymentOperationStatus.Canceled,
+            "Stripe",
+            "test",
+            null,
+            null,
+            null,
+            null,
+            null,
+            string.IsNullOrWhiteSpace(checkoutSessionId) ? null : checkoutSessionId.Trim(),
+            null,
+            returned ? "Checkout browser returned success." : "Checkout browser returned canceled.",
+            null,
+            DateTimeOffset.UtcNow), cancellationToken);
+    }
+
+    public async Task RecordRejectedWebhookAsync(
+        string failureReason,
+        CancellationToken cancellationToken = default)
+    {
+        await RecordPaymentOperationAsync(new PaymentOperationLog(
+            CreatePaymentOperationId(),
+            PaymentOperationType.Webhook,
+            PaymentOperationStatus.Rejected,
+            "Stripe",
+            "test",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            400,
+            "Webhook rejected.",
+            SanitizeFailureReason(failureReason),
+            DateTimeOffset.UtcNow), cancellationToken);
+    }
+
+    public async Task RecordPaymentOperationAsync(
+        PaymentOperationLog paymentOperationLog,
+        CancellationToken cancellationToken = default) =>
+        await store.UpsertPaymentOperationLogAsync(paymentOperationLog, cancellationToken);
+
+    public async Task<HomeOwnerSubscription> ApplySubscriptionStatusFromTrustedEventAsync(
+        string ownerUserId,
+        SubscriptionStatus status,
+        string provider,
+        string providerEventId,
+        string providerMode,
+        string eventType,
+        string summary,
+        CancellationToken cancellationToken = default)
+    {
+        var paymentEvent = await ProcessProviderEventAsync(
+            provider,
+            providerEventId,
+            providerMode,
+            eventType,
+            ownerUserId,
+            summary,
+            cancellationToken);
+        var subscription = await store.GetHomeOwnerSubscriptionAsync(ownerUserId, cancellationToken)
+            ?? throw new InvalidOperationException("Homeowner subscription was not found.");
+
+        if (paymentEvent.Status == PaymentEventProcessingStatus.Duplicate)
+        {
+            return subscription;
+        }
+
+        var updated = subscription with
+        {
+            Status = status,
+            UpdatedUtc = DateTimeOffset.UtcNow
+        };
+        await store.UpsertHomeOwnerSubscriptionAsync(updated, cancellationToken);
+        return updated;
+    }
+
+    private async Task ApplyWebhookSubscriptionUpdateAsync(
+        PaymentProviderWebhookEvent webhookEvent,
+        CancellationToken cancellationToken)
+    {
+        var subscription = await FindWebhookSubscriptionAsync(webhookEvent, cancellationToken);
+        if (subscription is null)
+        {
+            return;
+        }
+
+        var updated = subscription with
+        {
+            Status = webhookEvent.SubscriptionStatus ?? subscription.Status,
+            ProviderCustomerId = string.IsNullOrWhiteSpace(webhookEvent.ProviderCustomerId)
+                ? subscription.ProviderCustomerId
+                : webhookEvent.ProviderCustomerId,
+            ProviderSubscriptionId = string.IsNullOrWhiteSpace(webhookEvent.ProviderSubscriptionId)
+                ? subscription.ProviderSubscriptionId
+                : webhookEvent.ProviderSubscriptionId,
+            ProviderCheckoutSessionId = string.IsNullOrWhiteSpace(webhookEvent.ProviderCheckoutSessionId)
+                ? subscription.ProviderCheckoutSessionId
+                : webhookEvent.ProviderCheckoutSessionId,
+            CurrentPeriodStartsAt = webhookEvent.CurrentPeriodStartsAt ?? subscription.CurrentPeriodStartsAt,
+            CurrentPeriodEndsAt = webhookEvent.CurrentPeriodEndsAt ?? subscription.CurrentPeriodEndsAt,
+            CancelAtPeriodEnd = webhookEvent.CancelAtPeriodEnd ?? subscription.CancelAtPeriodEnd,
+            UpdatedUtc = DateTimeOffset.UtcNow
+        };
+
+        await store.UpsertHomeOwnerSubscriptionAsync(updated, cancellationToken);
+    }
+
+    private async Task<HomeOwnerSubscription?> FindWebhookSubscriptionAsync(
+        PaymentProviderWebhookEvent webhookEvent,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(webhookEvent.OwnerUserId))
+        {
+            var byOwner = await store.GetHomeOwnerSubscriptionAsync(webhookEvent.OwnerUserId, cancellationToken);
+            if (byOwner is not null)
+            {
+                return byOwner;
+            }
+        }
+
+        var subscriptions = await store.GetHomeOwnerSubscriptionsAsync(cancellationToken);
+        return subscriptions.FirstOrDefault(subscription =>
+            (!string.IsNullOrWhiteSpace(webhookEvent.ProviderSubscriptionId) &&
+                string.Equals(subscription.ProviderSubscriptionId, webhookEvent.ProviderSubscriptionId, StringComparison.OrdinalIgnoreCase)) ||
+            (!string.IsNullOrWhiteSpace(webhookEvent.ProviderCheckoutSessionId) &&
+                string.Equals(subscription.ProviderCheckoutSessionId, webhookEvent.ProviderCheckoutSessionId, StringComparison.OrdinalIgnoreCase)) ||
+            (!string.IsNullOrWhiteSpace(webhookEvent.ProviderCustomerId) &&
+                string.Equals(subscription.ProviderCustomerId, webhookEvent.ProviderCustomerId, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static PaymentOperationLog CreateWebhookOperationLog(
+        PaymentProviderWebhookEvent webhookEvent,
+        PaymentOperationStatus status,
+        string summary,
+        string? failureReason) =>
+        new(
+            CreatePaymentOperationId(),
+            PaymentOperationType.Webhook,
+            status,
+            webhookEvent.Provider,
+            webhookEvent.ProviderMode,
+            webhookEvent.OwnerUserId,
+            null,
+            webhookEvent.ProviderEventId,
+            webhookEvent.ProviderCustomerId,
+            webhookEvent.ProviderSubscriptionId,
+            webhookEvent.ProviderCheckoutSessionId,
+            status == PaymentOperationStatus.Rejected ? 400 : null,
+            summary,
+            SanitizeFailureReason(failureReason),
+            DateTimeOffset.UtcNow);
+
+    private static string CreatePaymentOperationId() => $"payment-operation-{Guid.NewGuid():N}";
+
+    private static string? SanitizeFailureReason(string? failureReason)
+    {
+        if (string.IsNullOrWhiteSpace(failureReason))
+        {
+            return null;
+        }
+
+        var trimmed = failureReason.Trim();
+        return trimmed.Length <= 500 ? trimmed : trimmed[..500];
+    }
+}
+
+public sealed class PaymentLogService(IServiceBusinessStore store, TenantAuthorizationService authorization)
+{
+    public async Task<IReadOnlyList<PaymentProviderEvent>> GetPaymentProviderEventsAsync(CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireSystemAdminAsync(cancellationToken);
+        return await store.GetPaymentProviderEventsAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<PaymentOperationLog>> GetPaymentOperationLogsAsync(CancellationToken cancellationToken = default)
+    {
+        await authorization.RequireSystemAdminAsync(cancellationToken);
+        return await store.GetPaymentOperationLogsAsync(cancellationToken);
+    }
+}
+
 public sealed class OnboardingService(IServiceBusinessStore store)
 {
     public async Task<IReadOnlyList<Company>> GetAvailableCompaniesAsync(CancellationToken cancellationToken = default)
@@ -3918,6 +4567,9 @@ public sealed class OnboardingService(IServiceBusinessStore store)
             .ThenBy(client => client.DisplayName)
             .ToList();
     }
+
+    public async Task<IReadOnlyList<SubscriptionPlan>> GetAvailableHomeOwnerSubscriptionPlansAsync(CancellationToken cancellationToken = default) =>
+        await SubscriptionReferenceData.EnsureDefaultHomeOwnerPlansAsync(store, cancellationToken);
 
     public async Task<RegistrationResult> RegisterAsync(
         RegistrationSubmission submission,
@@ -4299,12 +4951,21 @@ public sealed class OnboardingService(IServiceBusinessStore store)
                 true), cancellationToken);
         }
 
+        var subscriptionService = new SubscriptionService(
+            store,
+            new TenantAuthorizationService(store, new RegistrationUserContext(user.Id)));
+        var subscription = await subscriptionService.CreateOrUpdateHomeOwnerSubscriptionAsync(
+            user.Id,
+            submission.SubscriptionPlanId,
+            cancellationToken);
+
         return new RegistrationResult(
             user,
             Company: null,
             Membership: null,
             RequiresApproval: false,
-            Message: "Your homeowner account is ready. You can manage your pool equipment now.");
+            Message: "Your homeowner account is ready. Your subscription trial has started.",
+            Subscription: subscription);
     }
 
     private static string CreateSlug(string value)
@@ -4314,5 +4975,10 @@ public sealed class OnboardingService(IServiceBusinessStore store)
             .ToArray();
         var slug = string.Join('-', new string(chars).Split('-', StringSplitOptions.RemoveEmptyEntries));
         return string.IsNullOrWhiteSpace(slug) ? $"item-{Guid.NewGuid():N}" : slug;
+    }
+
+    private sealed class RegistrationUserContext(string userId) : ICurrentUserContext
+    {
+        public string UserId { get; } = userId;
     }
 }

@@ -1,0 +1,253 @@
+@page "/admin/subscriptions"
+@rendermode InteractiveServer
+@using ServiceBusiness.Domain
+@inject ServiceBusiness.Application.PlatformAdminService PlatformAdminService
+
+<PageTitle>Subscriptions</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">System Administrator</p>
+        <h1>Subscriptions</h1>
+        <p class="lede">Manage homeowner subscription plans, prices, billing intervals, and Stripe price references.</p>
+    </div>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="notice success">@message</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="notice error">@errorMessage</div>
+}
+
+<section class="management-panel">
+    <div class="management-panel-header">
+        <h2>Subscription Plans</h2>
+        <div class="management-panel-actions">
+            <button class="button primary" type="button" @onclick="NewPlan">Add Plan</button>
+            <button class="icon-button" type="button" title="Toggle subscription plans" @onclick="TogglePlans">@(plansExpanded ? "^" : "v")</button>
+        </div>
+    </div>
+    @if (plansExpanded)
+    {
+        <div class="management-panel-body">
+            @if (planEditorExpanded)
+            {
+                <EditForm Model="planForm" OnValidSubmit="SavePlanAsync" FormName="subscription-plan-editor">
+                    <div class="editor-panel">
+                        <h3>@(planForm.IsEditing ? "Edit Plan" : "Add Plan")</h3>
+                        <div class="form-grid">
+                            <label>
+                                Plan ID
+                                <InputText class="form-control" @bind-Value="planForm.Id" disabled="@planForm.IsEditing" />
+                            </label>
+                            <label>
+                                Name
+                                <InputText class="form-control" @bind-Value="planForm.Name" />
+                            </label>
+                            <label>
+                                Billing interval
+                                <InputSelect class="form-control" @bind-Value="planForm.BillingInterval">
+                                    <option value="@SubscriptionBillingInterval.Monthly">Monthly</option>
+                                    <option value="@SubscriptionBillingInterval.Annual">Annual</option>
+                                </InputSelect>
+                            </label>
+                            <label>
+                                Price
+                                <InputNumber class="form-control" @bind-Value="planForm.Price" />
+                            </label>
+                            <label>
+                                Display order
+                                <InputNumber class="form-control" @bind-Value="planForm.SortOrder" />
+                            </label>
+                            <label>
+                                Stripe price ID
+                                <InputText class="form-control" @bind-Value="planForm.ProviderPriceId" />
+                            </label>
+                            <label class="check-row">
+                                <InputCheckbox @bind-Value="planForm.IsActive" />
+                                <span>Active</span>
+                            </label>
+                            <label class="wide">
+                                Description
+                                <InputTextArea class="form-control" @bind-Value="planForm.Description" />
+                            </label>
+                        </div>
+                        <div class="form-actions">
+                            <button class="button primary" type="submit">Save Plan</button>
+                            <button class="button" type="button" @onclick="HidePlanEditor">Cancel</button>
+                        </div>
+                    </div>
+                </EditForm>
+            }
+
+            <div class="management-table-wrap">
+                <table class="management-table">
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>Name</th>
+                            <th>Interval</th>
+                            <th>Price</th>
+                            <th>Stripe Price</th>
+                            <th>Order</th>
+                            <th class="actions">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var plan in plans)
+                        {
+                            <tr>
+                                <td>
+                                    <label class="switch-control" title="Toggle active state">
+                                        <input type="checkbox" checked="@plan.IsActive" @onchange="args => SetActiveAsync(plan, GetChecked(args))" />
+                                        <span></span>
+                                    </label>
+                                </td>
+                                <td>
+                                    <strong>@plan.Name</strong>
+                                    <small>@plan.Id</small>
+                                </td>
+                                <td>@plan.BillingInterval</td>
+                                <td>@plan.Price.ToString("C")</td>
+                                <td>@(string.IsNullOrWhiteSpace(plan.ProviderPriceId) ? "-" : plan.ProviderPriceId)</td>
+                                <td>@plan.SortOrder</td>
+                                <td class="actions">
+                                    <button class="icon-button icon-only" type="button" title="Edit plan" aria-label="Edit plan" @onclick="() => EditPlan(plan)">
+                                        <span class="action-icon edit-icon" aria-hidden="true"></span>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</section>
+
+@code {
+    private IReadOnlyList<SubscriptionPlan> plans = [];
+    private PlanForm planForm = new();
+    private bool plansExpanded = true;
+    private bool planEditorExpanded;
+    private string? message;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        plans = await PlatformAdminService.GetSubscriptionPlansAsync();
+    }
+
+    private void NewPlan()
+    {
+        planForm = new PlanForm
+        {
+            IsActive = true,
+            BillingInterval = SubscriptionBillingInterval.Monthly,
+            SortOrder = plans.Count == 0 ? 10 : plans.Max(plan => plan.SortOrder) + 10
+        };
+        planEditorExpanded = true;
+        plansExpanded = true;
+    }
+
+    private void EditPlan(SubscriptionPlan plan)
+    {
+        planForm = PlanForm.FromPlan(plan);
+        planEditorExpanded = true;
+        plansExpanded = true;
+    }
+
+    private async Task SavePlanAsync()
+    {
+        await RunPlanActionAsync(async () =>
+        {
+            var saved = await PlatformAdminService.UpsertSubscriptionPlanAsync(new SubscriptionPlan(
+                planForm.Id,
+                planForm.Name,
+                planForm.Description,
+                planForm.BillingInterval,
+                planForm.Price,
+                planForm.IsActive,
+                planForm.SortOrder,
+                planForm.ProviderPriceId));
+
+            message = $"{saved.Name} was saved.";
+            planEditorExpanded = false;
+            planForm = new();
+        });
+    }
+
+    private async Task SetActiveAsync(SubscriptionPlan plan, bool isActive)
+    {
+        await RunPlanActionAsync(async () =>
+        {
+            await PlatformAdminService.SetSubscriptionPlanActiveAsync(plan.Id, isActive);
+            message = $"{plan.Name} is now {(isActive ? "active" : "inactive")}.";
+        });
+    }
+
+    private async Task RunPlanActionAsync(Func<Task> action)
+    {
+        message = null;
+        errorMessage = null;
+
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private void HidePlanEditor()
+    {
+        planForm = new();
+        planEditorExpanded = false;
+    }
+
+    private void TogglePlans() => plansExpanded = !plansExpanded;
+
+    private static bool GetChecked(ChangeEventArgs args) => args.Value is bool value && value;
+
+    private sealed class PlanForm
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Description { get; set; } = "";
+        public SubscriptionBillingInterval BillingInterval { get; set; } = SubscriptionBillingInterval.Monthly;
+        public decimal Price { get; set; }
+        public bool IsActive { get; set; } = true;
+        public int SortOrder { get; set; }
+        public string? ProviderPriceId { get; set; }
+        public bool IsEditing { get; set; }
+
+        public static PlanForm FromPlan(SubscriptionPlan plan) => new()
+        {
+            Id = plan.Id,
+            Name = plan.Name,
+            Description = plan.Description,
+            BillingInterval = plan.BillingInterval,
+            Price = plan.Price,
+            IsActive = plan.IsActive,
+            SortOrder = plan.SortOrder,
+            ProviderPriceId = plan.ProviderPriceId,
+            IsEditing = true
+        };
+    }
+}

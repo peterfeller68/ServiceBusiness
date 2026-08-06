@@ -1,0 +1,102 @@
+@page "/admin/payment-events"
+@rendermode InteractiveServer
+@using ServiceBusiness.Application
+@using ServiceBusiness.Domain
+@inject PaymentLogService PaymentLogService
+
+<PageTitle>Payment Events</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">System Administrator</p>
+        <h1>Payment Events</h1>
+        <p class="lede">Review trusted provider events used for webhook idempotency and subscription state changes.</p>
+    </div>
+</section>
+
+@if (isLoading)
+{
+    <p>Loading payment events...</p>
+}
+else if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="callout">
+        <strong>No access</strong>
+        <p>@errorMessage</p>
+    </div>
+}
+else if (paymentEvents.Count == 0)
+{
+    <div class="callout">
+        <strong>No payment events found</strong>
+        <p>No provider webhook events have been processed yet.</p>
+    </div>
+}
+else
+{
+    <section class="section">
+        <h2>Status Counts</h2>
+        <div class="metric-grid">
+            @foreach (var status in Enum.GetValues<PaymentEventProcessingStatus>())
+            {
+                <article>
+                    <span>@status</span>
+                    <strong>@paymentEvents.Count(paymentEvent => paymentEvent.Status == status)</strong>
+                </article>
+            }
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>Event Details</h2>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Received</th>
+                    <th>Provider</th>
+                    <th>Mode</th>
+                    <th>Event Type</th>
+                    <th>Status</th>
+                    <th>Related Entity</th>
+                    <th>Summary</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var paymentEvent in paymentEvents)
+                {
+                    <tr>
+                        <td>@paymentEvent.ReceivedUtc.LocalDateTime.ToString("g")</td>
+                        <td>@paymentEvent.Provider</td>
+                        <td>@paymentEvent.ProviderMode</td>
+                        <td>@paymentEvent.EventType</td>
+                        <td><span class="status-pill">@paymentEvent.Status</span></td>
+                        <td>@DisplayText(paymentEvent.RelatedEntityId)</td>
+                        <td>@paymentEvent.Summary</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+}
+
+@code {
+    private bool isLoading = true;
+    private string? errorMessage;
+    private IReadOnlyList<PaymentProviderEvent> paymentEvents = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            paymentEvents = await PaymentLogService.GetPaymentProviderEventsAsync();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+
+        isLoading = false;
+    }
+
+    private static string DisplayText(string? value) => string.IsNullOrWhiteSpace(value) ? "-" : value;
+}

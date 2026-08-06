@@ -53,6 +53,11 @@
                             <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> User Roles
                         </NavLink>
                     </div>
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link nested" href="admin/subscriptions">
+                            <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Subscriptions
+                        </NavLink>
+                    </div>
                     @if (appMode.IsPoolMode)
                     {
                         <div class="nav-item px-3">
@@ -73,6 +78,11 @@
                 {
                     @if (isSystemAdmin)
                     {
+                        <div class="nav-item px-3">
+                            <NavLink class="nav-link nested" href="settings">
+                                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> System Settings
+                            </NavLink>
+                        </div>
                         <div class="nav-item px-3">
                             <NavLink class="nav-link nested" href="admin/service-clients">
                                 <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Service Clients
@@ -252,6 +262,19 @@
                             <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Email Log
                         </NavLink>
                     </div>
+                    @if (isSystemAdmin)
+                    {
+                        <div class="nav-item px-3">
+                            <NavLink class="nav-link nested" href="admin/payment-events">
+                                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Payment Events
+                            </NavLink>
+                        </div>
+                        <div class="nav-item px-3">
+                            <NavLink class="nav-link nested" href="admin/payment-api">
+                                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Payment API
+                            </NavLink>
+                        </div>
+                    }
                 }
             }
         }
